@@ -8,15 +8,25 @@
   --panel-line: rgba(140, 110, 60, .28);
   --text: #3a3128;
   --accent: #e67e22;
+  /* 标题用衬线、数字用圆润字体（Google Fonts，加载失败自动回落系统字体） */
+  --font-title: "Noto Serif SC", "PingFang SC", "Microsoft YaHei", serif;
+  --font-num: "Baloo 2", "PingFang SC", "Microsoft YaHei", sans-serif;
 }
+
+h1, h2, .turn-banner-inner { font-family: var(--font-title); }
+.vp-big, .room-code, .die, #roll-overlay,
+.res-card .cnt, .rp-cnt { font-family: var(--font-num); }
 
 html, body { height: 100%; }
 body {
   font-family: "PingFang SC", "Microsoft YaHei", -apple-system, sans-serif;
-  /* 海面：左上打一束高光、右下压暗，比单一线性渐变更有纵深 */
+  /* 海面：插画水波纹理平铺，上压深蓝 tint 拉回主色调并保证白字对比度，
+     再叠左上高光/右下压暗做纵深；最底层渐变作图片加载兜底 */
   background:
-    radial-gradient(ellipse 90% 70% at 22% 12%, rgba(255,255,255,.16), transparent 55%),
-    radial-gradient(ellipse 80% 90% at 85% 95%, rgba(8,35,55,.4), transparent 60%),
+    radial-gradient(ellipse 90% 70% at 22% 12%, rgba(255,255,255,.14), transparent 55%),
+    radial-gradient(ellipse 80% 90% at 85% 95%, rgba(8,35,55,.45), transparent 60%),
+    linear-gradient(rgba(25,75,115,.5), rgba(14,52,84,.6)),
+    url("/assets/opt/sea-texture.webp") center / 620px 620px repeat,
     linear-gradient(160deg, var(--sea) 0%, var(--sea-deep) 100%);
   color: var(--text);
   overflow: hidden;
@@ -25,9 +35,20 @@ body {
 .hidden { display: none !important; }
 .screen { height: 100vh; display: flex; align-items: center; justify-content: center; }
 
+/* 首页 / 大厅：设计师插画背景 + 暗角保证面板可读 */
+#screen-home, #screen-lobby {
+  background:
+    radial-gradient(ellipse 100% 90% at 50% 40%, rgba(10,25,38,.05), rgba(5,18,30,.52) 85%),
+    url("/assets/opt/home-island.webp") center / cover no-repeat;
+}
+
 /* ---------- 首页 / 大厅 ---------- */
 .home-card {
-  background: linear-gradient(170deg, #fdfaf0, #f3ebd4);
+  /* 羊皮纸纹理 + 浅色罩（罩住纹理保持原来的明度） */
+  background:
+    linear-gradient(170deg, rgba(253,250,240,.8), rgba(243,235,212,.62)),
+    url("/assets/opt/parchment-tile.webp") repeat;
+  background-size: auto, 340px;
   border: 1px solid var(--panel-line);
   border-radius: 16px;
   padding: 40px 48px;
@@ -165,9 +186,14 @@ body {
 }
 #dice-box { display: flex; gap: 8px; }
 .die {
-  width: 34px; height: 34px; background: #fff; border-radius: 8px;
+  width: 36px; height: 36px;
   display: grid; place-items: center; font-size: 20px; font-weight: bold;
-  color: #333; box-shadow: 0 3px 6px rgba(0,0,0,.3);
+  color: #333;
+}
+/* 骰面用插画（die-N.webp），阴影跟随图片轮廓 */
+.die img {
+  width: 100%; height: 100%; display: block;
+  filter: drop-shadow(0 3px 4px rgba(0,0,0,.35));
 }
 .die.rolling { animation: dice-shake .9s ease-in-out infinite; }
 @keyframes dice-shake {
@@ -248,7 +274,10 @@ body {
 }
 #players-panel { display: flex; flex-direction: column; gap: 8px; }
 .player-card {
-  background: linear-gradient(165deg, #fdfaf1, #f2e9d1);
+  background:
+    linear-gradient(165deg, rgba(253,250,241,.8), rgba(242,233,209,.62)),
+    url("/assets/opt/parchment-tile.webp") repeat;
+  background-size: auto, 340px;
   border: 1px solid var(--panel-line);
   border-radius: 11px; padding: 8px 12px;
   border-left: 6px solid; transition: box-shadow .5s, transform .5s;
@@ -264,7 +293,11 @@ body {
 .vp-big { font-size: 16px; color: var(--accent); font-weight: 700; }
 
 #log-panel {
-  flex: 1; background: linear-gradient(170deg, rgba(253,250,241,.96), rgba(242,233,209,.96));
+  flex: 1;
+  background:
+    linear-gradient(170deg, rgba(253,250,241,.8), rgba(242,233,209,.66)),
+    url("/assets/opt/parchment-tile.webp") repeat;
+  background-size: auto, 340px;
   border: 1px solid var(--panel-line); border-radius: 12px;
   display: flex; flex-direction: column; min-height: 0;
   box-shadow: 0 2px 8px rgba(0,20,35,.18);
@@ -311,27 +344,31 @@ body {
   100% { opacity: 0; transform: translate(-50%,-115%) scale(.85); }
 }
 
-/* ---------- 底部操作栏 ---------- */
+/* ---------- 底部操作栏：木质桌沿（真实木纹图，CSS 渐变作加载兜底） ---------- */
 #bottom-bar {
   display: flex; align-items: center; gap: 14px;
-  background: linear-gradient(180deg, rgba(23,48,66,.92), rgba(11,29,43,.96));
-  border-top: 1px solid rgba(255,255,255,.14);
+  background:
+    linear-gradient(180deg, rgba(40,20,8,.18), rgba(30,15,6,.42)),
+    url("/assets/opt/wood-table.webp") center / cover no-repeat,
+    linear-gradient(180deg, #8a5a33, #6b4223 45%, #543218);
+  border-top: 1px solid rgba(255,218,150,.4);
   padding: 10px 16px;
-  backdrop-filter: blur(6px);
+  box-shadow: 0 -6px 20px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,235,200,.22);
 }
 #hand-cards { display: flex; gap: 6px; }
 .res-card {
-  width: 52px; height: 68px; border-radius: 9px; position: relative;
-  border: 1px solid rgba(0,0,0,.25);
-  display: flex; flex-direction: column; align-items: center; justify-content: center;
-  font-size: 22px; color: #fff;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.35), 0 3px 7px rgba(0,0,0,.35);
+  width: 56px; height: 74px; border-radius: 10px; position: relative;
+  border: 2px solid rgba(255,250,235,.75);
+  display: flex; flex-direction: column; align-items: center; justify-content: flex-end;
+  padding-bottom: 6px; font-size: 22px; color: #fff;
+  box-shadow: inset 0 -4px 0 var(--res-color, transparent),
+    inset 0 1px 0 rgba(255,255,255,.35), 0 3px 7px rgba(0,0,0,.4);
   transition: transform .2s ease;
 }
 .res-card:hover { transform: translateY(-6px); }
 .res-card .cnt {
-  font-size: 15px; font-weight: 700; background: rgba(0,0,0,.3);
-  border-radius: 10px; padding: 0 8px; margin-top: 2px;
+  font-size: 15px; font-weight: 700; background: rgba(0,0,0,.4);
+  border-radius: 10px; padding: 0 8px; margin-bottom: 2px;
 }
 .res-card.bump { animation: card-bump .9s ease; }
 @keyframes card-bump {
@@ -339,48 +376,82 @@ body {
   40% { transform: scale(1.18) translateY(-8px); }
   100% { transform: scale(1); }
 }
-.res-wood { background: linear-gradient(150deg,#3d9960,#2d7a4a); }
-.res-brick { background: linear-gradient(150deg,#d07850,#b05c38); }
-.res-sheep { background: linear-gradient(150deg,#a4d968,#7fb845); }
-.res-wheat { background: linear-gradient(150deg,#eecd55,#d4ab2c); }
-.res-ore { background: linear-gradient(150deg,#a8b2bb,#7f8c99); }
+/* 资源卡面：设计师插画（背景色作加载兜底），--res-color 是一眼识别用的资源色 */
+.res-card, .rp-card, .res-radio button { background-size: cover; background-position: center; }
+.res-wood { --res-color: #2d7a4a; background-color: #3d9960; background-image: url("/assets/opt/resource-wood.webp"); }
+.res-brick { --res-color: #b05c38; background-color: #d07850; background-image: url("/assets/opt/resource-brick.webp"); }
+.res-sheep { --res-color: #7fb845; background-color: #a4d968; background-image: url("/assets/opt/resource-sheep.webp"); }
+.res-wheat { --res-color: #d4ab2c; background-color: #eecd55; background-image: url("/assets/opt/resource-wheat.webp"); }
+.res-ore { --res-color: #7f8c99; background-color: #a8b2bb; background-image: url("/assets/opt/resource-ore.webp"); }
 
 #dev-cards { display: flex; gap: 6px; }
 .dev-card {
-  width: 52px; height: 68px; border-radius: 9px; cursor: pointer;
-  border: 1px solid rgba(0,0,0,.25);
-  background: linear-gradient(150deg,#9068c0,#6c4a99); color: #fff;
-  display: flex; flex-direction: column; align-items: center; justify-content: center;
-  font-size: 20px;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.35), 0 3px 7px rgba(0,0,0,.35);
+  width: 56px; height: 74px; border-radius: 10px; cursor: pointer;
+  border: 2px solid rgba(255,250,235,.75);
+  /* 每种卡有专属插画卡面（.t-* 类），紫色渐变作加载兜底；
+     卡名叠在卡面底部自带的羊皮纸留白区上 */
+  background: linear-gradient(150deg,#9068c0,#6c4a99);
+  background-size: cover; background-position: center;
+  color: #4a3316;
+  display: flex; flex-direction: column; align-items: center; justify-content: flex-end;
+  padding-bottom: 3px; font-size: 20px;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.35), 0 3px 7px rgba(0,0,0,.4);
   transition: transform .2s ease; font-family: inherit;
 }
-.dev-card small { font-size: 10px; margin-top: 3px; }
+.dev-card small { font-size: 10px; font-weight: 700; line-height: 1.3; }
+.dev-card.t-knight { background-image: url("/assets/opt/dev-knight.webp"); }
+.dev-card.t-vp { background-image: url("/assets/opt/dev-vp.webp"); }
+.dev-card.t-roadBuilding { background-image: url("/assets/opt/dev-road.webp"); }
+.dev-card.t-yearOfPlenty { background-image: url("/assets/opt/dev-plenty.webp"); }
+.dev-card.t-monopoly { background-image: url("/assets/opt/dev-monopoly.webp"); }
 .dev-card:hover:not(:disabled) { transform: translateY(-6px); }
 .dev-card:disabled { opacity: .55; cursor: default; }
 
 #action-buttons { display: flex; gap: 8px; margin-left: auto; flex-wrap: wrap; justify-content: flex-end; }
 
 /* ---------- 棋盘 SVG ---------- */
-.hex { stroke: rgba(58,38,14,.4); stroke-width: .045; transition: stroke .2s, stroke-width .2s; }
+/* .hex 是盖在板块图之上的透明点击热区（fill 需可命中，不能用 none） */
+.hex { fill: rgba(255,255,255,0); stroke: rgba(255,255,255,0); transition: stroke .2s, stroke-width .2s; }
 /* 悬停高亮用描边而非 filter：Safari 不支持 SVG 子元素的 CSS filter */
 .hex.robber-target { cursor: pointer; }
 .hex.robber-target:hover { stroke: #ffd54f; stroke-width: .09; }
-.hex-bevel { fill: none; stroke: rgba(255,255,255,.22); stroke-width: .045; pointer-events: none; }
-.sea-wave { fill: none; stroke: rgba(255,255,255,.45); stroke-width: .045; stroke-linecap: round; }
-.hex-icon { font-size: .52px; pointer-events: none; user-select: none; }
+/* 插画板块图；下面垫的渐变色块只在图片加载失败时可见 */
+.hex-img { pointer-events: none; }
+.hex-fallback { stroke: rgba(58,38,14,.32); stroke-width: .028; pointer-events: none; }
+.sea-wave {
+  fill: none; stroke: rgba(255,255,255,.45); stroke-width: .045; stroke-linecap: round;
+  animation: wave-drift 6s ease-in-out infinite;
+}
+@keyframes wave-drift {
+  0%, 100% { transform: translateX(0); opacity: .3; }
+  50% { transform: translateX(.15px); opacity: .8; }
+}
+/* 掷出对应点数时整块 tile 弹一下 */
+.hex-bounce {
+  animation: hex-bounce 1.4s cubic-bezier(.34,1.56,.64,1);
+  transform-box: fill-box; transform-origin: center;
+}
+@keyframes hex-bounce {
+  0% { transform: scale(1); }
+  35% { transform: scale(1.06); }
+  70% { transform: scale(.985); }
+  100% { transform: scale(1); }
+}
 /* token-face 渐变定义在 render.js 的 buildDefs() 里 */
 .token-circle { fill: url(#token-face); stroke: #a8905c; stroke-width: .03; }
-.token-num { font-size: .38px; font-weight: 700; text-anchor: middle; pointer-events: none; }
+.token-ring { fill: none; stroke: rgba(120,90,40,.28); stroke-width: .012; pointer-events: none; }
+.token-num {
+  font-size: .38px; font-weight: 700; text-anchor: middle; pointer-events: none;
+  font-family: var(--font-num);
+}
 .token-num.red { fill: #c0392b; }
 .token-dots { fill: #333; }
 .token-dots.red { fill: #c0392b; }
 
-.harbor-badge { fill: url(#token-face); stroke: #8a7a55; stroke-width: .025; }
+/* 港口：插画徽章（harbor-*.webp）+ 底部羊皮纸比例小签 */
 .harbor-text { font-size: .3px; text-anchor: middle; pointer-events: none; }
-/* 2:1 港口徽章内部：上图标、下比例（CSS 字号会覆盖 SVG font-size 属性，必须写在这里） */
-.harbor-icon { font-size: .25px; }
-.harbor-rate { font-size: .15px; font-weight: 700; fill: #6b5a35; }
+.rate-pill { fill: #f7ecd2; stroke: #8a7a55; stroke-width: .018; }
+.harbor-rate { font-size: .14px; font-weight: 700; fill: #6b5a35; font-family: var(--font-num); }
 .harbor-line { stroke: #8a7a55; stroke-width: .035; stroke-dasharray: .1 .07; fill: none; }
 
 .road-piece { stroke-linecap: round; stroke-width: .16; }
@@ -401,12 +472,13 @@ body {
 .ghost { pointer-events: none; opacity: 0; transition: opacity .15s; }
 .hotspot:hover + .ghost { opacity: .65; }
 .spot-ring {
-  fill: none; stroke: #fff; stroke-width: .04; pointer-events: none;
-  animation: ring-pulse 2.8s ease-in-out infinite;
+  fill: none; stroke: #fff; stroke-width: .035; pointer-events: none;
+  transform-box: fill-box; transform-origin: center;
+  animation: ring-pulse 2s ease-in-out infinite;
 }
 @keyframes ring-pulse {
-  0%,100% { opacity: .9; }
-  50% { opacity: .3; }
+  0%,100% { opacity: .95; transform: scale(1); }
+  50% { opacity: .35; transform: scale(1.35); }
 }
 
 /* ---------- 弹窗 ---------- */
@@ -416,7 +488,10 @@ body {
   animation: fade-in .4s ease;
 }
 .modal-box {
-  background: linear-gradient(170deg, #fdfaf0, #f4ecd7);
+  background:
+    linear-gradient(170deg, rgba(253,250,240,.8), rgba(244,236,215,.62)),
+    url("/assets/opt/parchment-tile.webp") repeat;
+  background-size: auto, 340px;
   border: 1px solid var(--panel-line);
   border-radius: 14px; padding: 28px 32px; min-width: 340px;
   max-width: 90vw; text-align: center;
@@ -428,14 +503,28 @@ body {
 .modal-box p { margin: 10px 0; }
 .modal-close { margin-top: 14px; }
 
+/* 胜利横幅：标题压在插画横幅中央的留白区 */
+.victory-banner { position: relative; width: min(460px, 78vw); margin: -4px auto 10px; }
+.victory-banner img { width: 100%; display: block; pointer-events: none; }
+.victory-banner h2 {
+  position: absolute; left: 50%; top: 56%; transform: translate(-50%, -50%);
+  margin: 0; width: 72%; font-size: 21px; color: #5a3d1a;
+  text-shadow: 0 1px 0 rgba(255,248,230,.85);
+}
+
 .res-pickers { display: flex; gap: 10px; justify-content: center; margin: 10px 0; }
 .res-picker { text-align: center; }
 .res-picker .rp-card {
   width: 46px; height: 58px; border-radius: 8px; color: #fff;
-  display: flex; flex-direction: column; align-items: center; justify-content: center;
-  font-size: 18px; margin-bottom: 6px;
+  display: flex; flex-direction: column; align-items: center; justify-content: flex-end;
+  padding-bottom: 4px; font-size: 18px; margin-bottom: 6px;
+  border: 1px solid rgba(120,90,50,.4);
+  box-shadow: inset 0 -3px 0 var(--res-color, transparent);
 }
-.res-picker .rp-cnt { font-size: 14px; font-weight: 700; }
+.res-picker .rp-cnt {
+  font-size: 13px; font-weight: 700; background: rgba(0,0,0,.42);
+  border-radius: 9px; padding: 0 7px;
+}
 .res-picker .rp-btns { display: flex; gap: 4px; justify-content: center; }
 .res-picker .rp-btns button {
   width: 24px; height: 24px; border: none; border-radius: 6px; cursor: pointer;
@@ -481,6 +570,19 @@ body {
 #toast.show { opacity: 1; transform: translate(-50%,-8px); }
 
 #float-layer { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+/* 掷骰产出：资源图标从地块飞进底部手牌（轨迹由 main.js 用 WAAPI 驱动） */
+.fly-res {
+  position: fixed; left: 0; top: 0; z-index: 65;
+  pointer-events: none; transform: translate(-50%, -50%);
+  filter: drop-shadow(0 3px 5px rgba(0,0,0,.4));
+}
+.fly-res img { width: 30px; height: 30px; display: block; }
+
+/* 行内资源小图标：飘字、交易横幅、垄断按钮等处替代 emoji */
+.res-ico {
+  width: 1.25em; height: 1.25em; object-fit: contain;
+  vertical-align: -0.25em; display: inline-block;
+}
 .floater {
   position: absolute; font-size: 17px; font-weight: 700; color: #fff;
   text-shadow: 0 2px 5px rgba(0,0,0,.5); white-space: nowrap;

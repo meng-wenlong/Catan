@@ -1,3 +1,10 @@
 node_modules/
 *.log
 .DS_Store
+
+# 设计原始高清素材（每张 1-12M）：仅提交 public/assets/opt/ 下的压缩版
+# 原图与设计师签名源文件（_sources）另行存档，游戏运行只需 opt/
+public/assets/*.png
+public/assets/*.gif
+public/assets/*.webp
+public/assets/_sources/

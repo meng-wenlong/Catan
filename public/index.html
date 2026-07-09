@@ -5,6 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>卡坦岛 Online</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏝️</text></svg>">
+<!-- 标题衬线 + 数字圆体（离线 / 加载失败时回落系统字体，不影响使用） -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Noto+Serif+SC:wght@700;900&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -188,7 +192,10 @@
   <!-- 胜利 -->
   <div id="modal-winner" class="modal hidden">
     <div class="modal-box">
-      <h2 id="winner-title"></h2>
+      <div class="victory-banner">
+        <img src="/assets/opt/victory-banner.webp" alt="">
+        <h2 id="winner-title"></h2>
+      </div>
       <div id="winner-scores"></div>
       <button id="btn-again" class="btn primary hidden">🔄 回到大厅再来一局</button>
       <p class="hint" id="winner-hint">等待房主结束本局…</p>
