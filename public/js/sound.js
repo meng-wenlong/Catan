@@ -9,7 +9,7 @@ let audio = null;
 let bgmOn = localStorage.getItem('catan_bgm_on') !== '0';
 let bgmVol = (() => {
   const v = parseFloat(localStorage.getItem('catan_bgm_vol'));
-  return Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : 0.5;
+  return Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : 0.25;
 })();
 
 function ensureAudio() {

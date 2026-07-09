@@ -89,16 +89,16 @@ function tone(opts) {
 export const sfx = {
   // 普通按钮：短促的「嗒」
   click() {
-    tone({ freq: 740, freq2: 500, type: 'triangle', dur: 0.055, gain: 0.08 });
+    tone({ freq: 740, freq2: 500, type: 'triangle', dur: 0.055, gain: 0.16 });
   },
   // 主要按钮（橙色）：上扬的「叮」
   primary() {
-    tone({ freq: 520, freq2: 800, type: 'triangle', dur: 0.09, gain: 0.1 });
-    tone({ freq: 1150, type: 'sine', dur: 0.07, gain: 0.05, when: 0.04 });
+    tone({ freq: 520, freq2: 800, type: 'triangle', dur: 0.09, gain: 0.2 });
+    tone({ freq: 1150, type: 'sine', dur: 0.07, gain: 0.1, when: 0.04 });
   },
   // 危险按钮（红色）：低沉的「咚」
   danger() {
-    tone({ freq: 300, freq2: 180, type: 'triangle', dur: 0.13, gain: 0.12 });
+    tone({ freq: 300, freq2: 180, type: 'triangle', dur: 0.13, gain: 0.24 });
   },
 };
 
