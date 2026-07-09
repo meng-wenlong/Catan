@@ -811,6 +811,7 @@ export class Game {
         merchant: this.merchant,
         metropolis: this.metropolis,
         eventDie: this.turn.eventDie,
+        crane: this.turn.crane,
         decks: Object.fromEntries(IMPROVE_TRACKS.map((t) => [t, this.progressDecks[t].length])),
         pendingCityLoss: Object.keys(this.turn.pendingCityLoss).map(Number),
         pendingAqueduct: this.turn.pendingAqueduct,

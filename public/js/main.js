@@ -886,8 +886,10 @@ function renderImproveModal() {
       btn.textContent = '已满级';
       btn.disabled = true;
     } else {
-      btn.innerHTML = `升到 ${next} 级（${next} ${resIcon(com)}${RES_META[com].name}，有 ${have}）`;
-      btn.disabled = !(isMyTurn() && S.turn.state === 'main' && have >= next);
+      const craneOn = isMyTurn() && S.ck && S.ck.crane;
+      const cost = Math.max(0, next - (craneOn ? 1 : 0));
+      btn.innerHTML = `升到 ${next} 级（${cost} ${resIcon(com)}${RES_META[com].name}，有 ${have}）${craneOn ? ' 🏗️起重机 -1' : ''}`;
+      btn.disabled = !(isMyTurn() && S.turn.state === 'main' && have >= cost);
     }
     btn.onclick = () => {
       send({ type: 'buyImprovement', track: t });
