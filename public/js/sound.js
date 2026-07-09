@@ -2,7 +2,8 @@
 // 音乐文件不随仓库分发（版权原因）：自行把 mp3 放到 public/audio/bgm.mp3
 import { sfx, setSfxVolume, getSfxVolume } from './sfx.js';
 
-const BGM_URL = 'audio/bgm.mp3';
+// 按序尝试的文件名：放哪个都行（mp4/m4a 是 AAC 音频，带视频轨也只播声音）
+const BGM_CANDIDATES = ['audio/bgm.mp3', 'audio/bgm.mp4', 'audio/bgm.m4a', 'audio/bgm.ogg'];
 const $ = (id) => document.getElementById(id);
 
 let audio = null;
@@ -12,16 +13,24 @@ let bgmVol = (() => {
   return Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : 0.25;
 })();
 
+let srcIdx = 0;
 function ensureAudio() {
   if (audio) return audio;
-  audio = new Audio(BGM_URL);
+  audio = new Audio(BGM_CANDIDATES[0]);
   audio.loop = true;
   audio.volume = bgmVol;
-  // 文件缺失/加载失败：提示并停用开关，避免反复重试
   audio.addEventListener('error', () => {
-    bgmOn = false;
-    $('bgm-hint').classList.remove('hidden');
-    syncUI();
+    srcIdx += 1;
+    if (srcIdx < BGM_CANDIDATES.length) {
+      // 换下一个候选格式；起播交给下一次点击的 tryStart（浏览器要求手势）
+      audio.src = BGM_CANDIDATES[srcIdx];
+      if (bgmOn) audio.play().catch(() => {});
+    } else {
+      // 全部缺失/失败：提示并停用开关，避免反复重试
+      bgmOn = false;
+      $('bgm-hint').classList.remove('hidden');
+      syncUI();
+    }
   });
   return audio;
 }
