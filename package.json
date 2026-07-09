@@ -1,0 +1,19 @@
+{
+  "name": "catan-online",
+  "version": "0.1.0",
+  "description": "在线卡坦岛（基础版）— 浏览器多人游戏",
+  "type": "module",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js",
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "socket.io": "^4.7.5"
+  },
+  "devDependencies": {
+    "socket.io-client": "^4.8.3"
+  }
+}

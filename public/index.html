@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>卡坦岛 Online</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏝️</text></svg>">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- 首页 -->
+<div id="screen-home" class="screen">
+  <div class="home-card">
+    <h1>🏝️ 卡坦岛 Online</h1>
+    <p class="subtitle">与好友一起在浏览器里玩卡坦岛（基础版）</p>
+    <input id="home-name" maxlength="12" placeholder="你的昵称">
+    <button id="btn-create" class="btn primary big">创建房间</button>
+    <div class="join-row">
+      <input id="home-code" maxlength="4" placeholder="房间码">
+      <button id="btn-join" class="btn big">加入房间</button>
+    </div>
+    <p id="home-error" class="error-text"></p>
+  </div>
+</div>
+
+<!-- 等待大厅 -->
+<div id="screen-lobby" class="screen hidden">
+  <div class="home-card">
+    <h1>等待玩家</h1>
+    <p class="subtitle">房间码：<span id="lobby-code" class="room-code"></span><button id="btn-copy" class="btn small">复制</button></p>
+    <ul id="lobby-players" class="lobby-list"></ul>
+    <button id="btn-start" class="btn primary big hidden">开始游戏</button>
+    <p class="hint" id="lobby-hint">把房间码发给同学，人齐后由房主开始（3-4 人最佳，支持 2 人测试）</p>
+    <p id="lobby-error" class="error-text"></p>
+  </div>
+</div>
+
+<!-- 游戏界面 -->
+<div id="screen-game" class="screen hidden">
+  <div id="game-layout">
+    <div id="board-area">
+      <div id="status-bar">
+        <span id="status-text"></span>
+        <div id="dice-box" class="hidden">
+          <div class="die" id="die1"></div>
+          <div class="die" id="die2"></div>
+        </div>
+      </div>
+      <svg id="board" preserveAspectRatio="xMidYMid meet"></svg>
+      <div id="roll-overlay"></div>
+      <div id="turn-banner"><div class="turn-banner-inner"></div></div>
+      <div id="zoom-controls">
+        <button id="zoom-in" title="放大">＋</button>
+        <button id="zoom-out" title="缩小">－</button>
+        <button id="zoom-reset" title="复位视野（双击棋盘同效）">⤢</button>
+      </div>
+      <div id="float-layer"></div>
+    </div>
+
+    <div id="side-panel">
+      <div id="players-panel"></div>
+      <div id="log-panel">
+        <div id="log-list"></div>
+        <div id="chat-row">
+          <input id="chat-input" maxlength="200" placeholder="发送消息…">
+          <button id="chat-send" class="btn small">发送</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="bottom-bar">
+    <div id="hand-cards"></div>
+    <div id="dev-cards"></div>
+    <div id="action-buttons">
+      <button id="btn-roll" class="btn primary">🎲 掷骰子</button>
+      <button id="btn-road" class="btn build" title="1木 1砖">🛤️ 修路</button>
+      <button id="btn-settlement" class="btn build" title="木 砖 羊 麦 各1">🏠 村庄</button>
+      <button id="btn-city" class="btn build" title="2麦 3矿">🏰 城市</button>
+      <button id="btn-buydev" class="btn build" title="羊 麦 矿 各1">🎴 发展卡</button>
+      <button id="btn-trade" class="btn">🔄 交易</button>
+      <button id="btn-end" class="btn danger">✅ 结束回合</button>
+    </div>
+  </div>
+
+  <!-- 弃牌 -->
+  <div id="modal-discard" class="modal hidden">
+    <div class="modal-box">
+      <h2>掷出 7！请弃掉 <span id="discard-need"></span> 张牌</h2>
+      <div id="discard-pickers" class="res-pickers"></div>
+      <p>已选 <span id="discard-count">0</span> 张</p>
+      <button id="discard-confirm" class="btn primary">确认弃牌</button>
+    </div>
+  </div>
+
+  <!-- 偷牌目标 -->
+  <div id="modal-steal" class="modal hidden">
+    <div class="modal-box">
+      <h2>选择偷取对象</h2>
+      <div id="steal-targets" class="btn-column"></div>
+    </div>
+  </div>
+
+  <!-- 交易 -->
+  <div id="modal-trade" class="modal hidden">
+    <div class="modal-box wide">
+      <h2>交易</h2>
+      <div class="trade-tabs">
+        <button id="tab-player" class="btn tab active">玩家交易</button>
+        <button id="tab-bank" class="btn tab">银行 / 港口</button>
+      </div>
+      <div id="trade-player-pane">
+        <p class="trade-label">我出：</p>
+        <div id="trade-give" class="res-pickers"></div>
+        <p class="trade-label">我要：</p>
+        <div id="trade-get" class="res-pickers"></div>
+        <button id="trade-offer" class="btn primary">发起交易</button>
+      </div>
+      <div id="trade-bank-pane" class="hidden">
+        <p class="trade-label">用 <span id="bank-rate"></span> 张换 1 张：</p>
+        <div class="trade-bank-row">
+          <div>
+            <p class="trade-label small">给出</p>
+            <div id="bank-give" class="res-radio"></div>
+          </div>
+          <div class="trade-arrow">➡️</div>
+          <div>
+            <p class="trade-label small">获得</p>
+            <div id="bank-get" class="res-radio"></div>
+          </div>
+        </div>
+        <button id="bank-confirm" class="btn primary">与银行交易</button>
+      </div>
+      <button class="modal-close btn small" data-close="modal-trade">关闭</button>
+    </div>
+  </div>
+
+  <!-- 交易进行中（发起方 & 回应方） -->
+  <div id="trade-banner" class="hidden"></div>
+
+  <!-- 丰收之年 -->
+  <div id="modal-yop" class="modal hidden">
+    <div class="modal-box">
+      <h2>丰收之年：选择 2 张资源</h2>
+      <div id="yop-pickers" class="res-pickers"></div>
+      <button id="yop-confirm" class="btn primary">确认</button>
+      <button class="modal-close btn small" data-close="modal-yop">取消</button>
+    </div>
+  </div>
+
+  <!-- 垄断 -->
+  <div id="modal-monopoly" class="modal hidden">
+    <div class="modal-box">
+      <h2>垄断：选择 1 种资源</h2>
+      <div id="monopoly-btns" class="btn-column"></div>
+      <button class="modal-close btn small" data-close="modal-monopoly">取消</button>
+    </div>
+  </div>
+
+  <!-- 胜利 -->
+  <div id="modal-winner" class="modal hidden">
+    <div class="modal-box">
+      <h2 id="winner-title"></h2>
+      <div id="winner-scores"></div>
+      <p class="hint">刷新页面回到首页可再来一局</p>
+    </div>
+  </div>
+
+  <div id="toast"></div>
+</div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
