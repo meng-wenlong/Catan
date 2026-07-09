@@ -690,6 +690,8 @@ body {
 .res-cloth { --res-color: #c9a227; background-image: linear-gradient(165deg, #f7e08a, #d9b23a); }
 .res-coin { --res-color: #9aa2ad; background-image: linear-gradient(165deg, #e8e2c9, #b3a76c); }
 .res-paper { --res-color: #7fa36b; background-image: linear-gradient(165deg, #eef3dd, #b9cf9a); }
+/* 商品 emoji 图标为绝对定位：所有承载它的卡片容器都必须是定位上下文 */
+.res-picker .rp-card, .res-radio button { position: relative; }
 .com-ico {
   position: absolute; top: 46%; left: 50%; transform: translate(-50%, -50%);
   font-size: 26px; pointer-events: none; filter: drop-shadow(0 2px 2px rgba(0,0,0,.25));
