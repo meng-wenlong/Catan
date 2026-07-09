@@ -10,6 +10,7 @@ const TERRAIN_GRAD = {
 const HEX_W = Math.sqrt(3);
 
 let svg, board;
+let vpG = null; // 包住全部内容的视口组：平移缩放改它的 transform，而不是 svg 的 viewBox
 const layers = {};
 const roadEls = new Map();
 const buildingEls = new Map(); // vertexId -> {el, type}
@@ -21,8 +22,13 @@ let baseVB = null;   // 初始视野
 let vb = null;       // 当前视野
 let zoomBound = false;
 
+// viewBox 保持 baseVB 不变，视野变化通过 viewport 组的 transform 表达。
+// 不能每帧改 viewBox：Chrome 会因此丢弃整个 SVG 的绘制缓存并异步重解码 <image>，
+// 放大后拖动时来不及重画就闪白（Safari 同步光栅化无此问题）。transform 走合成器，无闪烁。
 function applyVB() {
-  svg.setAttribute('viewBox', `${vb.x} ${vb.y} ${vb.w} ${vb.h}`);
+  const s = baseVB.w / vb.w;
+  vpG.setAttribute('transform',
+    `translate(${baseVB.x - s * vb.x} ${baseVB.y - s * vb.y}) scale(${s})`);
 }
 
 function clampVB() {
@@ -36,7 +42,8 @@ function clampVB() {
 function svgPoint(clientX, clientY) {
   const pt = svg.createSVGPoint();
   pt.x = clientX; pt.y = clientY;
-  return pt.matrixTransform(svg.getScreenCTM().inverse());
+  // 经 viewport 组反推，得到含当前平移缩放的棋盘坐标
+  return pt.matrixTransform(vpG.getScreenCTM().inverse());
 }
 
 let vbAnim = 0;
@@ -229,12 +236,14 @@ export function initBoard(svgElement, boardData) {
   const h = Math.max(...ys) - minY + pad;
   baseVB = { x: minX, y: minY, w, h };
   vb = { ...baseVB };
-  applyVB();
+  svg.setAttribute('viewBox', `${baseVB.x} ${baseVB.y} ${baseVB.w} ${baseVB.h}`);
   bindZoomControls();
 
   buildDefs();
+  vpG = el('g', { id: 'viewport' }, svg);
+  applyVB();
   for (const name of ['island', 'hexes', 'harbors', 'roads', 'buildings', 'robber', 'hotspots']) {
-    layers[name] = el('g', { id: `layer-${name}` }, svg);
+    layers[name] = el('g', { id: `layer-${name}` }, vpG);
   }
 
   // 岛屿底座：不规则浅滩 + 沙滩海岸线（blob 形状确定性生成），外围点缀漂浮的浪花
