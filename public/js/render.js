@@ -10,7 +10,8 @@ const TERRAIN_GRAD = {
 const HEX_W = Math.sqrt(3);
 
 let svg, board;
-let vpG = null; // 包住全部内容的视口组：平移缩放改它的 transform，而不是 svg 的 viewBox
+let wrap = null; // svg 的裁剪容器（#board-wrap），提供未变换的布局矩形
+let vpG = null;  // 包住全部内容的分层组（本身不带变换）
 const layers = {};
 const roadEls = new Map();
 const buildingEls = new Map(); // vertexId -> {el, type}
@@ -22,13 +23,31 @@ let baseVB = null;   // 初始视野
 let vb = null;       // 当前视野
 let zoomBound = false;
 
-// viewBox 保持 baseVB 不变，视野变化通过 viewport 组的 transform 表达。
-// 不能每帧改 viewBox：Chrome 会因此丢弃整个 SVG 的绘制缓存并异步重解码 <image>，
-// 放大后拖动时来不及重画就闪白（Safari 同步光栅化无此问题）。transform 走合成器，无闪烁。
+// viewBox 保持 baseVB 不变，视野变化通过 svg 根元素的 CSS transform 表达。
+// 不能改 viewBox 或内部 <g> 的 transform：Chrome 不会合成 SVG 内部元素，
+// 每帧重绘并异步重解码 <image>，放大后拖动时来不及重画就闪白。
+// svg 根元素是 HTML 布局盒，它的 CSS transform 走合成器，拖动零重绘。
+
+// 基础几何：viewBox=baseVB 且 preserveAspectRatio=meet 时，棋盘坐标到容器像素的映射
+// k = 每棋盘单位的像素数；(ox, oy) = 居中留白偏移；s = 当前放大倍数
+function geom() {
+  const rect = wrap.getBoundingClientRect();
+  const k = Math.min(rect.width / baseVB.w, rect.height / baseVB.h);
+  return {
+    rect,
+    k,
+    ox: (rect.width - k * baseVB.w) / 2,
+    oy: (rect.height - k * baseVB.h) / 2,
+    s: baseVB.w / vb.w,
+  };
+}
+
+// 令可见区域 vb 恰好占据 baseVB 原本的位置：先绕左上角放大 s，再平移对齐
 function applyVB() {
-  const s = baseVB.w / vb.w;
-  vpG.setAttribute('transform',
-    `translate(${baseVB.x - s * vb.x} ${baseVB.y - s * vb.y}) scale(${s})`);
+  const { k, ox, oy, s } = geom();
+  const tx = (1 - s) * ox - s * k * (vb.x - baseVB.x);
+  const ty = (1 - s) * oy - s * k * (vb.y - baseVB.y);
+  svg.style.transform = `translate(${tx}px, ${ty}px) scale(${s})`;
 }
 
 function clampVB() {
@@ -39,11 +58,13 @@ function clampVB() {
   vb.y = Math.min(baseVB.y + baseVB.h - vb.h, Math.max(baseVB.y, vb.y));
 }
 
+// 屏幕坐标 → 棋盘坐标（自己按 geom 反算，不依赖 getScreenCTM，跨浏览器行为一致）
 function svgPoint(clientX, clientY) {
-  const pt = svg.createSVGPoint();
-  pt.x = clientX; pt.y = clientY;
-  // 经 viewport 组反推，得到含当前平移缩放的棋盘坐标
-  return pt.matrixTransform(vpG.getScreenCTM().inverse());
+  const { rect, k, ox, oy, s } = geom();
+  return {
+    x: vb.x + (clientX - rect.left - ox) / (k * s),
+    y: vb.y + (clientY - rect.top - oy) / (k * s),
+  };
 }
 
 let vbAnim = 0;
@@ -180,6 +201,9 @@ function bindZoomControls() {
     e.preventDefault();
     resetZoom();
   });
+
+  // transform 里的居中偏移依赖容器尺寸，窗口大小变化后需重算
+  window.addEventListener('resize', () => { if (vb) applyVB(); });
 }
 
 function el(tag, attrs = {}, parent) {
@@ -222,6 +246,7 @@ function blobPath(cx, cy, r0, amp, seed) {
 
 export function initBoard(svgElement, boardData) {
   svg = svgElement;
+  wrap = svg.parentElement;
   board = boardData;
   svg.innerHTML = '';
   roadEls.clear();
@@ -479,12 +504,13 @@ export function highlightProducingHexes(total, robberHex) {
   }
 }
 
-export function hexPixelPosition(hexId, svgElement) {
-  // 将棋盘坐标换算为屏幕坐标（用于飘字动画）
+export function hexPixelPosition(hexId) {
+  // 将棋盘坐标换算为屏幕坐标（用于飘字动画），与 svgPoint 互为正反映射
+  if (!wrap) return null;
   const hex = board.hexes[hexId];
-  const pt = svgElement.createSVGPoint();
-  pt.x = hex.x; pt.y = hex.y;
-  const ctm = svgElement.querySelector('#layer-hexes')?.getScreenCTM();
-  if (!ctm) return null;
-  return pt.matrixTransform(ctm);
+  const { rect, k, ox, oy, s } = geom();
+  return {
+    x: rect.left + ox + s * k * (hex.x - vb.x),
+    y: rect.top + oy + s * k * (hex.y - vb.y),
+  };
 }

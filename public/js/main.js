@@ -1033,7 +1033,7 @@ function flyResourceFromHex(res, n) {
   const ex = rect.left + rect.width / 2;
   const ey = rect.top + rect.height / 2;
   for (let i = 0; i < Math.min(n, 6); i++) {
-    const from = hexPixelPosition(hexes[i % hexes.length].id, $('board'));
+    const from = hexPixelPosition(hexes[i % hexes.length].id);
     if (!from) return false;
     const f = document.createElement('div');
     f.className = 'fly-res';

@@ -179,10 +179,15 @@ body {
 #screen-game { flex-direction: column; align-items: stretch; justify-content: flex-start; }
 #game-layout { flex: 1; display: flex; min-height: 0; }
 #board-area { flex: 1; position: relative; display: flex; flex-direction: column; min-width: 0; }
-#board { flex: 1; width: 100%; min-height: 0; touch-action: none; }
-/* 提升为独立合成层：缩放时 Chrome 先拉伸已有位图再异步重光栅化，
-   否则每次 scale 变化整层作废、来不及重画就闪白（拖动平移同理） */
-#viewport { will-change: transform; }
+/* 平移缩放通过 svg 根元素的 CSS transform 实现（见 render.js applyVB）：
+   Chrome 不会把 SVG 内部 <g> 提升为合成层，改 <g> 的 transform 每帧都重绘并异步重解码
+   图片，放大拖动时闪白；而 HTML 布局盒（svg 根元素）的 transform 走合成器，零重绘。
+   board-wrap 负责裁剪放大后溢出的部分。 */
+#board-wrap { flex: 1; position: relative; overflow: hidden; min-height: 0; }
+#board {
+  display: block; width: 100%; height: 100%; touch-action: none;
+  transform-origin: 0 0; will-change: transform;
+}
 
 #zoom-controls {
   position: absolute; right: 14px; bottom: 14px;
