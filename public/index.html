@@ -48,6 +48,25 @@
   </div>
 </div>
 
+<!-- 选颜色 / 定先手 -->
+<div id="screen-pick" class="screen hidden">
+  <div class="home-card">
+    <h1>🎨 选择棋子颜色</h1>
+    <p class="subtitle">每人挑一种颜色，房主指定谁先开始</p>
+    <div id="pick-colors"></div>
+    <ul id="pick-players" class="lobby-list"></ul>
+    <div id="pick-first-box">
+      <p class="pick-label">🥇 起始玩家</p>
+      <div id="pick-first"></div>
+      <p class="hint" id="pick-first-hint"></p>
+    </div>
+    <button id="pick-confirm" class="btn primary big hidden">⚔️ 开始对局</button>
+    <button id="pick-cancel" class="btn small hidden">返回大厅</button>
+    <p class="hint" id="pick-hint"></p>
+    <p id="pick-error" class="error-text"></p>
+  </div>
+</div>
+
 <!-- 游戏界面 -->
 <div id="screen-game" class="screen hidden">
   <div id="game-layout">

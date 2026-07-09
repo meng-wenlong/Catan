@@ -46,5 +46,6 @@ export const DEV_DECK = [
 export const PIECE_LIMITS = { road: 15, settlement: 5, city: 4 };
 export const BANK_PER_RESOURCE = 19;
 export const WIN_VP = 10;
-export const PLAYER_COLORS = ['#e74c3c', '#3498db', '#f39c12', '#ecf0f1'];
-export const COLOR_NAMES = ['红色', '蓝色', '橙色', '白色'];
+// 可选棋子颜色（开局前由玩家自选；前 4 个也是未选择时的默认分配）
+export const PLAYER_COLORS = ['#e74c3c', '#3498db', '#f39c12', '#ecf0f1', '#2ecc71', '#9b59b6'];
+export const COLOR_NAMES = ['红色', '蓝色', '橙色', '白色', '绿色', '紫色'];

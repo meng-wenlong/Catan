@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import express from 'express';
 import { Server } from 'socket.io';
 import { Game } from './game.js';
+import { PLAYER_COLORS, COLOR_NAMES } from './constants.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -14,7 +15,8 @@ app.use(express.static(path.join(__dirname, '..', 'public')));
 const server = http.createServer(app);
 const io = new Server(server, { pingInterval: 10000, pingTimeout: 20000 });
 
-// code -> { code, hostToken, players: [{token, name, socketId}], game, createdAt }
+// code -> { code, hostToken, players: [{token, name, socketId, colorIdx}], game, picking, createdAt }
+// picking：开局前的「选颜色/定先手」阶段 { colors: [colorIdx|null], first: -1 表示随机 }
 const rooms = new Map();
 
 function makeCode() {
@@ -56,11 +58,34 @@ function broadcastGame(room) {
   });
 }
 
+// 选颜色阶段的状态快照，发给房间内所有人
+function pickingState(room) {
+  return {
+    palette: PLAYER_COLORS.map((c, i) => ({ color: c, name: COLOR_NAMES[i] })),
+    players: room.players.map((p, i) => ({
+      name: p.name,
+      connected: !!p.socketId,
+      isHost: p.token === room.hostToken,
+      colorIdx: room.picking.colors[i],
+      index: i,
+    })),
+    first: room.picking.first, // -1 = 随机
+  };
+}
+
+function broadcastPicking(room) {
+  if (!room.picking) return;
+  const st = pickingState(room);
+  room.players.forEach((p, i) => {
+    if (p.socketId) io.to(p.socketId).emit('picking', { ...st, you: i });
+  });
+}
+
 // 公开的「正在等待玩家」的房间：未开始、未满、且至少有一名在线玩家
 function openRoomsList() {
   const list = [];
   for (const room of rooms.values()) {
-    if (room.game) continue;
+    if (room.game || room.picking) continue;
     if (room.players.length >= 4) continue;
     if (!room.players.some((p) => p.socketId)) continue;
     const host = room.players.find((p) => p.token === room.hostToken) || room.players[0];
@@ -115,7 +140,7 @@ io.on('connection', (socket) => {
     const code = makeCode();
     const token = crypto.randomUUID();
     const room = {
-      code, hostToken: token, game: null, createdAt: Date.now(),
+      code, hostToken: token, game: null, picking: null, createdAt: Date.now(),
       players: [{ token, name, socketId: socket.id }],
     };
     rooms.set(code, room);
@@ -141,11 +166,13 @@ io.on('connection', (socket) => {
       socket.emit('joined', { code, token: existing.token, index: room.players.indexOf(existing) });
       broadcastLobby(room);
       broadcastGame(room);
+      broadcastPicking(room); // 若正处于选颜色阶段，重连后直接回到选择界面
       broadcastOpenRooms();
       return;
     }
 
     if (room.game) return fail('游戏已开始，无法加入');
+    if (room.picking) return fail('房间正在选择颜色，无法加入');
     if (room.players.length >= 4) return fail('房间已满（最多 4 人）');
     name = String(name || '').trim().slice(0, 12);
     if (!name) return fail('请输入昵称');
@@ -163,13 +190,82 @@ io.on('connection', (socket) => {
     broadcastOpenRooms();
   });
 
+  // 房主点「开始游戏」：先进入选颜色/定先手阶段，确认后才真正开局
   socket.on('startGame', () => {
     const room = myRoom;
     if (!room) return fail('尚未加入房间');
     if (room.hostToken !== myToken) return fail('只有房主可以开始游戏');
     if (room.game) return fail('游戏已开始');
+    if (room.picking) return fail('已在选择颜色阶段');
     if (room.players.length < 2) return fail('至少需要 2 名玩家（标准为 3-4 人）');
-    room.game = new Game(room.players.map((p) => ({ name: p.name })));
+    room.picking = {
+      // 上一局选过的颜色作为默认（重开一局时不用重选）
+      colors: room.players.map((p) => (Number.isInteger(p.colorIdx) ? p.colorIdx : null)),
+      first: -1,
+    };
+    broadcastPicking(room);
+    broadcastOpenRooms(); // 选择阶段的房间不再对外开放
+  });
+
+  // 选颜色：点自己已选的颜色可取消，点空闲颜色为选中/换色
+  socket.on('pickColor', ({ colorIdx }) => {
+    const room = myRoom;
+    if (!room || !room.picking) return;
+    const idx = room.players.findIndex((pl) => pl.token === myToken);
+    if (idx < 0) return;
+    if (!Number.isInteger(colorIdx) || colorIdx < 0 || colorIdx >= PLAYER_COLORS.length) return;
+    const colors = room.picking.colors;
+    if (colors[idx] === colorIdx) {
+      colors[idx] = null; // 再点一次取消
+    } else {
+      if (colors.some((c, i) => c === colorIdx && i !== idx)) return fail('该颜色已被别人选走');
+      colors[idx] = colorIdx;
+    }
+    broadcastPicking(room);
+  });
+
+  // 房主指定起始玩家（-1 = 随机）
+  socket.on('pickFirst', ({ index }) => {
+    const room = myRoom;
+    if (!room || !room.picking) return;
+    if (room.hostToken !== myToken) return fail('只有房主可以指定起始玩家');
+    if (!Number.isInteger(index) || index < -1 || index >= room.players.length) return;
+    room.picking.first = index;
+    broadcastPicking(room);
+  });
+
+  // 房主取消，退回等待大厅
+  socket.on('pickCancel', () => {
+    const room = myRoom;
+    if (!room || !room.picking) return;
+    if (room.hostToken !== myToken) return fail('只有房主可以取消');
+    room.picking = null;
+    for (const p of room.players) {
+      if (p.socketId) io.to(p.socketId).emit('pickingCancelled');
+    }
+    broadcastLobby(room);
+    broadcastOpenRooms();
+  });
+
+  // 房主确认：全员已选颜色后正式开局
+  socket.on('pickConfirm', () => {
+    const room = myRoom;
+    if (!room || !room.picking) return;
+    if (room.hostToken !== myToken) return fail('只有房主可以开始对局');
+    const { colors, first } = room.picking;
+    if (colors.some((c) => c === null)) return fail('还有玩家未选颜色');
+    const start = first >= 0 ? first : Math.floor(Math.random() * room.players.length);
+    room.players.forEach((p, i) => { p.colorIdx = colors[i]; }); // 记住选择，下局作为默认
+    room.game = new Game(
+      room.players.map((p, i) => ({
+        name: p.name,
+        color: PLAYER_COLORS[colors[i]],
+        colorName: COLOR_NAMES[colors[i]],
+      })),
+      Math.random,
+      start,
+    );
+    room.picking = null;
     broadcastLobby(room);
     broadcastGame(room);
     broadcastOpenRooms();
@@ -194,6 +290,13 @@ io.on('connection', (socket) => {
     const room = myRoom;
     if (!room) return fail('尚未加入房间');
     if (room.game) return fail('对局进行中，无法退出');
+    // 选颜色阶段有人退出：取消本次选择（colors 数组按玩家下标对应，人变了就不再有效）
+    if (room.picking) {
+      room.picking = null;
+      for (const p of room.players) {
+        if (p.socketId && p.token !== myToken) io.to(p.socketId).emit('pickingCancelled');
+      }
+    }
     socket.emit('leftRoom');
     leaveCurrentRoom(); // 内部处理：移除玩家、空房删除、房主移交、广播大厅
     broadcastOpenRooms();
@@ -211,6 +314,7 @@ io.on('connection', (socket) => {
     // 清空残留引用：其他成员的连接仍握着此 room，防止销毁后继续收发
     room.players = [];
     room.game = null;
+    room.picking = null;
     myRoom = null;
     myToken = null;
     broadcastOpenRooms();
@@ -291,6 +395,7 @@ io.on('connection', (socket) => {
     } else if (room.hostToken === myToken && room.players.length === 1) {
       rooms.delete(room.code); // 空的未开始房间直接清理
     }
+    broadcastPicking(room); // 选颜色阶段刷新在线状态
     broadcastLobby(room);
     broadcastOpenRooms();
   });

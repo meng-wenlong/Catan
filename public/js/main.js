@@ -53,7 +53,7 @@ function toast(msg) {
 function send(data) { socket.emit('action', data); }
 
 function show(screen) {
-  for (const s of ['screen-home', 'screen-lobby', 'screen-game']) {
+  for (const s of ['screen-home', 'screen-lobby', 'screen-pick', 'screen-game']) {
     $(s).classList.toggle('hidden', s !== screen);
   }
 }
@@ -111,6 +111,73 @@ socket.on('leftRoom', () => {
   $('home-error').textContent = '';
   show('screen-home');
 });
+
+// ---------- 选颜色 / 定先手 ----------
+socket.on('picking', (pk) => {
+  renderPicking(pk);
+  show('screen-pick');
+});
+
+socket.on('pickingCancelled', () => {
+  if (!$('screen-pick').classList.contains('hidden')) show('screen-lobby');
+});
+
+$('pick-confirm').onclick = () => socket.emit('pickConfirm');
+$('pick-cancel').onclick = () => socket.emit('pickCancel');
+
+function renderPicking(pk) {
+  myIndex = pk.you; // 顺便校正本地下标（有人退出房间后下标可能变化）
+  const iAmHost = !!pk.players[pk.you]?.isHost;
+
+  // 颜色格：空闲可选，自己已选的再点一次取消，别人选走的置灰并显示名字
+  const box = $('pick-colors');
+  box.innerHTML = '';
+  pk.palette.forEach((c, ci) => {
+    const owner = pk.players.find((p) => p.colorIdx === ci);
+    const b = document.createElement('button');
+    b.className = 'pick-swatch';
+    b.style.setProperty('--sw', c.color);
+    if (owner) b.classList.add(owner.index === pk.you ? 'mine' : 'taken');
+    b.innerHTML = `<span class="sw-dot"></span><span class="sw-name">${owner ? esc(owner.name) : esc(c.name)}</span>`;
+    b.disabled = !!(owner && owner.index !== pk.you);
+    b.onclick = () => socket.emit('pickColor', { colorIdx: ci });
+    box.appendChild(b);
+  });
+
+  // 玩家进度列表
+  const ul = $('pick-players');
+  ul.innerHTML = '';
+  pk.players.forEach((p) => {
+    const c = p.colorIdx === null ? null : pk.palette[p.colorIdx];
+    const li = document.createElement('li');
+    li.innerHTML = `<span><span class="pick-dot" style="background:${c ? c.color : 'transparent'}"></span>${esc(p.name)}${p.isHost ? ' 👑' : ''}${p.connected ? '' : ' 🔴'}</span>
+      <span>${c ? esc(c.name) : '<i>选择中…</i>'}</span>`;
+    ul.appendChild(li);
+  });
+
+  // 起始玩家：房主可点，其他人只看
+  const fbox = $('pick-first');
+  fbox.innerHTML = '';
+  const opts = [{ index: -1, label: '🎲 随机' }, ...pk.players.map((p) => ({ index: p.index, label: p.name }))];
+  for (const o of opts) {
+    const b = document.createElement('button');
+    b.className = 'btn small pick-first-btn' + (pk.first === o.index ? ' active' : '');
+    b.textContent = o.label;
+    b.disabled = !iAmHost;
+    b.onclick = () => socket.emit('pickFirst', { index: o.index });
+    fbox.appendChild(b);
+  }
+  $('pick-first-hint').textContent = iAmHost ? '' : '由房主指定（默认随机）';
+
+  const ready = pk.players.every((p) => p.colorIdx !== null);
+  $('pick-confirm').classList.toggle('hidden', !iAmHost);
+  $('pick-confirm').disabled = !ready;
+  $('pick-cancel').classList.toggle('hidden', !iAmHost);
+  $('pick-hint').textContent = ready
+    ? (iAmHost ? '全员就绪！' : '全员就绪，等待房主开始对局…')
+    : '等待所有人选好颜色…';
+  $('pick-error').textContent = '';
+}
 
 socket.on('roomDestroyed', () => {
   clearSession();
@@ -222,6 +289,10 @@ socket.on('gameError', ({ msg }) => {
     return;
   }
   autoJoining = false;
+  if (!$('screen-pick').classList.contains('hidden')) {
+    $('pick-error').textContent = msg;
+    return;
+  }
   if ($('screen-home').classList.contains('hidden')
       && $('screen-lobby').classList.contains('hidden')) {
     toast(msg);

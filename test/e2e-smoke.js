@@ -6,8 +6,9 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
 function makeClient(name) {
   const socket = io(URL, { forceNew: true });
-  const c = { name, socket, state: null, index: -1, code: null, token: null };
+  const c = { name, socket, state: null, picking: null, index: -1, code: null, token: null };
   socket.on('state', (s) => { c.state = s; c.index = s.you.index; });
+  socket.on('picking', (pk) => { c.picking = pk; });
   socket.on('joined', (d) => { c.code = d.code; c.token = d.token; c.index = d.index; });
   socket.on('gameError', ({ msg }) => console.log(`  [${name}] 错误提示: ${msg}`));
   return c;
@@ -34,8 +35,15 @@ B.socket.emit('joinRoom', { code: A.code, name: '小红', token: null });
 await until(() => B.code, 'B 加入房间');
 console.log('✔ 第二名玩家加入成功');
 
-// 2. 开始游戏
+// 2. 开始游戏：先经过选颜色/定先手阶段，房主确认后正式开局
 A.socket.emit('startGame');
+await until(() => A.picking && B.picking, '双方进入选颜色阶段');
+console.log('✔ 进入选颜色阶段');
+A.socket.emit('pickColor', { colorIdx: 0 });
+B.socket.emit('pickColor', { colorIdx: 1 });
+await until(() => A.picking.players.every((p) => p.colorIdx !== null), '双方选好颜色');
+A.socket.emit('pickFirst', { index: 0 });
+A.socket.emit('pickConfirm');
 await until(() => A.state && B.state, '游戏开始，双方收到状态');
 console.log(`✔ 游戏开始，阶段: ${A.state.phase}`);
 

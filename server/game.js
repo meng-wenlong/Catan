@@ -19,7 +19,8 @@ function handCount(hand) {
 }
 
 export class Game {
-  constructor(playerInfos, rng = Math.random) {
+  // first：起始玩家下标（初始放置与第一个回合都从他开始）
+  constructor(playerInfos, rng = Math.random, first = 0) {
     this.rng = rng;
     this.board = generateBoard(rng);
     this.robber = this.board.robber;
@@ -27,8 +28,8 @@ export class Game {
     this.roads = {};     // edgeId -> playerIdx
     this.players = playerInfos.map((p, i) => ({
       name: p.name,
-      color: PLAYER_COLORS[i],
-      colorName: COLOR_NAMES[i],
+      color: p.color || PLAYER_COLORS[i],
+      colorName: p.colorName || COLOR_NAMES[i],
       hand: emptyHand(),
       devCards: [],
       knightsPlayed: 0,
@@ -39,7 +40,7 @@ export class Game {
     this.devDeck = shuffle(DEV_DECK, rng);
     this.phase = 'setup';
     const n = this.players.length;
-    const order = [...Array(n).keys()];
+    const order = Array.from({ length: n }, (_, k) => (first + k) % n);
     this.setup = {
       order: [...order, ...order.slice().reverse()],
       pos: 0,
@@ -57,7 +58,7 @@ export class Game {
     this.log = [];
     this.events = [];
     this.eventSeq = 0;
-    this.addLog(`游戏开始！${this.players[0].name} 先放置。`);
+    this.addLog(`游戏开始！${this.players[this.setup.order[0]].name} 先放置。`);
   }
 
   // ---------- 工具 ----------
@@ -198,8 +199,8 @@ export class Game {
     if (this.setup.pos >= this.setup.order.length) {
       this.phase = 'play';
       this.turn.state = 'preroll';
-      this.turn.player = 0;
-      this.addLog(`初始放置完成！轮到 ${this.players[0].name} 掷骰子。`);
+      this.turn.player = this.setup.order[0];
+      this.addLog(`初始放置完成！轮到 ${this.players[this.turn.player].name} 掷骰子。`);
     } else {
       this.addLog(`轮到 ${this.players[this.currentSetupPlayer()].name} 放置。`);
     }
