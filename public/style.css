@@ -229,8 +229,9 @@ body {
   display: flex; align-items: center; gap: 16px;
   padding: 10px 18px; color: #fff; font-size: 15px; font-weight: 500;
   text-shadow: 0 1px 3px rgba(0,0,0,.35);
-  /* 固定高度：骰子框显隐时状态栏高度不变，避免棋盘区域被挤压导致地图突然缩放 */
-  min-height: 54px;
+  /* 固定高度：骰子框显隐时状态栏高度不变，避免棋盘区域被挤压导致地图突然缩放。
+     必须 ≥ 骰子行高：.die 36px + 上下 padding 各 10px = 56px（54px 会差 2px 仍抖动） */
+  min-height: 56px;
 }
 #dice-box { display: flex; gap: 8px; }
 .die {
