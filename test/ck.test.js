@@ -398,3 +398,181 @@ test('ck：对手骑士截断最长道路', () => {
   g.updateLongestRoad();
   assert.equal(g.awards.longestRoad, null);
 });
+
+// 找一条 A-B-C 顶点链（均无建筑、两条边均无道路），用于构造骑士驱逐场景
+function findChain(g) {
+  for (const a of g.board.vertices) {
+    if (g.buildings[a.id]) continue;
+    for (const e1 of a.adjE) {
+      if (g.roads[e1] !== undefined) continue;
+      const ed1 = g.board.edges[e1];
+      const b = ed1.v1 === a.id ? ed1.v2 : ed1.v1;
+      if (g.buildings[b]) continue;
+      for (const e2 of g.board.vertices[b].adjE) {
+        if (e2 === e1 || g.roads[e2] !== undefined) continue;
+        const ed2 = g.board.edges[e2];
+        const c = ed2.v1 === b ? ed2.v2 : ed2.v1;
+        if (c === a.id || g.buildings[c]) continue;
+        return { a: a.id, b, c, e1, e2 };
+      }
+    }
+  }
+  throw new Error('找不到可用顶点链');
+}
+
+const mkKnight = (player, level, extra = {}) => ({
+  player, level, active: false,
+  builtTurn: 0, promotedTurn: 0, activatedTurn: 0, actedTurn: 0, ...extra,
+});
+
+test('ck：被驱逐骑士由主人沿自己路网重新安置', () => {
+  const g = newCK(3);
+  doSetup(g);
+  forceMain(g);
+  const { a, b, c, e1, e2 } = findChain(g);
+  g.roads[e1] = 0;                       // 攻击方的路 A-B
+  g.roads[e2] = 1;                       // 受害者的退路 B-C
+  g.knights[a] = mkKnight(0, 2, { active: true });
+  g.knights[b] = mkKnight(1, 1);
+  g.moveKnight(0, a, b);
+  assert.equal(g.turn.state, 'displace');
+  assert.equal(g.turn.displace.owner, 1);
+  assert.ok(g.turn.displace.options.includes(c));
+  // 其他人不能代选，无效位置被拒绝
+  assert.throws(() => g.placeDisplaced(2, c), /你不需要安置/);
+  assert.throws(() => g.placeDisplaced(1, a), /无效的位置/);
+  g.placeDisplaced(1, c);
+  assert.equal(g.turn.state, 'main');
+  assert.equal(g.knights[c].player, 1);
+  assert.equal(g.knights[c].level, 1);
+  assert.equal(g.knights[b].player, 0); // 攻击方骑士占据原位
+});
+
+test('ck：被驱逐骑士无处可放则移回补给区', () => {
+  const g = newCK(3);
+  doSetup(g);
+  forceMain(g);
+  const { a, b, e1 } = findChain(g);
+  g.roads[e1] = 0;
+  g.knights[a] = mkKnight(0, 2, { active: true });
+  g.knights[b] = mkKnight(1, 1);         // 受害者没有自己的路
+  g.moveKnight(0, a, b);
+  assert.equal(g.turn.state, 'main');    // 不进入安置状态
+  assert.equal(g.knights[b].player, 0);
+  assert.equal(Object.values(g.knights).filter((k) => k.player === 1).length, 0);
+});
+
+test('ck：多座城市时大都会由玩家自选', () => {
+  const g = newCK(3);
+  doSetup(g);
+  forceMain(g);
+  // 给玩家 0 加第二座城市
+  const spare = g.board.vertices.find((v) => !g.buildings[v.id]).id;
+  g.buildings[spare] = { player: 0, type: 'city' };
+  g.players[0].improvements.trade = 3;
+  g.players[0].hand.cloth = 4;
+  g.buyImprovement(0, 'trade');
+  assert.equal(g.turn.state, 'metropolis');
+  assert.equal(g.metropolis.trade, null);
+  const opts = g.turn.metroChoice.options;
+  assert.equal(opts.length, 2);
+  const vpBefore = g.victoryPoints(0, true);
+  g.chooseMetropolis(0, spare);
+  assert.equal(g.turn.state, 'main');
+  assert.equal(g.metropolis.trade.vertex, spare);
+  assert.equal(g.victoryPoints(0, true), vpBefore + 2);
+});
+
+test('ck：商业大亨查看手牌并自选 2 张', () => {
+  const g = newCK(3);
+  doSetup(g);
+  forceMain(g);
+  g.players[1].defenderVP = 2; // 让对方分数更高
+  g.players[1].hand = g.blankHand();
+  g.players[1].hand.wood = 1;
+  g.players[1].hand.cloth = 2;
+  g.players[0].progressCards.push({ type: 'masterMerchant', deck: 'trade' });
+  g.playProgress(0, 'masterMerchant', { target: 1 });
+  assert.equal(g.turn.state, 'pickCards');
+  assert.throws(() => g.pickCard(0, 'ore'), /对方没有这张牌/);
+  g.pickCard(0, 'cloth');
+  assert.equal(g.turn.state, 'pickCards');
+  g.pickCard(0, 'wood');
+  assert.equal(g.turn.state, 'main');
+  assert.equal(g.players[1].hand.wood, 0);
+  assert.equal(g.players[1].hand.cloth, 1);
+});
+
+test('ck：间谍查看并自选进步卡', () => {
+  const g = newCK(3);
+  doSetup(g);
+  forceMain(g);
+  g.players[1].progressCards.push({ type: 'warlord', deck: 'politics' }, { type: 'bishop', deck: 'politics' });
+  g.players[0].progressCards.push({ type: 'spy', deck: 'politics' });
+  g.playProgress(0, 'spy', { target: 1 });
+  assert.equal(g.turn.state, 'pickProgress');
+  g.pickProgressCard(0, 'bishop');
+  assert.equal(g.turn.state, 'main');
+  assert.deepEqual(g.players[0].progressCards.map((c) => c.type), ['bishop']);
+  assert.deepEqual(g.players[1].progressCards.map((c) => c.type), ['warlord']);
+});
+
+test('ck：婚礼由送礼方自选上缴的牌', () => {
+  const g = newCK(3);
+  doSetup(g);
+  forceMain(g);
+  g.players[1].defenderVP = 2;
+  g.players[2].defenderVP = 2;
+  g.players[1].hand = g.blankHand();
+  g.players[1].hand.ore = 3;
+  g.players[2].hand = g.blankHand();
+  g.players[2].hand.paper = 1; // 只有 1 张，交 1 张即完成
+  g.players[0].hand = g.blankHand();
+  g.players[0].progressCards.push({ type: 'wedding', deck: 'politics' });
+  g.playProgress(0, 'wedding');
+  assert.equal(g.turn.state, 'wedding');
+  assert.deepEqual(g.turn.pendingGive, { 1: 2, 2: 1 });
+  g.weddingGive(1, 'ore');
+  g.weddingGive(1, 'ore');
+  assert.equal(g.turn.pendingGive[1], undefined);
+  g.weddingGive(2, 'paper');
+  assert.equal(g.turn.state, 'main');
+  assert.equal(g.players[0].hand.ore, 2);
+  assert.equal(g.players[0].hand.paper, 1);
+});
+
+test('ck：商业港逐个交换（我选资源、对方选商品）', () => {
+  const g = newCK(3);
+  doSetup(g);
+  forceMain(g);
+  g.players[0].hand = g.blankHand();
+  g.players[0].hand.wood = 2;
+  g.players[1].hand = g.blankHand();
+  g.players[1].hand.cloth = 1;
+  g.players[2].hand = g.blankHand(); // 无商品，不进队列
+  g.players[0].progressCards.push({ type: 'commercialHarbor', deck: 'trade' });
+  g.playProgress(0, 'commercialHarbor');
+  assert.equal(g.turn.state, 'harbor');
+  assert.throws(() => g.harborTake(1, 'cloth'), /还没轮到你/);
+  g.harborGive(0, 'wood');
+  assert.throws(() => g.harborGive(0, 'wood'), /等待对方/);
+  g.harborTake(1, 'cloth');
+  assert.equal(g.turn.state, 'main'); // 队列只有玩家 1
+  assert.equal(g.players[0].hand.cloth, 1);
+  assert.equal(g.players[0].hand.wood, 1);
+  assert.equal(g.players[1].hand.wood, 1);
+  assert.equal(g.players[1].hand.cloth, 0);
+});
+
+test('ck：村庄棋子用完时被拆的城市直接移除', () => {
+  const g = newCK(3);
+  doSetup(g);
+  const cityV = Number(Object.keys(g.buildings).find(
+    (v) => g.buildings[v].player === 0 && g.buildings[v].type === 'city',
+  ));
+  g.players[0].pieces.settlement = 0;
+  const citiesBefore = g.players[0].pieces.city;
+  g.pillageCity(cityV);
+  assert.equal(g.buildings[cityV], undefined);
+  assert.equal(g.players[0].pieces.city, citiesBefore + 1);
+});

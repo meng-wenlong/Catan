@@ -57,6 +57,11 @@ export class Game {
       // 以下仅 ck 模式使用
       eventDie: null, fleet: null, crane: false,
       pendingAqueduct: [], pendingCityLoss: {}, postRollTotal: 0,
+      displace: null,    // 被驱逐骑士待安置 {owner, knight, options}
+      metroChoice: null, // 大都会选城 {track, options, stolenFrom}
+      pick: null,        // 商业大亨/间谍选牌 {type, from, count}
+      pendingGive: {},   // 婚礼：playerIdx -> 还需上缴张数
+      harbor: null,      // 商业港 {queue, idx, stage: 'give'|'take', give}
     };
     this.trade = null;
     this.awards = { longestRoad: null, largestArmy: null };
@@ -815,6 +820,15 @@ export class Game {
         decks: Object.fromEntries(IMPROVE_TRACKS.map((t) => [t, this.progressDecks[t].length])),
         pendingCityLoss: Object.keys(this.turn.pendingCityLoss).map(Number),
         pendingAqueduct: this.turn.pendingAqueduct,
+        displace: this.turn.displace
+          ? { owner: this.turn.displace.owner, level: this.turn.displace.knight.level }
+          : null,
+        metroTrack: this.turn.metroChoice?.track ?? null,
+        pick: this.turn.pick ? { type: this.turn.pick.type, from: this.turn.pick.from, count: this.turn.pick.count } : null,
+        pendingGive: Object.fromEntries(Object.entries(this.turn.pendingGive)),
+        harbor: this.turn.harbor
+          ? { current: this.turn.harbor.queue[this.turn.harbor.idx], stage: this.turn.harbor.stage }
+          : null,
       } : null,
       setup: this.phase === 'setup' ? {
         current: this.currentSetupPlayer(),

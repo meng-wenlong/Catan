@@ -365,6 +365,13 @@ io.on('connection', (socket) => {
         case 'playProgress': g.playProgress(p, data.card, data.payload || {}); break;
         case 'aqueductPick': g.aqueductPick(p, data.res); break;
         case 'chooseCityLoss': g.chooseCityLoss(p, data.vertex); break;
+        case 'placeDisplaced': g.placeDisplaced(p, data.vertex); break;
+        case 'chooseMetropolis': g.chooseMetropolis(p, data.vertex); break;
+        case 'pickCard': g.pickCard(p, data.card); break;
+        case 'pickProgress': g.pickProgressCard(p, data.card); break;
+        case 'weddingGive': g.weddingGive(p, data.card); break;
+        case 'harborGive': g.harborGive(p, data.res); break;
+        case 'harborTake': g.harborTake(p, data.com); break;
         default: return fail('未知操作');
       }
       broadcastGame(room);

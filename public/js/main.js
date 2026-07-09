@@ -540,6 +540,31 @@ function renderStatus() {
       text = S.ck.pendingCityLoss.includes(myIndex)
         ? '💥 野蛮人来袭！请点击你的一座城市（将被摧毁）'
         : `野蛮人来袭！等待 ${names} 选择被摧毁的城市…`;
+    } else if (st === 'displace') {
+      const d = S.ck.displace;
+      text = d.owner === myIndex
+        ? '⚔️ 你的骑士被驱逐！请点击新位置安置'
+        : `等待 ${S.players[d.owner].name} 安置被驱逐的骑士…`;
+    } else if (st === 'metropolis') {
+      text = isMyTurn() ? '🏛️ 请点击一座城市建立大都会' : `${cur.name} 正在选择大都会城市…`;
+    } else if (st === 'pickCards') {
+      text = isMyTurn()
+        ? `🃏 商业大亨：请从对方手牌中拿 ${S.ck.pick.count} 张`
+        : `${cur.name} 正在拿取 ${S.players[S.ck.pick.from].name} 的手牌…`;
+    } else if (st === 'pickProgress') {
+      text = isMyTurn() ? '🎴 间谍：请选择要偷的进步卡' : `${cur.name} 正在查看 ${S.players[S.ck.pick.from].name} 的进步卡…`;
+    } else if (st === 'wedding') {
+      const names = Object.keys(S.ck.pendingGive).map((i) => S.players[i].name).join('、');
+      text = S.ck.pendingGive[myIndex]
+        ? `💒 婚礼：请选 ${S.ck.pendingGive[myIndex]} 张牌送给 ${cur.name}`
+        : `婚礼！等待 ${names} 送礼…`;
+    } else if (st === 'harbor') {
+      const h = S.ck.harbor;
+      if (h.stage === 'give') {
+        text = isMyTurn() ? `⚓ 商业港：选 1 张资源交给 ${S.players[h.current].name}` : `${cur.name} 正在选择交换的资源…`;
+      } else {
+        text = h.current === myIndex ? `⚓ 商业港：选 1 张商品交给 ${cur.name}` : `等待 ${S.players[h.current].name} 返还商品…`;
+      }
     } else text = isMyTurn() ? '你的回合：建造、交易或结束回合' : `${cur.name} 的回合`;
   }
   $('status-text').textContent = text;
@@ -795,8 +820,8 @@ $('prog-confirm').onclick = () => {
   }
 };
 
-// 通用选择弹窗（进步卡：选牌 / 选玩家）
-function openPickModal(title, options) {
+// 通用选择弹窗（进步卡：选牌 / 选玩家）；forced 时不可取消（必须选）
+function openPickModal(title, options, { forced = false } = {}) {
   $('pick-modal-title').textContent = title;
   const box = $('pick-modal-btns');
   box.innerHTML = '';
@@ -810,6 +835,7 @@ function openPickModal(title, options) {
     };
     box.appendChild(b);
   }
+  document.querySelector('#modal-pick .modal-close').classList.toggle('hidden', forced);
   $('modal-pick').classList.remove('hidden');
 }
 const cardOption = (fn) => (r) => ({ label: `${resIcon(r)} ${RES_META[r].name}`, onPick: () => fn(r) });
@@ -946,8 +972,17 @@ function renderHotspots() {
     showVertexSpots(S.you.hints.cityLoss, (v) => send({ type: 'chooseCityLoss', vertex: v }));
     return;
   }
+  // 被驱逐骑士安置：同样可能不是当前回合玩家
+  if (S.turn.state === 'displace' && (S.you.hints.displaceSpots || []).length) {
+    showVertexSpots(S.you.hints.displaceSpots, (v) => send({ type: 'placeDisplaced', vertex: v }));
+    return;
+  }
   if (isMyTurn()) {
     const st = S.turn.state;
+    if (st === 'metropolis') {
+      showVertexSpots(S.you.hints.metroSpots || [], (v) => send({ type: 'chooseMetropolis', vertex: v }));
+      return;
+    }
     if (st === 'robber') {
       showRobberSpots(S.robber, (h) => send({ type: 'moveRobber', hex: h }));
       return;
@@ -1223,6 +1258,59 @@ function makePickers(container, sel, limits, onChange) {
 
 // ---------- 弃牌 ----------
 let discardOpen = false;
+// 状态驱动的选牌弹窗内容：返回 {title, options} 或 null
+let statePickOpen = false;
+function statePickSpec() {
+  if (S.mode !== 'ck' || S.phase !== 'play') return null;
+  const st = S.turn.state;
+  const H = S.you.hints;
+  const opt = (r, n, msg) => ({
+    label: `${resIcon(r)} ${RES_META[r].name}${n > 1 ? ` ×${n}` : ''}`,
+    onPick: () => send(msg),
+  });
+  if (st === 'pickCards' && isMyTurn() && H.pickHand) {
+    return {
+      title: `商业大亨：从 ${S.players[S.ck.pick.from].name} 的手牌中拿取（还差 ${S.ck.pick.count} 张）`,
+      options: cardList().filter((r) => H.pickHand[r] > 0)
+        .map((r) => opt(r, H.pickHand[r], { type: 'pickCard', card: r })),
+    };
+  }
+  if (st === 'pickProgress' && isMyTurn() && H.pickList) {
+    return {
+      title: `间谍：偷取 ${S.players[S.ck.pick.from].name} 的一张进步卡`,
+      options: H.pickList.map((t) => ({
+        label: PROG_META[t].name,
+        onPick: () => send({ type: 'pickProgress', card: t }),
+      })),
+    };
+  }
+  if (st === 'wedding' && H.weddingGive) {
+    return {
+      title: `婚礼：选 ${H.weddingGive} 张牌送给 ${S.players[S.turn.player].name}`,
+      options: cardList().filter((r) => S.you.hand[r] > 0)
+        .map((r) => opt(r, S.you.hand[r], { type: 'weddingGive', card: r })),
+    };
+  }
+  if (st === 'harbor' && S.ck.harbor) {
+    const h = S.ck.harbor;
+    if (h.stage === 'give' && isMyTurn() && H.harborGive) {
+      return {
+        title: `商业港：选 1 张资源交给 ${S.players[h.current].name}`,
+        options: RES.filter((r) => S.you.hand[r] > 0)
+          .map((r) => opt(r, S.you.hand[r], { type: 'harborGive', res: r })),
+      };
+    }
+    if (h.stage === 'take' && h.current === myIndex && H.harborTake) {
+      return {
+        title: `商业港：选 1 张商品交给 ${S.players[S.turn.player].name}`,
+        options: COM.filter((r) => S.you.hand[r] > 0)
+          .map((r) => opt(r, S.you.hand[r], { type: 'harborTake', com: r })),
+      };
+    }
+  }
+  return null;
+}
+
 function renderModals() {
   const needDiscard = S.turn.state === 'discard' && S.turn.pendingDiscards[myIndex];
   if (needDiscard && !discardOpen) {
@@ -1255,6 +1343,16 @@ function renderModals() {
       b.onclick = () => send({ type: 'steal', target: t });
       box.appendChild(b);
     }
+  }
+
+  // 交互式选牌（商业大亨/间谍/婚礼/商业港）：状态驱动的强制选择
+  const spec = statePickSpec();
+  if (spec) {
+    openPickModal(spec.title, spec.options, { forced: true });
+    statePickOpen = true;
+  } else if (statePickOpen) {
+    statePickOpen = false;
+    $('modal-pick').classList.add('hidden');
   }
 
   // 引水渠：任选 1 张资源

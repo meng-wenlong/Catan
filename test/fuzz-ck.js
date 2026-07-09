@@ -56,6 +56,28 @@ for (let seed = 1; seed <= 30; seed++) {
       } else if (st === 'barbarianLoss') {
         const i = Number(Object.keys(g.turn.pendingCityLoss)[0]);
         g.chooseCityLoss(i, g.turn.pendingCityLoss[i][0]);
+      } else if (st === 'displace') {
+        const d = g.turn.displace;
+        g.placeDisplaced(d.owner, d.options[rnd(d.options.length)]);
+      } else if (st === 'metropolis') {
+        const o = g.turn.metroChoice.options;
+        g.chooseMetropolis(p, o[rnd(o.length)]);
+      } else if (st === 'pickCards') {
+        g.pickCard(p, ALL.find((r) => g.players[g.turn.pick.from].hand[r] > 0));
+      } else if (st === 'pickProgress') {
+        const cards = g.players[g.turn.pick.from].progressCards;
+        g.pickProgressCard(p, cards[rnd(cards.length)].type);
+      } else if (st === 'wedding') {
+        const i = Number(Object.keys(g.turn.pendingGive)[0]);
+        g.weddingGive(i, ALL.find((r) => g.players[i].hand[r] > 0));
+      } else if (st === 'harbor') {
+        const h = g.turn.harbor;
+        if (h.stage === 'give') {
+          g.harborGive(p, RES.find((r) => g.players[p].hand[r] > 0));
+        } else {
+          const t = h.queue[h.idx];
+          g.harborTake(t, ['cloth', 'coin', 'paper'].find((r) => g.players[t].hand[r] > 0));
+        }
       } else if (st === 'roadbuilding') {
         const es = g.validRoadEdges(p);
         if (es.length === 0) { g.turn.state = 'main'; g.turn.freeRoads = 0; continue; }
@@ -64,7 +86,7 @@ for (let seed = 1; seed <= 30; seed++) {
         // 随机做 0-3 个动作再结束回合
         const acts = rnd(4);
         for (let a = 0; a < acts && g.turn.state === 'main' && g.phase === 'play'; a++) {
-          const roll = rnd(8);
+          const roll = rnd(10);
           try {
             if (roll === 0) {
               const spots = g.validKnightSpots(p);
@@ -112,6 +134,29 @@ for (let seed = 1; seed <= 30; seed++) {
               // 打一张手里的进步卡（无 payload 的类型）
               const simple = g.players[p].progressCards.find((c) => ['warlord', 'crane', 'irrigation', 'mining', 'commercialHarbor', 'wedding', 'saboteur', 'roadBuilding'].includes(c.type));
               if (simple) g.playProgress(p, simple.type);
+            } else if (roll === 8) {
+              // 移动骑士（优先驱逐，锻炼被驱逐骑士安置流程）
+              const mine = Object.keys(g.knights)
+                .filter((v) => g.knights[v].player === p && !g.knightCanAct(p, Number(v)));
+              if (mine.length) {
+                const v = Number(mine[rnd(mine.length)]);
+                const { moves, displaces } = g.knightMoveTargets(p, v);
+                const to = displaces.length ? displaces[rnd(displaces.length)]
+                  : (moves.length ? moves[rnd(moves.length)] : null);
+                if (to !== null) g.moveKnight(p, v, to);
+              }
+            } else if (roll === 9) {
+              // 打需要选目标的进步卡（商业大亨/间谍/阴谋）
+              const targeted = g.players[p].progressCards.find((c) => ['masterMerchant', 'spy', 'intrigue'].includes(c.type));
+              if (targeted) {
+                if (targeted.type === 'intrigue') {
+                  const ks = Object.keys(g.knights).filter((v) => g.knights[v].player !== p
+                    && g.board.vertices[v].adjE.some((e) => g.roads[e] === p));
+                  if (ks.length) g.playProgress(p, 'intrigue', { vertex: Number(ks[0]) });
+                } else {
+                  g.playProgress(p, targeted.type, { target: (p + 1 + rnd(2)) % 3 });
+                }
+              }
             }
           } catch (e) {
             if (!e.isGameError) throw e;

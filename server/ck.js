@@ -1,8 +1,6 @@
 // 「城市与骑士」扩展：常量 + Game 原型方法（由 game.js 挂载）
-// 简化说明（v1）：
-// - 被驱逐/替换的骑士直接移回补给区（官方规则允许其主人另选位置）
-// - 大都会自动放在该玩家第一座可用城市上（官方由玩家自选）
-// - 商业港/商业大亨/婚礼等「对方选牌」的效果改为随机抽取
+// 简化说明：
+// - 逃兵替换的骑士直接移回补给区（官方由受害者选择哪个骑士叛逃）抽取
 import { RESOURCES, TERRAIN_RESOURCE } from './constants.js';
 import { shuffle } from './board.js';
 
@@ -248,17 +246,44 @@ export const ckMethods = {
     const displacing = displaces.includes(to);
     if (!moves.includes(to) && !displacing) this.err('骑士无法移动到该位置');
     const k = this.knights[from];
-    if (displacing) {
-      const victim = this.knights[to];
-      this.addLog(`${this.players[p].name} 的骑士驱逐了 ${this.players[victim.player].name} 的 ${victim.level} 级骑士（移回补给区）`);
-      delete this.knights[to];
-    }
+    const victim = displacing ? this.knights[to] : null;
     delete this.knights[from];
+    // 先算受害者沿自己路网可去的空位（此时攻击者已离开原位）
+    const victimSpots = displacing ? this.knightMoveTargets(victim.player, to).moves : null;
+    if (displacing) delete this.knights[to];
     this.knights[to] = k;
     k.active = false; // 行动后骑士休整
     k.actedTurn = this.turn.count;
     this.addEvent('knightMove', { player: p, from, to });
     this.addLog(`${this.players[p].name} 移动了骑士`);
+    if (displacing) {
+      this.startDisplace(victim, victimSpots, `${this.players[p].name} 的骑士驱逐了 ${this.players[victim.player].name} 的 ${victim.level} 级骑士`);
+    }
+    this.updateLongestRoad();
+  },
+
+  // 骑士被驱逐：有空位则由其主人安置（displace 状态），否则移回补给区
+  startDisplace(knight, spots, prefix) {
+    if (spots.length === 0) {
+      this.addLog(`${prefix}——无处安置，移回补给区`);
+      return;
+    }
+    this.turn.displace = { owner: knight.player, knight, options: spots };
+    this.turn.state = 'displace';
+    this.addLog(`${prefix}，等待 ${this.players[knight.player].name} 重新安置`);
+  },
+
+  placeDisplaced(p, v) {
+    this.requireCK();
+    this.requireState('displace');
+    const d = this.turn.displace;
+    if (!d || d.owner !== p) this.err('你不需要安置骑士');
+    if (!d.options.includes(v)) this.err('无效的位置');
+    this.knights[v] = d.knight;
+    this.turn.displace = null;
+    this.turn.state = 'main';
+    this.addEvent('build', { player: p, kind: 'knight', vertex: v });
+    this.addLog(`${this.players[p].name} 重新安置了被驱逐的骑士`);
     this.updateLongestRoad();
   },
 
@@ -332,15 +357,38 @@ export const ckMethods = {
       if (newLvl < 5 || this.players[m.player].improvements[track] >= 5) return;
     }
     const metro = this.metropolisVertices();
-    const v = this.ownCityVertices(p).find((cv) => !metro.has(cv));
-    if (v === undefined) {
+    const options = this.ownCityVertices(p).filter((cv) => !metro.has(cv));
+    if (options.length === 0) {
       this.addLog(`${this.players[p].name} 没有可用城市，无法建立${TRACK_NAME[track]}大都会`);
       return;
     }
+    if (options.length === 1) {
+      this.placeMetropolis(track, p, options[0]);
+      return;
+    }
+    this.turn.metroChoice = { track, options };
+    this.turn.state = 'metropolis';
+    this.addLog(`${this.players[p].name} 请选择建立${TRACK_NAME[track]}大都会的城市`);
+  },
+
+  placeMetropolis(track, p, v) {
+    const m = this.metropolis[track];
     if (m) this.addLog(`${this.players[p].name} 从 ${this.players[m.player].name} 手中夺走了${TRACK_NAME[track]}大都会！`);
     else this.addLog(`🏛️ ${this.players[p].name} 建立了${TRACK_NAME[track]}大都会（+2 分）！`);
     this.metropolis[track] = { player: p, vertex: v };
     this.addEvent('metropolis', { player: p, track, vertex: v });
+  },
+
+  chooseMetropolis(p, v) {
+    this.requireTurn(p);
+    this.requireCK();
+    this.requireState('metropolis');
+    const c = this.turn.metroChoice;
+    if (!c.options.includes(v)) this.err('无效的城市');
+    this.turn.metroChoice = null;
+    this.turn.state = 'main';
+    this.placeMetropolis(c.track, p, v);
+    this.checkWin();
   },
 
   // ---------- 野蛮人 ----------
@@ -410,15 +458,22 @@ export const ckMethods = {
 
   pillageCity(v) {
     const b = this.buildings[v];
-    b.type = 'settlement';
-    this.players[b.player].pieces.city++;
-    this.players[b.player].pieces.settlement--;
     if (this.walls[v] !== undefined) {
       delete this.walls[v];
       this.addLog(`${this.players[b.player].name} 的城墙随城市一同被摧毁`);
     }
+    this.players[b.player].pieces.city++;
+    if (this.players[b.player].pieces.settlement > 0) {
+      b.type = 'settlement';
+      this.players[b.player].pieces.settlement--;
+      this.addLog(`💥 ${this.players[b.player].name} 的城市被野蛮人摧毁，降级为村庄`);
+    } else {
+      // 村庄棋子用完：城市整个被移除
+      delete this.buildings[v];
+      this.addLog(`💥 ${this.players[b.player].name} 的城市被野蛮人夷平（没有村庄棋子可降级）`);
+      this.updateLongestRoad(); // 建筑消失可能重新连通对手道路
+    }
     this.addEvent('pillage', { player: b.player, vertex: v });
-    this.addLog(`💥 ${this.players[b.player].name} 的城市被野蛮人摧毁，降级为村庄`);
   },
 
   chooseCityLoss(p, v) {
@@ -479,6 +534,100 @@ export const ckMethods = {
     if (this.turn.pendingAqueduct.length === 0) this.turn.state = 'main';
   },
 
+  // ---------- 交互式选牌（商业大亨/间谍/婚礼/商业港） ----------
+  // 商业大亨：当前玩家从目标手牌中逐张拿取
+  pickCard(p, card) {
+    this.requireTurn(p);
+    this.requireCK();
+    this.requireState('pickCards');
+    const pick = this.turn.pick;
+    const from = this.players[pick.from];
+    if (!this.cardTypes().includes(card) || from.hand[card] <= 0) this.err('对方没有这张牌');
+    from.hand[card]--;
+    this.players[p].hand[card]++;
+    pick.count--;
+    this.addEvent('steal', { from: pick.from, to: p });
+    if (pick.count <= 0 || cardsOf(from.hand, this.cardTypes()).length === 0) {
+      this.addLog(`${this.players[p].name} 拿走了 ${from.name} 的牌`);
+      this.turn.pick = null;
+      this.turn.state = 'main';
+    }
+  },
+
+  // 间谍：当前玩家从目标的进步卡中选一张偷走
+  pickProgressCard(p, card) {
+    this.requireTurn(p);
+    this.requireCK();
+    this.requireState('pickProgress');
+    const pick = this.turn.pick;
+    const cards = this.players[pick.from].progressCards;
+    const idx = cards.findIndex((c) => c.type === card);
+    if (idx < 0) this.err('对方没有这张进步卡');
+    this.players[p].progressCards.push(cards.splice(idx, 1)[0]);
+    this.addEvent('steal', { from: pick.from, to: p });
+    this.addLog(`${this.players[p].name} 偷走了 ${this.players[pick.from].name} 的一张进步卡`);
+    this.turn.pick = null;
+    this.turn.state = 'main';
+  },
+
+  // 婚礼：被影响玩家逐张选择上缴的牌
+  weddingGive(p, card) {
+    this.requireCK();
+    this.requireState('wedding');
+    const need = this.turn.pendingGive[p];
+    if (!need) this.err('你不需要送礼');
+    const pl = this.players[p];
+    if (!this.cardTypes().includes(card) || pl.hand[card] <= 0) this.err('你没有这张牌');
+    pl.hand[card]--;
+    this.players[this.turn.player].hand[card]++;
+    this.addEvent('steal', { from: p, to: this.turn.player });
+    const left = need - 1;
+    if (left <= 0 || cardsOf(pl.hand, this.cardTypes()).length === 0) {
+      delete this.turn.pendingGive[p];
+      this.addLog(`${pl.name} 献上贺礼`);
+    } else {
+      this.turn.pendingGive[p] = left;
+    }
+    if (Object.keys(this.turn.pendingGive).length === 0) this.turn.state = 'main';
+  },
+
+  // 商业港：当前玩家选给出的资源
+  harborGive(p, res) {
+    this.requireTurn(p);
+    this.requireCK();
+    this.requireState('harbor');
+    const h = this.turn.harbor;
+    if (h.stage !== 'give') this.err('等待对方选择商品');
+    if (!RESOURCES.includes(res) || this.players[p].hand[res] <= 0) this.err('你没有这张资源');
+    h.give = res;
+    h.stage = 'take';
+    this.addLog(`${this.players[p].name} 选好了要交给 ${this.players[h.queue[h.idx]].name} 的资源`);
+  },
+
+  // 商业港：被交换的对手选返还的商品，随后推进队列
+  harborTake(p, com) {
+    this.requireCK();
+    this.requireState('harbor');
+    const h = this.turn.harbor;
+    if (h.stage !== 'take' || h.queue[h.idx] !== p) this.err('还没轮到你选择');
+    const op = this.players[p];
+    if (!COMMODITIES.includes(com) || op.hand[com] <= 0) this.err('你没有这张商品');
+    const me = this.players[this.turn.player];
+    me.hand[h.give]--; op.hand[h.give]++;
+    op.hand[com]--; me.hand[com]++;
+    this.addLog(`${me.name} 用 1 张${CARD_NAME[h.give]}换得 ${op.name} 的 1 张${CARD_NAME[com]}`);
+    h.give = null;
+    h.stage = 'give';
+    h.idx++;
+    // 跳过已无商品的对手；自己没资源了则提前结束
+    while (h.idx < h.queue.length
+      && cardsOf(this.players[h.queue[h.idx]].hand, COMMODITIES).length === 0) h.idx++;
+    if (h.idx >= h.queue.length || cardsOf(me.hand, RESOURCES).length === 0) {
+      this.turn.harbor = null;
+      this.turn.state = 'main';
+    }
+  },
+
   // 随机从 from 拿一张牌（资源+商品）给 to；返回牌名或 null
   moveRandomCard(from, to) {
     const pool = cardsOf(this.players[from].hand, this.cardTypes());
@@ -527,33 +676,30 @@ export const ckMethods = {
         break;
       }
       case 'commercialHarbor': {
+        if (cardsOf(pl.hand, RESOURCES).length === 0) this.err('你没有资源牌可交换');
+        // 按座位顺序与每位持有商品的对手交换：我选给出的资源，对方选返还的商品
+        const queue = [];
+        for (let j = 1; j < this.players.length; j++) {
+          const i = (p + j) % this.players.length;
+          if (cardsOf(this.players[i].hand, COMMODITIES).length > 0) queue.push(i);
+        }
+        if (queue.length === 0) this.err('没有持有商品的对手');
         spend();
-        // 简化：与每位对手随机交换（我出 1 资源，换对方 1 商品）
-        let any = false;
-        this.players.forEach((op, i) => {
-          if (i === p) return;
-          const myRes = cardsOf(pl.hand, RESOURCES);
-          const theirCom = cardsOf(op.hand, COMMODITIES);
-          if (myRes.length === 0 || theirCom.length === 0) return;
-          const give = myRes[Math.floor(this.rng() * myRes.length)];
-          const take = theirCom[Math.floor(this.rng() * theirCom.length)];
-          pl.hand[give]--; op.hand[give]++;
-          op.hand[take]--; pl.hand[take]++;
-          any = true;
-          this.addLog(`${pl.name} 用 1 张${CARD_NAME[give]}换走 ${op.name} 的 1 张${CARD_NAME[take]}`);
-        });
-        if (!any) this.addLog('没有可交换的对象');
+        this.turn.harbor = { queue, idx: 0, stage: 'give', give: null };
+        this.turn.state = 'harbor';
+        this.addLog(`商业港：${pl.name} 将与 ${queue.map((i) => this.players[i].name).join('、')} 依次交换（资源换商品）`);
         break;
       }
       case 'masterMerchant': {
         const t = payload.target;
         if (!Number.isInteger(t) || t === p || !this.players[t]) this.err('请选择一名对手');
         if (this.victoryPoints(t, true) <= this.victoryPoints(p, true)) this.err('只能选择分数比你高的玩家');
+        const theirs = cardsOf(this.players[t].hand, this.cardTypes()).length;
+        if (theirs === 0) this.err('对方没有手牌');
         spend();
-        let n = 0;
-        for (let i = 0; i < 2; i++) if (this.moveRandomCard(t, p)) n++;
-        this.addEvent('steal', { from: t, to: p });
-        this.addLog(`${pl.name} 从 ${this.players[t].name} 手中拿走 ${n} 张牌`);
+        this.turn.pick = { type: 'masterMerchant', from: t, count: Math.min(2, theirs) };
+        this.turn.state = 'pickCards';
+        this.addLog(`${pl.name} 查看 ${this.players[t].name} 的手牌并拿走 ${this.turn.pick.count} 张`);
         break;
       }
       case 'resourceMonopoly': {
@@ -668,8 +814,9 @@ export const ckMethods = {
         const onMyRoad = this.board.vertices[payload.vertex].adjE.some((e2) => this.roads[e2] === p);
         if (!onMyRoad) this.err('只能驱逐位于你道路上的骑士');
         spend();
+        const spots = this.knightMoveTargets(k.player, payload.vertex).moves;
         delete this.knights[payload.vertex];
-        this.addLog(`${pl.name} 用阴谋驱逐了 ${this.players[k.player].name} 的骑士（移回补给区）`);
+        this.startDisplace(k, spots, `${pl.name} 用阴谋驱逐了 ${this.players[k.player].name} 的骑士`);
         this.updateLongestRoad();
         break;
       }
@@ -701,10 +848,9 @@ export const ckMethods = {
         if (cards.length === 0) this.err('对方没有进步卡');
         if (pl.progressCards.length >= MAX_PROGRESS_HAND) this.err(`你的进步卡已满（${MAX_PROGRESS_HAND} 张）`);
         spend();
-        const stolen = cards.splice(Math.floor(this.rng() * cards.length), 1)[0];
-        pl.progressCards.push(stolen);
-        this.addEvent('steal', { from: t, to: p });
-        this.addLog(`${pl.name} 用间谍偷走了 ${this.players[t].name} 的一张进步卡`);
+        this.turn.pick = { type: 'spy', from: t, count: 1 };
+        this.turn.state = 'pickProgress';
+        this.addLog(`${pl.name} 用间谍查看 ${this.players[t].name} 的进步卡`);
         break;
       }
       case 'warlord': {
@@ -721,18 +867,20 @@ export const ckMethods = {
       case 'wedding': {
         spend();
         const myVp = this.victoryPoints(p, true);
-        let any = false;
+        const pending = {};
         this.players.forEach((op, i) => {
           if (i === p || this.victoryPoints(i, true) <= myVp) return;
-          let n = 0;
-          for (let j = 0; j < 2; j++) if (this.moveRandomCard(i, p)) n++;
-          if (n > 0) {
-            any = true;
-            this.addEvent('steal', { from: i, to: p });
-            this.addLog(`${op.name} 献上 ${n} 张牌作为婚礼贺礼`);
-          }
+          const n = Math.min(2, cardsOf(op.hand, this.cardTypes()).length);
+          if (n > 0) pending[i] = n;
         });
-        if (!any) this.addLog('没有分数更高的玩家，婚礼无人送礼');
+        if (Object.keys(pending).length === 0) {
+          this.addLog('没有分数更高的玩家，婚礼无人送礼');
+        } else {
+          this.turn.pendingGive = pending;
+          this.turn.state = 'wedding';
+          const names = Object.keys(pending).map((i) => this.players[i].name).join('、');
+          this.addLog(`婚礼！${names} 需各自选择 2 张牌作为贺礼。`);
+        }
         break;
       }
 
@@ -850,6 +998,25 @@ export const ckMethods = {
     if (this.turn.state === 'barbarianLoss' && this.turn.pendingCityLoss[p]) {
       hints.cityLoss = this.turn.pendingCityLoss[p];
       return;
+    }
+    if (this.turn.state === 'displace' && this.turn.displace?.owner === p) {
+      hints.displaceSpots = this.turn.displace.options;
+      return;
+    }
+    if (this.turn.state === 'wedding' && this.turn.pendingGive[p]) {
+      hints.weddingGive = this.turn.pendingGive[p];
+      return;
+    }
+    if (this.turn.state === 'harbor' && this.turn.harbor?.stage === 'take'
+      && this.turn.harbor.queue[this.turn.harbor.idx] === p) {
+      hints.harborTake = true;
+      return;
+    }
+    if (this.turn.player === p) {
+      if (this.turn.state === 'metropolis') { hints.metroSpots = this.turn.metroChoice.options; return; }
+      if (this.turn.state === 'pickCards') { hints.pickHand = { ...this.players[this.turn.pick.from].hand }; return; }
+      if (this.turn.state === 'pickProgress') { hints.pickList = this.players[this.turn.pick.from].progressCards.map((c) => c.type); return; }
+      if (this.turn.state === 'harbor' && this.turn.harbor.stage === 'give') { hints.harborGive = true; return; }
     }
     if (this.turn.player !== p || this.turn.state !== 'main') return;
     hints.knightSpots = this.validKnightSpots(p);
