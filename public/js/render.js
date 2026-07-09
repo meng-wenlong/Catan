@@ -1,9 +1,10 @@
 // SVG 棋盘渲染：地形、数字、港口、棋子、强盗、可点击热点
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
-const TERRAIN_COLOR = {
-  forest: '#2d8a4e', hills: '#c2693e', pasture: '#8fce5a',
-  fields: '#e9c548', mountains: '#97a1a8', desert: '#e3d3a3',
+// 每种地形一组 [亮色, 暗色]，用 SVG 原生径向渐变填充（各浏览器含 Safari 都支持）
+const TERRAIN_GRAD = {
+  forest: ['#38a862', '#1e7c41'], hills: ['#d67e4e', '#a3512e'], pasture: ['#abdc72', '#7ab440'],
+  fields: ['#f3d162', '#d3a72c'], mountains: ['#b1bac2', '#78868f'], desert: ['#efe0b0', '#d8c081'],
 };
 const TERRAIN_ICON = {
   forest: '🌲', hills: '🧱', pasture: '🐑', fields: '🌾', mountains: '⛰️', desert: '🏜️',
@@ -185,6 +186,23 @@ function el(tag, attrs = {}, parent) {
   return node;
 }
 
+// 渐变定义：地形、沙滩、令牌面（token-face 同时供 CSS 里 .token-circle / .harbor-badge 引用）
+function buildDefs() {
+  const defs = el('defs', {}, svg);
+  for (const [name, [c1, c2]] of Object.entries(TERRAIN_GRAD)) {
+    const g = el('radialGradient', { id: `terra-${name}`, cx: '50%', cy: '40%', r: '78%' }, defs);
+    el('stop', { offset: '0%', 'stop-color': c1 }, g);
+    el('stop', { offset: '100%', 'stop-color': c2 }, g);
+  }
+  const sand = el('radialGradient', { id: 'island-sand' }, defs);
+  el('stop', { offset: '72%', 'stop-color': '#f0e2b3' }, sand);
+  el('stop', { offset: '92%', 'stop-color': '#e5cf95' }, sand);
+  el('stop', { offset: '100%', 'stop-color': '#d5b878' }, sand);
+  const tok = el('radialGradient', { id: 'token-face', cx: '50%', cy: '38%', r: '72%' }, defs);
+  el('stop', { offset: '0%', 'stop-color': '#fdf7e4' }, tok);
+  el('stop', { offset: '100%', 'stop-color': '#ebd9ab' }, tok);
+}
+
 export function initBoard(svgElement, boardData) {
   svg = svgElement;
   board = boardData;
@@ -204,21 +222,36 @@ export function initBoard(svgElement, boardData) {
   applyVB();
   bindZoomControls();
 
+  buildDefs();
   for (const name of ['island', 'hexes', 'harbors', 'roads', 'buildings', 'robber', 'hotspots']) {
     layers[name] = el('g', { id: `layer-${name}` }, svg);
   }
 
-  // 岛屿底座（沙滩色描边）
+  // 岛屿底座：浅滩水色 + 沙滩渐变，外围点缀浪花
   const cx = (Math.min(...xs) + Math.max(...xs)) / 2;
   const cy = (Math.min(...ys) + Math.max(...ys)) / 2;
-  el('circle', { cx, cy, r: Math.max(w, h) / 2 + 0.1, fill: 'rgba(240,225,180,.25)' }, layers.island);
+  const hexR = Math.max(...board.hexes.map((hx) => Math.hypot(hx.x - cx, hx.y - cy))) + 1;
+  el('circle', { cx, cy, r: hexR + 0.55, fill: 'rgba(195,232,244,.32)' }, layers.island);
+  el('circle', {
+    cx, cy, r: hexR + 0.2, fill: 'url(#island-sand)',
+    stroke: 'rgba(150,120,60,.3)', 'stroke-width': 0.025,
+  }, layers.island);
+  for (let i = 0; i < 10; i++) {
+    const a = (Math.PI / 5) * i + 0.33;
+    const wr = hexR + 0.78 + (i % 3) * 0.17;
+    const wx = cx + Math.cos(a) * wr;
+    const wy = cy + Math.sin(a) * wr * 0.9;
+    el('path', { d: `M ${wx - 0.16} ${wy} q .08 -.09 .16 0 q .08 .09 .16 0`, class: 'sea-wave' }, layers.island);
+  }
 
   for (const hex of board.hexes) {
     const pts = hexCornerString(hex);
     el('polygon', {
-      points: pts, class: 'hex', fill: TERRAIN_COLOR[hex.terrain],
+      points: pts, class: 'hex', fill: `url(#terra-${hex.terrain})`,
       'data-hex': hex.id,
     }, layers.hexes);
+    // 内侧白描边：给地形块一点浮雕感
+    el('polygon', { points: hexCornerString(hex, 0.93), class: 'hex-bevel' }, layers.hexes);
     // 产出闪光罩：Safari 不支持对 SVG 子元素做 CSS filter 动画，改为叠白色罩闪 opacity
     el('polygon', { points: pts, class: 'hex-shine', 'data-hex': hex.id }, layers.hexes);
     const icon = el('text', {
@@ -229,6 +262,8 @@ export function initBoard(svgElement, boardData) {
 
     if (hex.number) {
       const g = el('g', {}, layers.hexes);
+      // 偏移一点的暗色圆充当阴影（不能用 filter 投影，Safari 不支持）
+      el('circle', { cx: hex.x + 0.02, cy: hex.y + 0.33, r: 0.3, fill: 'rgba(70,45,10,.22)' }, g);
       el('circle', { cx: hex.x, cy: hex.y + 0.3, r: 0.3, class: 'token-circle' }, g);
       const red = hex.number === 6 || hex.number === 8;
       const num = el('text', {
@@ -253,11 +288,13 @@ export function initBoard(svgElement, boardData) {
       class: 'harbor-line',
     }, layers.harbors);
     if (hb.type === 'any') {
+      el('circle', { cx: hb.x + 0.015, cy: hb.y + 0.025, r: 0.26, fill: 'rgba(70,45,10,.2)' }, layers.harbors);
       el('circle', { cx: hb.x, cy: hb.y, r: 0.26, class: 'harbor-badge' }, layers.harbors);
       const t = el('text', { x: hb.x, y: hb.y + 0.1, class: 'harbor-text' }, layers.harbors);
       t.textContent = '3:1';
     } else {
       // 上图标下比例，两行都收在徽章内
+      el('circle', { cx: hb.x + 0.015, cy: hb.y + 0.025, r: 0.3, fill: 'rgba(70,45,10,.2)' }, layers.harbors);
       el('circle', { cx: hb.x, cy: hb.y, r: 0.3, class: 'harbor-badge' }, layers.harbors);
       const icon = el('text', { x: hb.x, y: hb.y + 0.02, class: 'harbor-text harbor-icon' }, layers.harbors);
       icon.textContent = HARBOR_ICON[hb.type];
@@ -273,11 +310,11 @@ export function initBoard(svgElement, boardData) {
   el('ellipse', { cx: 0, cy: 0.2, rx: 0.17, ry: 0.05, fill: '#3b3b46', class: 'piece' }, robberEl);
 }
 
-function hexCornerString(hex) {
+function hexCornerString(hex, r = 1) {
   const pts = [];
   for (let i = 0; i < 6; i++) {
     const a = (Math.PI / 180) * (60 * i - 30);
-    pts.push(`${hex.x + Math.cos(a)},${hex.y + Math.sin(a)}`);
+    pts.push(`${hex.x + Math.cos(a) * r},${hex.y + Math.sin(a) * r}`);
   }
   return pts.join(' ');
 }
