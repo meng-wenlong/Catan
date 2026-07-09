@@ -85,6 +85,39 @@ $('btn-copy').onclick = () => {
 
 $('btn-start').onclick = () => socket.emit('startGame');
 
+// 非房主：退出房间
+$('btn-leave').onclick = () => socket.emit('leaveRoom');
+
+// 房主：销毁房间（3 秒内点第二次才真正执行，防误触）
+let destroyArmed = null;
+$('btn-destroy').onclick = () => {
+  if (destroyArmed) {
+    clearTimeout(destroyArmed);
+    destroyArmed = null;
+    socket.emit('destroyRoom');
+    return;
+  }
+  $('btn-destroy').textContent = '⚠️ 再点一次确认销毁';
+  destroyArmed = setTimeout(() => {
+    destroyArmed = null;
+    $('btn-destroy').textContent = '💥 销毁房间';
+  }, 3000);
+};
+
+socket.on('leftRoom', () => {
+  clearSession();
+  myRoomCode = null;
+  $('home-error').textContent = '';
+  show('screen-home');
+});
+
+socket.on('roomDestroyed', () => {
+  clearSession();
+  myRoomCode = null;
+  $('home-error').textContent = '房间已被房主销毁';
+  show('screen-home');
+});
+
 // 会话保存：sessionStorage 按标签页隔离（方便同机多开测试），localStorage 兜底（标签页误关后可恢复）
 function saveSession(code, token) {
   sessionStorage.setItem('catan_token', token);
@@ -128,6 +161,8 @@ socket.on('lobby', (lobby) => {
     if (p.isHost && p.index === myIndex) iAmHost = true;
   });
   $('btn-start').classList.toggle('hidden', !iAmHost || lobby.started);
+  $('btn-destroy').classList.toggle('hidden', !iAmHost || lobby.started);
+  $('btn-leave').classList.toggle('hidden', iAmHost || lobby.started);
   renderOpenRooms(); // 房间码变化后刷新「其它房间」列表（排除自己）
 });
 

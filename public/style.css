@@ -104,6 +104,8 @@ body {
 .btn.subtle { background: rgba(185,85,46,.2); color: #ffd9c7; border: 1.5px solid rgba(216,140,110,.75); }
 .btn.subtle:hover:not(:disabled) { background: rgba(185,85,46,.38); color: #fff; }
 .btn.big { width: 100%; padding: 13px; font-size: 16px; margin-top: 4px; }
+.lobby-exit-row { margin-top: 10px; }
+.lobby-exit-row .btn { min-width: 130px; }
 .btn.small { padding: 5px 10px; font-size: 12px; }
 .btn.build.armed { background: var(--accent); color: #fff; box-shadow: 0 0 0 3px rgba(230,126,34,.35); }
 .btn.tab { border-radius: 8px 8px 0 0; }

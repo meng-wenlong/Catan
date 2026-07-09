@@ -189,6 +189,33 @@ io.on('connection', (socket) => {
     broadcastOpenRooms();
   });
 
+  // 非房主主动退出（未开始的）房间
+  socket.on('leaveRoom', () => {
+    const room = myRoom;
+    if (!room) return fail('尚未加入房间');
+    if (room.game) return fail('对局进行中，无法退出');
+    socket.emit('leftRoom');
+    leaveCurrentRoom(); // 内部处理：移除玩家、空房删除、房主移交、广播大厅
+    broadcastOpenRooms();
+  });
+
+  // 房主销毁房间：房间直接删除，全员回到首页
+  socket.on('destroyRoom', () => {
+    const room = myRoom;
+    if (!room) return fail('尚未加入房间');
+    if (room.hostToken !== myToken) return fail('只有房主可以销毁房间');
+    rooms.delete(room.code);
+    for (const p of room.players) {
+      if (p.socketId) io.to(p.socketId).emit('roomDestroyed');
+    }
+    // 清空残留引用：其他成员的连接仍握着此 room，防止销毁后继续收发
+    room.players = [];
+    room.game = null;
+    myRoom = null;
+    myToken = null;
+    broadcastOpenRooms();
+  });
+
   socket.on('action', (data) => {
     const room = myRoom;
     if (!room || !room.game) return fail('游戏尚未开始');
