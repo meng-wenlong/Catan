@@ -105,11 +105,13 @@ socket.on('joined', ({ code, token, index }) => {
   autoJoining = false;
   saveSession(code, token);
   myIndex = index;
+  myRoomCode = code;
   $('home-error').textContent = '';
   show('screen-lobby');
 });
 
 socket.on('lobby', (lobby) => {
+  myRoomCode = lobby.code;
   $('lobby-code').textContent = lobby.code;
   const ul = $('lobby-players');
   ul.innerHTML = '';
@@ -122,7 +124,54 @@ socket.on('lobby', (lobby) => {
     if (p.isHost && p.index === myIndex) iAmHost = true;
   });
   $('btn-start').classList.toggle('hidden', !iAmHost || lobby.started);
+  renderOpenRooms(); // 房间码变化后刷新「其它房间」列表（排除自己）
 });
+
+// ---------- 公开房间列表 ----------
+let openRoomsData = [];
+let myRoomCode = null;
+
+socket.on('openRooms', (list) => { openRoomsData = list || []; renderOpenRooms(); });
+
+function renderOpenRooms() {
+  fillRooms($('home-rooms'), $('home-rooms-list'), openRoomsData);
+  // 大厅里不显示自己所在的房间
+  fillRooms($('lobby-rooms'), $('lobby-rooms-list'), openRoomsData.filter((r) => r.code !== myRoomCode));
+}
+
+function fillRooms(wrap, ul, list) {
+  ul.innerHTML = '';
+  for (const r of list) {
+    const li = document.createElement('li');
+    const info = document.createElement('span');
+    info.className = 'room-info';
+    info.innerHTML = `<b>${esc(r.code)}</b> · ${esc(r.hostName)} 的房间`;
+    const right = document.createElement('span');
+    right.className = 'room-right';
+    const meta = document.createElement('span');
+    meta.className = 'room-meta';
+    meta.textContent = `${r.count}/4 人`;
+    const btn = document.createElement('button');
+    btn.className = 'btn small primary';
+    btn.textContent = '加入';
+    btn.onclick = () => joinRoomByCode(r.code);
+    right.append(meta, btn);
+    li.append(info, right);
+    ul.appendChild(li);
+  }
+  wrap.classList.toggle('hidden', list.length === 0);
+}
+
+function joinRoomByCode(code) {
+  const name = $('home-name').value.trim() || localStorage.getItem('catan_name') || '';
+  if (!name) {
+    $('home-error').textContent = '请先输入昵称';
+    $('lobby-error').textContent = '请先输入昵称';
+    return;
+  }
+  localStorage.setItem('catan_name', name);
+  socket.emit('joinRoom', { code, name, token: null });
+}
 
 socket.on('gameError', ({ msg }) => {
   // 页面加载时旧会话自动重连失败：静默清理，不打扰用户
@@ -160,6 +209,7 @@ if (new URLSearchParams(location.search).has('new')) {
 
 let autoJoining = false;
 socket.on('connect', () => {
+  socket.emit('listRooms'); // 拉取当前正在等待玩家的房间
   const { token, code } = loadSession();
   const name = localStorage.getItem('catan_name');
   if (token && code) {

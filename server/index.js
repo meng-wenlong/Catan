@@ -55,6 +55,23 @@ function broadcastGame(room) {
   });
 }
 
+// 公开的「正在等待玩家」的房间：未开始、未满、且至少有一名在线玩家
+function openRoomsList() {
+  const list = [];
+  for (const room of rooms.values()) {
+    if (room.game) continue;
+    if (room.players.length >= 4) continue;
+    if (!room.players.some((p) => p.socketId)) continue;
+    const host = room.players.find((p) => p.token === room.hostToken) || room.players[0];
+    list.push({ code: room.code, hostName: host ? host.name : '房间', count: room.players.length });
+  }
+  return list;
+}
+
+function broadcastOpenRooms() {
+  io.emit('openRooms', openRoomsList());
+}
+
 // 定期清理超过 24 小时的房间
 setInterval(() => {
   const now = Date.now();
@@ -68,6 +85,25 @@ io.on('connection', (socket) => {
   let myToken = null;
 
   const fail = (msg) => socket.emit('gameError', { msg });
+
+  // 彻底离开当前（未开始的）房间：房主离开则移交，房间空了则删除
+  function leaveCurrentRoom() {
+    const room = myRoom;
+    if (!room || room.game) return;
+    const leftToken = myToken;
+    const idx = room.players.findIndex((p) => p.token === leftToken);
+    if (idx >= 0) room.players.splice(idx, 1);
+    myRoom = null;
+    myToken = null;
+    if (room.players.length === 0) {
+      rooms.delete(room.code);
+    } else {
+      if (room.hostToken === leftToken) room.hostToken = room.players[0].token;
+      broadcastLobby(room);
+    }
+  }
+
+  socket.on('listRooms', () => socket.emit('openRooms', openRoomsList()));
 
   socket.on('createRoom', ({ name }) => {
     name = String(name || '').trim().slice(0, 12);
@@ -83,6 +119,7 @@ io.on('connection', (socket) => {
     myToken = token;
     socket.emit('joined', { code, token, index: 0 });
     broadcastLobby(room);
+    broadcastOpenRooms();
   });
 
   socket.on('joinRoom', ({ code, name, token }) => {
@@ -100,6 +137,7 @@ io.on('connection', (socket) => {
       socket.emit('joined', { code, token: existing.token, index: room.players.indexOf(existing) });
       broadcastLobby(room);
       broadcastGame(room);
+      broadcastOpenRooms();
       return;
     }
 
@@ -109,12 +147,16 @@ io.on('connection', (socket) => {
     if (!name) return fail('请输入昵称');
     if (room.players.some((p) => p.name === name)) return fail('昵称已被使用');
 
+    // 从大厅切换到别人的房间：先退出原房间
+    if (myRoom && myRoom !== room && !myRoom.game) leaveCurrentRoom();
+
     const newToken = crypto.randomUUID();
     room.players.push({ token: newToken, name, socketId: socket.id });
     myRoom = room;
     myToken = newToken;
     socket.emit('joined', { code, token: newToken, index: room.players.length - 1 });
     broadcastLobby(room);
+    broadcastOpenRooms();
   });
 
   socket.on('startGame', () => {
@@ -126,6 +168,7 @@ io.on('connection', (socket) => {
     room.game = new Game(room.players.map((p) => ({ name: p.name })));
     broadcastLobby(room);
     broadcastGame(room);
+    broadcastOpenRooms();
   });
 
   socket.on('action', (data) => {
@@ -189,6 +232,7 @@ io.on('connection', (socket) => {
       rooms.delete(room.code); // 空的未开始房间直接清理
     }
     broadcastLobby(room);
+    broadcastOpenRooms();
   });
 });
 

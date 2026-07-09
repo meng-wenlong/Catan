@@ -21,6 +21,10 @@
       <button id="btn-join" class="btn big">加入房间</button>
     </div>
     <p id="home-error" class="error-text"></p>
+    <div id="home-rooms" class="open-rooms hidden">
+      <p class="or-title">🟢 正在等待玩家的房间</p>
+      <ul id="home-rooms-list" class="rooms-list"></ul>
+    </div>
   </div>
 </div>
 
@@ -33,6 +37,10 @@
     <button id="btn-start" class="btn primary big hidden">开始游戏</button>
     <p class="hint" id="lobby-hint">把房间码发给同学，人齐后由房主开始（3-4 人最佳，支持 2 人测试）</p>
     <p id="lobby-error" class="error-text"></p>
+    <div id="lobby-rooms" class="open-rooms hidden">
+      <p class="or-title">其它正在等待的房间（点击可加入）</p>
+      <ul id="lobby-rooms-list" class="rooms-list"></ul>
+    </div>
   </div>
 </div>
 

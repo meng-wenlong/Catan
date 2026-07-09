@@ -57,6 +57,20 @@ body {
 .error-text { color: #c0392b; font-size: 13px; margin-top: 10px; min-height: 18px; }
 .hint { color: #999; font-size: 12px; margin-top: 12px; }
 
+/* 公开房间列表（首页 / 大厅） */
+.open-rooms { margin-top: 18px; border-top: 1px solid var(--panel-border); padding-top: 14px; }
+.or-title { color: #888; font-size: 13px; margin-bottom: 10px; text-align: left; }
+.rooms-list { list-style: none; text-align: left; max-height: 210px; overflow-y: auto; }
+.rooms-list li {
+  padding: 9px 12px; border-radius: 8px; margin-bottom: 6px;
+  background: #f5f2ea; display: flex; justify-content: space-between; align-items: center;
+  gap: 10px; animation: slide-in .5s ease;
+}
+.rooms-list .room-info { font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rooms-list .room-info b { color: var(--accent); font-family: monospace; letter-spacing: 2px; }
+.rooms-list .room-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.rooms-list .room-meta { color: #999; font-size: 12px; }
+
 /* ---------- 按钮 ---------- */
 .btn {
   border: none; border-radius: 10px; padding: 9px 16px;
