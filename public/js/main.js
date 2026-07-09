@@ -2,7 +2,7 @@
 import {
   initBoard, updatePieces, clearHotspots,
   showVertexSpots, showEdgeSpots, showRobberSpots,
-  zoomAt, resetZoom, highlightProducingHexes,
+  zoomAt, resetZoom, highlightProducingHexes, hexPixelPosition,
 } from './render.js';
 import { initSfx } from './sfx.js';
 import { initSound } from './sound.js';
@@ -20,6 +20,10 @@ const RES_META = {
   wheat: { icon: '🌾', name: '小麦' },
   ore: { icon: '🪨', name: '矿石' },
 };
+// 行内资源小图标（替代 emoji；emoji 仅留作 title 等纯文本场景）
+const resIcon = (r) => `<img class="res-ico" src="/assets/opt/icon-${r}.webp" alt="${RES_META[r].name}">`;
+// 骰面插画
+const setDie = (el, n) => { el.innerHTML = `<img src="/assets/opt/die-${n}.webp" alt="${n}">`; };
 const DEV_META = {
   knight: { icon: '⚔️', name: '骑士' },
   vp: { icon: '🏆', name: '分数' },
@@ -436,8 +440,8 @@ function renderStatus() {
     $('dice-box').classList.remove('hidden');
     // 骰子动画播放期间不提前显示最终点数
     if (Date.now() >= diceAnimUntil) {
-      $('die1').textContent = S.turn.dice[0];
-      $('die2').textContent = S.turn.dice[1];
+      setDie($('die1'), S.turn.dice[0]);
+      setDie($('die2'), S.turn.dice[1]);
     }
   } else if (Date.now() >= diceAnimUntil) {
     $('dice-box').classList.add('hidden');
@@ -478,7 +482,8 @@ function renderHand() {
     const n = S.you.hand[r];
     const div = document.createElement('div');
     div.className = `res-card res-${r}`;
-    div.innerHTML = `<span>${RES_META[r].icon}</span><span class="cnt">${n}</span>`;
+    // 卡面是插画（CSS 背景图），不再叠 emoji，只留数量徽章
+    div.innerHTML = `<span class="cnt">${n}</span>`;
     div.title = `${RES_META[r].name} ×${n}（银行汇率 ${S.you.rates[r]}:1）`;
     if (prevHand && n > prevHand[r]) div.classList.add('bump');
     wrap.appendChild(div);
@@ -498,8 +503,8 @@ function renderDevCards() {
   }
   for (const [type, g] of Object.entries(groups)) {
     const btn = document.createElement('button');
-    btn.className = 'dev-card';
-    btn.innerHTML = `<span>${DEV_META[type].icon}</span><small>${DEV_META[type].name}${g.total > 1 ? `×${g.total}` : ''}</small>`;
+    btn.className = `dev-card t-${type}`;
+    btn.innerHTML = `<small>${DEV_META[type].name}${g.total > 1 ? `×${g.total}` : ''}</small>`;
     const canPlay = g.playable > 0 && isMyTurn() && !S.turn.devPlayed
       && (type === 'knight'
         ? ['preroll', 'main'].includes(S.turn.state)
@@ -545,12 +550,15 @@ function renderButtons() {
 }
 
 // ---------- 热点交互 ----------
+// 悬停放置点时显示的半透明预览棋子（自己的颜色）
+const ghostOf = (kind) => ({ kind, color: S.players[myIndex].color });
+
 function renderHotspots() {
   if (isMySetup()) {
     if (S.setup.awaiting === 'settlement') {
-      showVertexSpots(S.you.hints.settlements || [], (v) => send({ type: 'setupSettlement', vertex: v }));
+      showVertexSpots(S.you.hints.settlements || [], (v) => send({ type: 'setupSettlement', vertex: v }), ghostOf('settlement'));
     } else {
-      showEdgeSpots(S.you.hints.roads || [], (e) => send({ type: 'setupRoad', edge: e }));
+      showEdgeSpots(S.you.hints.roads || [], (e) => send({ type: 'setupRoad', edge: e }), ghostOf('road'));
     }
     return;
   }
@@ -561,16 +569,16 @@ function renderHotspots() {
       return;
     }
     if (st === 'roadbuilding') {
-      showEdgeSpots(S.you.hints.roads || [], (e) => send({ type: 'buildRoad', edge: e }));
+      showEdgeSpots(S.you.hints.roads || [], (e) => send({ type: 'buildRoad', edge: e }), ghostOf('road'));
       return;
     }
     if (st === 'main' && armed) {
       if (armed === 'road') {
-        showEdgeSpots(S.you.hints.roads || [], (e) => { armed = null; send({ type: 'buildRoad', edge: e }); });
+        showEdgeSpots(S.you.hints.roads || [], (e) => { armed = null; send({ type: 'buildRoad', edge: e }); }, ghostOf('road'));
       } else if (armed === 'settlement') {
-        showVertexSpots(S.you.hints.settlements || [], (v) => { armed = null; send({ type: 'buildSettlement', vertex: v }); });
+        showVertexSpots(S.you.hints.settlements || [], (v) => { armed = null; send({ type: 'buildSettlement', vertex: v }); }, ghostOf('settlement'));
       } else if (armed === 'city') {
-        showVertexSpots(S.you.hints.cities || [], (v) => { armed = null; send({ type: 'buildCity', vertex: v }); });
+        showVertexSpots(S.you.hints.cities || [], (v) => { armed = null; send({ type: 'buildCity', vertex: v }); }, ghostOf('city'));
       }
       return;
     }
@@ -669,7 +677,7 @@ function makePickers(container, sel, limits, onChange) {
     const div = document.createElement('div');
     div.className = 'res-picker';
     div.innerHTML = `
-      <div class="rp-card res-${r}"><span>${RES_META[r].icon}</span><span class="rp-cnt">${sel[r] || 0}</span></div>
+      <div class="rp-card res-${r}" title="${RES_META[r].name}"><span class="rp-cnt">${sel[r] || 0}</span></div>
       <div class="rp-btns">
         <button data-d="-1">−</button>
         <button data-d="1">＋</button>
@@ -771,7 +779,6 @@ function renderBankPane() {
     for (const r of RES) {
       const b = document.createElement('button');
       b.className = `res-${r}`;
-      b.innerHTML = RES_META[r].icon;
       b.title = `${RES_META[r].name}${isGive ? `（${S.you.rates[r]}:1）` : ''}`;
       b.onclick = () => {
         if (isGive) bankGiveSel = r; else bankGetSel = r;
@@ -811,7 +818,7 @@ function renderTradeBanner() {
     return;
   }
   const t = S.trade;
-  const fmt = (m) => RES.filter((r) => m[r]).map((r) => `${m[r]}${RES_META[r].icon}`).join(' ') || '无';
+  const fmt = (m) => RES.filter((r) => m[r]).map((r) => `${m[r]}${resIcon(r)}`).join(' ') || '无';
   banner.classList.remove('hidden');
   banner.innerHTML = '';
 
@@ -884,7 +891,7 @@ function renderMonopolyButtons() {
   for (const r of RES) {
     const b = document.createElement('button');
     b.className = 'btn primary';
-    b.textContent = `${RES_META[r].icon} ${RES_META[r].name}`;
+    b.innerHTML = `${resIcon(r)} ${RES_META[r].name}`;
     b.onclick = () => {
       send({ type: 'playDev', card: 'monopoly', payload: { res: r } });
       $('modal-monopoly').classList.add('hidden');
@@ -898,9 +905,11 @@ const DICE_ROLL_MS = 2400;   // 骰子翻滚时长
 const GAIN_STAGGER_MS = 900; // 每条产出飘字的间隔
 let diceAnimUntil = 0;
 let diceRollTimer = null;
+let lastDiceTotal = 0;       // 最近一次掷骰点数：产出飞卡动画据此反查产出地块
 
 function animateDiceRoll(d1, d2) {
   const total = d1 + d2;
+  lastDiceTotal = total;
   diceAnimUntil = Date.now() + DICE_ROLL_MS;
   $('dice-box').classList.remove('hidden');
   const dies = [$('die1'), $('die2')];
@@ -913,13 +922,13 @@ function animateDiceRoll(d1, d2) {
   const t0 = Date.now();
   diceRollTimer = setInterval(() => {
     if (Date.now() - t0 < DICE_ROLL_MS) {
-      // 翻滚中显示随机点数
-      for (const d of dies) d.textContent = 1 + Math.floor(Math.random() * 6);
+      // 翻滚中显示随机骰面
+      for (const d of dies) setDie(d, 1 + Math.floor(Math.random() * 6));
       return;
     }
     clearInterval(diceRollTimer);
-    dies[0].textContent = d1;
-    dies[1].textContent = d2;
+    setDie(dies[0], d1);
+    setDie(dies[1], d2);
     for (const d of dies) {
       d.classList.remove('rolling');
       void d.offsetWidth;
@@ -945,7 +954,13 @@ function playEvents() {
     switch (ev.type) {
       case 'gain': {
         const d = delay;
-        setTimeout(() => floatOverPlayer(ev.player, `+${ev.n} ${RES_META[ev.res].icon}`), d);
+        const { player, res, n } = ev;
+        setTimeout(() => {
+          // 自己的产出：资源图标从产出地块飞进手牌；条件不满足时回落为飘字
+          if (player !== myIndex || !flyResourceFromHex(res, n)) {
+            floatOverPlayer(player, `+${n} ${resIcon(res)}`);
+          }
+        }, d);
         delay += GAIN_STAGGER_MS;
         break;
       }
@@ -954,7 +969,7 @@ function playEvents() {
         floatOverPlayer(ev.from, '−1 🃏');
         break;
       case 'monopoly':
-        floatOverPlayer(ev.player, `💰 +${ev.n} ${RES_META[ev.res].icon}`);
+        floatOverPlayer(ev.player, `💰 +${ev.n} ${resIcon(ev.res)}`);
         break;
       case 'trade':
         floatOverPlayer(ev.a, '🔄');
@@ -998,13 +1013,54 @@ function showTurnBanner(to) {
   floatOverPlayer(to, '🎲');
 }
 
-function floatOverPlayer(playerIdx, text) {
+// 产出飞卡：按掷骰点数反查产出该资源的地块，把资源图标从地块飞到底部对应手牌
+const RES_TERRAIN = { wood: 'forest', brick: 'hills', sheep: 'pasture', wheat: 'fields', ore: 'mountains' };
+function flyResourceFromHex(res, n) {
+  if (!S || !lastDiceTotal) return false;
+  const hexes = S.board.hexes.filter(
+    (h) => h.number === lastDiceTotal && h.terrain === RES_TERRAIN[res] && h.id !== S.robber,
+  );
+  const card = document.querySelector(`#hand-cards .res-card.res-${res}`);
+  if (!hexes.length || !card) return false;
+  const rect = card.getBoundingClientRect();
+  const ex = rect.left + rect.width / 2;
+  const ey = rect.top + rect.height / 2;
+  for (let i = 0; i < Math.min(n, 6); i++) {
+    const from = hexPixelPosition(hexes[i % hexes.length].id, $('board'));
+    if (!from) return false;
+    const f = document.createElement('div');
+    f.className = 'fly-res';
+    f.innerHTML = resIcon(res); // .fly-res img 的尺寸规则会覆盖 .res-ico
+    f.style.left = `${from.x}px`;
+    f.style.top = `${from.y}px`;
+    document.body.appendChild(f);
+    const anim = f.animate([
+      { transform: 'translate(-50%,-50%) scale(.4)', opacity: 0 },
+      { transform: 'translate(-50%,-50%) scale(1.25)', opacity: 1, offset: 0.2 },
+      { transform: `translate(calc(${ex - from.x}px - 50%), calc(${ey - from.y}px - 50%)) scale(.6)`, opacity: .9 },
+    ], { duration: 900, delay: i * 140, easing: 'cubic-bezier(.45,.05,.55,.95)', fill: 'backwards' });
+    anim.onfinish = () => {
+      f.remove();
+      // 到达时再顶一下手牌（renderHand 可能已重建卡片，按需重新查找）
+      const c = document.querySelector(`#hand-cards .res-card.res-${res}`);
+      if (c) {
+        c.classList.remove('bump');
+        void c.offsetWidth;
+        c.classList.add('bump');
+      }
+    };
+  }
+  return true;
+}
+
+// html 只拼接内部常量（图标 img / emoji / 数字），无用户输入
+function floatOverPlayer(playerIdx, html) {
   const card = $(`player-card-${playerIdx}`);
   if (!card) return;
   const rect = card.getBoundingClientRect();
   const f = document.createElement('div');
   f.className = 'floater';
-  f.textContent = text;
+  f.innerHTML = html;
   f.style.left = `${rect.left - 60 + Math.random() * 30}px`;
   // 垂直锚定在卡片中线，配合较小的上飘幅度，保证全程贴着自己的卡片
   f.style.top = `${rect.top + rect.height / 2 - 4}px`;
