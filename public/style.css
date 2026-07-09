@@ -279,6 +279,38 @@ body {
   font-size: 13px; outline: none; background: #fffdf6; color: var(--text);
 }
 
+/* ---------- 表情包 ---------- */
+#emote-box { position: relative; }
+#emote-panel {
+  position: absolute; bottom: calc(100% + 8px); left: 0; z-index: 30;
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 3px;
+  background: linear-gradient(180deg, #fbf6e9, #f0e6cb);
+  border: 1px solid var(--panel-border); border-radius: 10px; padding: 7px;
+  box-shadow: 0 6px 18px rgba(0,20,35,.28);
+  animation: pop-in .14s ease;
+}
+.emote-item {
+  width: 36px; height: 36px; font-size: 21px; line-height: 1;
+  border: none; background: none; border-radius: 8px; cursor: pointer;
+  transition: transform .1s ease, background .1s ease;
+}
+.emote-item:hover { background: rgba(230,126,34,.16); transform: scale(1.18); }
+.emote-burst {
+  position: fixed; z-index: 70; pointer-events: none;
+  font-size: 42px; transform: translate(-50%, -50%);
+  filter: drop-shadow(0 3px 6px rgba(0,0,0,.35));
+  animation: emote-burst 2.5s ease forwards;
+}
+@keyframes emote-burst {
+  0%   { opacity: 0; transform: translate(-50%,-50%) scale(.3); }
+  12%  { opacity: 1; transform: translate(-50%,-50%) scale(1.35); }
+  24%  { transform: translate(-50%,-50%) scale(.95) rotate(-8deg); }
+  36%  { transform: translate(-50%,-50%) scale(1.12) rotate(8deg); }
+  48%  { transform: translate(-50%,-50%) scale(1) rotate(0deg); }
+  82%  { opacity: 1; transform: translate(-50%,-58%) scale(1); }
+  100% { opacity: 0; transform: translate(-50%,-115%) scale(.85); }
+}
+
 /* ---------- 底部操作栏 ---------- */
 #bottom-bar {
   display: flex; align-items: center; gap: 14px;

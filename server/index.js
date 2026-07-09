@@ -73,6 +73,9 @@ function broadcastOpenRooms() {
   io.emit('openRooms', openRoomsList());
 }
 
+// 表情包白名单（与客户端 main.js 的 EMOTES 保持一致）
+const EMOTES = ['😄', '😂', '😭', '😡', '🤔', '😱', '👍', '👎', '👏', '🎉', '❤️', '🐑'];
+
 // 定期清理超过 24 小时的房间
 setInterval(() => {
   const now = Date.now();
@@ -231,6 +234,21 @@ io.on('connection', (socket) => {
     if (!p || !text) return;
     for (const pl of room.players) {
       if (pl.socketId) io.to(pl.socketId).emit('chat', { name: p.name, text });
+    }
+  });
+
+  socket.on('emote', ({ emoji }) => {
+    const room = myRoom;
+    if (!room) return;
+    const idx = room.players.findIndex((pl) => pl.token === myToken);
+    if (idx < 0 || !EMOTES.includes(emoji)) return;
+    const p = room.players[idx];
+    // 防刷屏：每人至少间隔 1 秒
+    const now = Date.now();
+    if (now - (p.lastEmote || 0) < 1000) return;
+    p.lastEmote = now;
+    for (const pl of room.players) {
+      if (pl.socketId) io.to(pl.socketId).emit('emote', { index: idx, name: p.name, emoji });
     }
   });
 

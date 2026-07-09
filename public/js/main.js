@@ -516,6 +516,44 @@ function sendChat() {
   $('chat-input').value = '';
 }
 
+// ---------- 表情包 ----------
+// 与服务端 index.js 的 EMOTES 白名单保持一致
+const EMOTES = ['😄', '😂', '😭', '😡', '🤔', '😱', '👍', '👎', '👏', '🎉', '❤️', '🐑'];
+for (const em of EMOTES) {
+  const b = document.createElement('button');
+  b.className = 'emote-item';
+  b.textContent = em;
+  b.onclick = () => {
+    socket.emit('emote', { emoji: em });
+    $('emote-panel').classList.add('hidden');
+  };
+  $('emote-panel').appendChild(b);
+}
+$('emote-btn').onclick = () => $('emote-panel').classList.toggle('hidden');
+// 点面板外任意处收起（emote-btn 自己的 onclick 先执行 toggle，这里跳过 emote-box 内部的点击）
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('#emote-box')) $('emote-panel').classList.add('hidden');
+});
+
+socket.on('emote', ({ index, name, emoji }) => {
+  appendLog(`<span class="chat-msg">${emoji} ${esc(name)}</span>`, true);
+  emoteBurst(index, emoji);
+});
+
+// 大表情从发送者的玩家卡片旁弹出
+function emoteBurst(playerIdx, emoji) {
+  const card = $(`player-card-${playerIdx}`);
+  if (!card) return;
+  const rect = card.getBoundingClientRect();
+  const d = document.createElement('div');
+  d.className = 'emote-burst';
+  d.textContent = emoji;
+  d.style.left = `${rect.left - 46}px`;
+  d.style.top = `${rect.top + rect.height / 2}px`;
+  document.body.appendChild(d);
+  setTimeout(() => d.remove(), 2600);
+}
+
 // ---------- 资源选择器组件 ----------
 function makePickers(container, sel, limits, onChange) {
   container.innerHTML = '';
