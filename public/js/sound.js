@@ -5,7 +5,7 @@ import { sfx, setSfxVolume, getSfxVolume } from './sfx.js';
 // 按序尝试的文件名：放哪个都行（mp4/m4a 是 AAC 音频，带视频轨也只播声音）
 const BGM_CANDIDATES = ['audio/bgm.mp3', 'audio/bgm.mp4', 'audio/bgm.m4a', 'audio/bgm.ogg'];
 // BGM 音量上限：滑条 100% 时的实际音量（背景音乐只作衬托，不该盖过音效和人声）
-const BGM_MAX = 0.6;
+const BGM_MAX = 0.4;
 const $ = (id) => document.getElementById(id);
 
 let audio = null;
