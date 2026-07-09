@@ -222,7 +222,8 @@ socket.on('joined', ({ code, token, index }) => {
 
 socket.on('lobby', (lobby) => {
   myRoomCode = lobby.code;
-  myIndex = lobby.you; // 有人退出后下标会移动（如房主移交），以服务端下发的为准
+  // 有人退出后下标会移动（如房主移交），以服务端下发的为准；旧版服务端无此字段时沿用本地值
+  if (lobby.you !== undefined) myIndex = lobby.you;
   $('lobby-code').textContent = lobby.code;
   const ul = $('lobby-players');
   ul.innerHTML = '';
@@ -232,7 +233,7 @@ socket.on('lobby', (lobby) => {
       <span>${p.connected ? '🟢 在线' : '🔴 离线'}</span>`;
     ul.appendChild(li);
   });
-  const iAmHost = !!lobby.players[lobby.you]?.isHost;
+  const iAmHost = !!lobby.players[myIndex]?.isHost;
   $('btn-start').classList.toggle('hidden', !iAmHost || lobby.started);
   $('btn-destroy').classList.toggle('hidden', !iAmHost || lobby.started);
   $('btn-leave').classList.toggle('hidden', iAmHost || lobby.started);
