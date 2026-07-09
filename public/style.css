@@ -180,6 +180,9 @@ body {
 #game-layout { flex: 1; display: flex; min-height: 0; }
 #board-area { flex: 1; position: relative; display: flex; flex-direction: column; min-width: 0; }
 #board { flex: 1; width: 100%; min-height: 0; touch-action: none; }
+/* 提升为独立合成层：缩放时 Chrome 先拉伸已有位图再异步重光栅化，
+   否则每次 scale 变化整层作废、来不及重画就闪白（拖动平移同理） */
+#viewport { will-change: transform; }
 
 #zoom-controls {
   position: absolute; right: 14px; bottom: 14px;
