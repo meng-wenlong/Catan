@@ -19,6 +19,7 @@ let isle = null;     // 岛屿几何 {cx, cy, hexR}，野蛮人航道定位用
 let barbEls = null;  // 野蛮人航道的持久元素（船用 transform 过渡动画，不能每次重建）
 let deckEls = null;  // 进步卡牌堆的持久元素 {pos, count, prev}（计数变化时播放 bump 动画）
 let impEls = null;   // 城市升级面板的持久元素（左下角，点击打开升级弹窗）
+let curState = null, curColors = null; // 放大镜取当前状态/配色的快照
 
 // ---------- 缩放与平移 ----------
 const MAX_ZOOM = 4;
@@ -242,6 +243,8 @@ export function initBoard(svgElement, boardData) {
   vb = { ...baseVB };
   svg.setAttribute('viewBox', `${baseVB.x} ${baseVB.y} ${baseVB.w} ${baseVB.h}`);
   bindZoomControls();
+  initInspector();
+  hideLoupe();
 
   buildDefs();
   vpG = el('g', { id: 'viewport' }, svg);
@@ -311,28 +314,31 @@ export function initBoard(svgElement, boardData) {
 
     // 透明点击热区（强盗目标高亮描边也画在这层，保证盖在板块图之上）
     el('polygon', { points: pts, class: 'hex', 'data-hex': hex.id }, g);
+    attachInspect(g, { kind: 'hex', hex });
   }
 
-  for (const hb of board.harbors) {
+  board.harbors.forEach((hb, idx) => {
     const [v1, v2] = hb.vertices.map((v) => board.vertices[v]);
+    const hg = el('g', {}, layers.harbors);
     el('path', {
       d: `M ${v1.x} ${v1.y} L ${hb.x} ${hb.y} L ${v2.x} ${v2.y}`,
       class: 'harbor-line',
-    }, layers.harbors);
+    }, hg);
     // 插画徽章（绳圈圆牌）+ 底部比例小签
-    el('circle', { cx: hb.x + 0.02, cy: hb.y + 0.035, r: 0.33, fill: 'rgba(70,45,10,.22)' }, layers.harbors);
+    el('circle', { cx: hb.x + 0.02, cy: hb.y + 0.035, r: 0.33, fill: 'rgba(70,45,10,.22)' }, hg);
     el('image', {
       href: `/assets/opt/harbor-${hb.type}.webp`,
       x: hb.x - 0.36, y: hb.y - 0.36, width: 0.72, height: 0.72,
       class: 'hex-img',
-    }, layers.harbors);
+    }, hg);
     el('rect', {
       x: hb.x - 0.13, y: hb.y + 0.25, width: 0.26, height: 0.16, rx: 0.08,
       class: 'rate-pill',
-    }, layers.harbors);
-    const rate = el('text', { x: hb.x, y: hb.y + 0.365, class: 'harbor-text harbor-rate' }, layers.harbors);
+    }, hg);
+    const rate = el('text', { x: hb.x, y: hb.y + 0.365, class: 'harbor-text harbor-rate' }, hg);
     rate.textContent = hb.type === 'any' ? '3:1' : '2:1';
-  }
+    attachInspect(hg, { kind: 'harbor', idx });
+  });
 
   // 强盗棋子（插画雕像，g 的 transform 动画负责移动）
   // 底部接地点固定在 g 原点下方 0.2，放大时只往上长高，不遮住中心数字令牌
@@ -342,6 +348,7 @@ export function initBoard(svgElement, boardData) {
     x: -0.24, y: -0.4, width: 0.48, height: 0.6,
     class: 'hex-img',
   }, robberEl);
+  attachInspect(robberEl, { kind: 'robber' });
 }
 
 function hexCornerString(hex, r = 1, dy = 0) {
@@ -364,12 +371,267 @@ function cityD(x, y) {
           L ${x + 0.24} ${y - 0.03} L ${x + 0.24} ${y + 0.17} Z`;
 }
 
+// ---------- 放大镜（桌面：悬停停留 1.2s 升起；纯视觉、点得穿；覆盖棋盘元素与手牌卡） ----------
+const DWELL_MS = 1200;       // 棋盘元素停留时长
+const CARD_DWELL_MS = 500;   // 手牌卡停留时长（更快，像卡牌预览）
+let loupeEl = null;
+let cardPreviewEl = null;
+let dwellTimer = 0;
+let dwellTarget = null;
+let inspectBound = false;
+
+// 地形 → [中文名, 产出资源]；港口类型 → 资源中文名
+const TERRAIN_INFO = {
+  forest: ['森林', '木材'], hills: ['丘陵', '砖块'], pasture: ['牧场', '羊毛'],
+  fields: ['农田', '小麦'], mountains: ['山地', '矿石'], desert: ['沙漠', null],
+};
+const HARBOR_NAME = { wood: '木材', brick: '砖块', sheep: '羊毛', wheat: '小麦', ore: '矿石' };
+let barbInfo = null; // 野蛮人航道快照 {strength, defense, pos, track, x, y}
+
+function initInspector() {
+  if (inspectBound) return;
+  inspectBound = true;
+  // 平移/缩放/点击/滚动时收起放大镜，避免位置漂移或挡住操作
+  svg.addEventListener('pointerdown', hideLoupe);
+  svg.addEventListener('wheel', hideLoupe, { passive: true });
+  window.addEventListener('scroll', hideLoupe, true);
+}
+
+function ensureLoupe() {
+  if (loupeEl) return loupeEl;
+  loupeEl = document.createElement('div');
+  loupeEl.id = 'piece-loupe';
+  loupeEl.innerHTML = '<div class="loupe-lens"></div>'
+    + '<div class="loupe-name"><span class="loupe-dot"></span><span class="loupe-txt"></span></div>';
+  document.body.appendChild(loupeEl);
+  return loupeEl;
+}
+
+// 由当前状态推出板面元素的展示信息：{ label, color, cx, cy, R }
+function describe(desc) {
+  const st = curState, cols = curColors;
+  if (desc.kind === 'building') {
+    if (!st) return null;
+    const b = st.buildings[desc.vid];
+    if (!b) return null;
+    const v = board.vertices[desc.vid];
+    let type = b.type === 'city' ? '城市' : '村庄';
+    if (b.type === 'city' && st.ck && st.ck.metropolis) {
+      for (const m of Object.values(st.ck.metropolis)) {
+        if (m && m.vertex === desc.vid) { type = '大都会'; break; }
+      }
+    }
+    if (st.ck && st.ck.walls && st.ck.walls[desc.vid] !== undefined) type += '（含城墙，上限+2）';
+    return { label: `${st.players[b.player].name}的${type}`, color: cols[b.player], cx: v.x, cy: v.y, R: 0.34 };
+  }
+  if (desc.kind === 'road') {
+    if (!st) return null;
+    const p = st.roads[desc.eid];
+    if (p === undefined) return null;
+    const e = board.edges[desc.eid];
+    const v1 = board.vertices[e.v1], v2 = board.vertices[e.v2];
+    return { label: `${st.players[p].name}的道路`, color: cols[p], cx: (v1.x + v2.x) / 2, cy: (v1.y + v2.y) / 2, R: 0.55 };
+  }
+  if (desc.kind === 'knight') {
+    const k = st && st.ck && st.ck.knights[desc.vid];
+    if (!k) return null;
+    const v = board.vertices[desc.vid];
+    return {
+      label: `${st.players[k.player].name}的${k.level}级骑士（${k.active ? '已激活' : '未激活'}）`,
+      color: cols[k.player], cx: v.x, cy: v.y - 0.18, R: 0.42,
+    };
+  }
+  if (desc.kind === 'hex') {
+    const hx = desc.hex;
+    const [tname, res] = TERRAIN_INFO[hx.terrain] || [hx.terrain, null];
+    const grad = TERRAIN_GRAD[hx.terrain];
+    let label;
+    if (!res) label = `${tname} · 不产出`;
+    else if (!hx.number) label = `${tname} · 产${res}`;
+    else label = `${tname} · 产${res} · 骰${hx.number}（${6 - Math.abs(7 - hx.number)}/36）`;
+    return { label, color: grad ? grad[1] : null, cx: hx.x, cy: hx.y, R: 1.02 };
+  }
+  if (desc.kind === 'robber') {
+    if (!st) return null;
+    const hx = board.hexes[st.robber];
+    return { label: '强盗 · 封锁此地块产出', color: '#4a4a4a', cx: hx.x - 0.42, cy: hx.y - 0.32, R: 0.46 };
+  }
+  if (desc.kind === 'merchant') {
+    const m = st && st.ck && st.ck.merchant;
+    if (!m) return null;
+    const hx = board.hexes[m.hex];
+    return { label: `${st.players[m.player].name}的商人 · 该地资源 2:1`, color: cols[m.player], cx: hx.x + 0.45, cy: hx.y - 0.45, R: 0.3 };
+  }
+  if (desc.kind === 'harbor') {
+    const hb = board.harbors[desc.idx];
+    const label = hb.type === 'any' ? '港口 · 任意资源 3:1' : `${HARBOR_NAME[hb.type] || hb.type}港 · 2:1`;
+    return { label, color: '#3a6ea5', cx: hb.x, cy: hb.y, R: 0.5 };
+  }
+  if (desc.kind === 'barbarian') {
+    if (!barbInfo) return null;
+    const left = Math.max(0, barbInfo.track - barbInfo.pos);
+    return {
+      label: `野蛮人 · 强度 ${barbInfo.strength} vs 防御 ${barbInfo.defense} · 还差 ${left} 步登陆`,
+      color: '#c0392b', cx: barbInfo.x, cy: barbInfo.y, R: 0.42,
+    };
+  }
+  return null;
+}
+
+// 板面元素：克隆当前 SVG 作镜片 —— 复用现有视觉，新素材到货自动升级
+function producePiece(target, desc) {
+  const d = describe(desc);
+  if (!d) return null;
+  const clone = target.cloneNode(true);
+  clone.classList.remove('piece-pop', 'road-pop', 'inspecting'); // 去掉入场/悬停动画，保留定位用的 inline transform
+  clone.removeAttribute('id'); // 避免与原元素（如 #robber-piece）重复 id
+  return { label: d.label, color: d.color, svgClone: clone, viewBox: `${d.cx - d.R} ${d.cy - d.R} ${d.R * 2} ${d.R * 2}` };
+}
+
+function fillLens(loupe, c) {
+  const lens = loupe.querySelector('.loupe-lens');
+  if (c.svgClone) {
+    const s = document.createElementNS(SVG_NS, 'svg');
+    s.setAttribute('class', 'loupe-svg');
+    s.setAttribute('viewBox', c.viewBox);
+    s.appendChild(c.svgClone);
+    lens.replaceChildren(s);
+  } else if (c.img) {
+    const im = document.createElement('img');
+    im.className = 'loupe-img';
+    im.src = c.img;
+    lens.replaceChildren(im);
+  } else if (c.emoji) {
+    const sp = document.createElement('span');
+    sp.className = 'loupe-emoji';
+    sp.textContent = c.emoji;
+    lens.replaceChildren(sp);
+  } else {
+    lens.replaceChildren();
+  }
+}
+
+function showLoupe(target, produce) {
+  const c = produce();
+  if (!c) return;
+  const loupe = ensureLoupe();
+  fillLens(loupe, c);
+  const dot = loupe.querySelector('.loupe-dot');
+  dot.style.background = c.color || 'transparent';
+  dot.style.display = c.color ? '' : 'none';
+  loupe.querySelector('.loupe-txt').textContent = c.label;
+  positionLoupe(loupe, target);
+  loupe.classList.add('show');
+}
+
+// position:fixed，按视口坐标定位：默认贴目标右侧升起，放不下翻到左侧，纵向夹在视口内
+function positionLoupe(loupe, target) {
+  const pr = target.getBoundingClientRect();
+  const LW = loupe.offsetWidth || 140;
+  const LH = loupe.offsetHeight || 160;
+  const gap = 14;
+  let left = pr.right + gap;
+  if (left + LW > window.innerWidth - 6) left = pr.left - gap - LW;
+  left = Math.max(6, Math.min(left, window.innerWidth - LW - 6));
+  const top = Math.max(6, Math.min(pr.top + pr.height / 2 - LH / 2, window.innerHeight - LH - 6));
+  loupe.style.left = `${left}px`;
+  loupe.style.top = `${top}px`;
+}
+
+// ---------- 完整卡浮层（手牌=图+下方文字；发展/进步卡=带框卡，文字叠进卡面文字框） ----------
+function ensureCardPreview() {
+  if (cardPreviewEl) return cardPreviewEl;
+  cardPreviewEl = document.createElement('div');
+  cardPreviewEl.id = 'card-preview';
+  document.body.appendChild(cardPreviewEl);
+  return cardPreviewEl;
+}
+
+// resolve() 返回 { img, name, sub, desc, boxed }
+function showCardPreview(target, resolve) {
+  const c = resolve();
+  if (!c) return;
+  const cp = ensureCardPreview();
+  cp.classList.toggle('boxed', !!c.boxed);
+  if (c.boxed) {
+    // 卡面自带边框与空文字框：整卡铺满，名称/说明叠进底部文字框
+    cp.innerHTML = '<div class="cp-frame"><img class="cp-img" alt=""><div class="cp-overlay"><div class="cp-name"></div><div class="cp-desc"></div></div></div>';
+    cp.querySelector('.cp-name').textContent = c.name || '';
+    cp.querySelector('.cp-desc').textContent = c.desc || c.sub || '';
+  } else {
+    cp.innerHTML = '<div class="cp-art"><img class="cp-img" alt=""></div>'
+      + '<div class="cp-body"><div class="cp-name"></div><div class="cp-sub"></div><div class="cp-desc"></div></div>';
+    cp.querySelector('.cp-name').textContent = c.name || '';
+    const sub = cp.querySelector('.cp-sub');
+    sub.textContent = c.sub || ''; sub.style.display = c.sub ? '' : 'none';
+    const desc = cp.querySelector('.cp-desc');
+    desc.textContent = c.desc || ''; desc.style.display = c.desc ? '' : 'none';
+  }
+  const img = cp.querySelector('.cp-img');
+  img.src = c.img || '';
+  positionCardPreview(cp, target);
+  // 首次图片未加载完时高度未知，加载后再定位一次
+  if (!img.complete) img.addEventListener('load', () => positionCardPreview(cp, target), { once: true });
+  cp.classList.add('show');
+}
+
+// 锚在被悬停卡的正上方；上方放不下则落到下方；左右夹在视口内
+function positionCardPreview(cp, target) {
+  const pr = target.getBoundingClientRect();
+  const W = cp.offsetWidth || 172;
+  const H = cp.offsetHeight || 240;
+  let left = pr.left + pr.width / 2 - W / 2;
+  left = Math.max(6, Math.min(left, window.innerWidth - W - 6));
+  let top = pr.top - H - 10;
+  if (top < 6) top = Math.min(pr.bottom + 10, window.innerHeight - H - 6);
+  cp.style.left = `${left}px`;
+  cp.style.top = `${top}px`;
+}
+
+function hideLoupe() { // 收起全部浮层（放大镜 + 完整卡）
+  clearTimeout(dwellTimer);
+  dwellTimer = 0;
+  if (loupeEl) loupeEl.classList.remove('show');
+  if (cardPreviewEl) cardPreviewEl.classList.remove('show');
+}
+
+function beginDwell(target, show, delay) {
+  target.classList.add('inspecting');
+  hideLoupe();
+  dwellTarget = target;
+  dwellTimer = setTimeout(() => { if (dwellTarget === target) show(); }, delay);
+}
+
+function endDwell(target) {
+  target.classList.remove('inspecting');
+  if (dwellTarget === target) { hideLoupe(); dwellTarget = null; }
+}
+
+// 棋盘元素：挂「悬停即时高亮 + 停留放大镜」（镜片=克隆当前 SVG）
+function attachInspect(target, desc) {
+  target.classList.add('inspectable');
+  const show = () => showLoupe(target, () => producePiece(target, desc));
+  target.addEventListener('pointerenter', () => beginDwell(target, show, DWELL_MS));
+  target.addEventListener('pointerleave', () => endDwell(target));
+}
+
+// HTML 卡（手牌/发展卡/进步卡）：resolve() 返回 { img, name, sub, desc }，升起完整卡浮层
+export function attachCardInspect(target, resolve) {
+  target.classList.add('inspectable');
+  const show = () => showCardPreview(target, resolve);
+  target.addEventListener('pointerenter', () => beginDwell(target, show, CARD_DWELL_MS));
+  target.addEventListener('pointerleave', () => endDwell(target));
+}
+
 export function updateRobber(hexId) {
   const hex = board.hexes[hexId];
   robberEl.style.transform = `translate(${hex.x - 0.42}px, ${hex.y - 0.32}px)`;
 }
 
 export function updatePieces(state, colors) {
+  curState = state;
+  curColors = colors;
+  hideLoupe();
   // 被移除的道路（外交官卡）
   for (const [eid, g] of [...roadEls]) {
     if (state.roads[eid] === undefined) {
@@ -389,6 +651,7 @@ export function updatePieces(state, colors) {
     const g = el('g', { class: 'road-pop' }, layers.roads);
     el('line', { x1, y1, x2, y2, class: 'road-piece', stroke: 'rgba(0,0,0,.4)', 'stroke-width': '0.2' }, g);
     el('line', { x1, y1, x2, y2, class: 'road-piece', stroke: colors[player] }, g);
+    attachInspect(g, { kind: 'road', eid: Number(eid) });
     roadEls.set(eid, g);
   }
 
@@ -405,6 +668,7 @@ export function updatePieces(state, colors) {
       el('path', { d: cityD(v.x, v.y), fill: colors[b.player], class: 'piece' }, g);
       el('circle', { cx: v.x + 0.13, cy: v.y + 0.06, r: 0.04, fill: 'rgba(255,255,255,.7)' }, g);
     }
+    attachInspect(g, { kind: 'building', vid: Number(vid) });
     buildingEls.set(vid, { el: g, type: b.type });
   }
 
@@ -413,8 +677,46 @@ export function updatePieces(state, colors) {
 
 // ---------- 城市与骑士棋子（骑士/城墙/大都会/商人） ----------
 // onKnightClick(vertexId, knight)：骑士被点击（自己的骑士菜单 / 进步卡选择目标）
+// ---------- 白模棋子实时染色（canvas multiply：白模 × 玩家色，结果缓存） ----------
+const tintCache = new Map(); // 'src|color' -> dataURL
+const tintImgs = new Map();  // src -> Image
+let onTintReady = null;      // 某张白模异步加载完成后触发重渲染
+let lastCKArgs = null;
+
+function tintedPiece(src, color) {
+  const key = `${src}|${color}`;
+  if (tintCache.has(key)) return tintCache.get(key);
+  let img = tintImgs.get(src);
+  if (!img) { img = new Image(); img.src = src; tintImgs.set(src, img); }
+  if (!img.complete || !img.naturalWidth) {
+    img.addEventListener('load', () => onTintReady && onTintReady(), { once: true });
+    return null;
+  }
+  const c = document.createElement('canvas');
+  c.width = img.naturalWidth; c.height = img.naturalHeight;
+  const ctx = c.getContext('2d');
+  ctx.drawImage(img, 0, 0);
+  ctx.globalCompositeOperation = 'multiply'; // 白身→玩家色，深色描边/阴影保持
+  ctx.fillStyle = color;
+  ctx.fillRect(0, 0, c.width, c.height);
+  ctx.globalCompositeOperation = 'destination-in'; // 恢复白模的透明区
+  ctx.drawImage(img, 0, 0);
+  const url = c.toDataURL('image/png');
+  tintCache.set(key, url);
+  return url;
+}
+// 预加载骑士白模，降低首次染色的等待
+for (const n of [1, 2, 3]) {
+  const s = `/assets/opt/piece-knight${n}-white.webp`;
+  const i = new Image(); i.src = s; tintImgs.set(s, i);
+}
+
 export function updateCKPieces(state, colors, onKnightClick) {
   if (!state.ck) return;
+  curState = state;
+  curColors = colors;
+  lastCKArgs = { state, colors, onKnightClick };
+  onTintReady = () => { if (lastCKArgs) updateCKPieces(lastCKArgs.state, lastCKArgs.colors, lastCKArgs.onKnightClick); };
   // 城墙：城市底下的一圈护环
   layers.walls.innerHTML = '';
   for (const [vid, owner] of Object.entries(state.ck.walls)) {
@@ -430,11 +732,15 @@ export function updateCKPieces(state, colors, onKnightClick) {
   for (const [vid, k] of Object.entries(state.ck.knights)) {
     const v = board.vertices[vid];
     const g = el('g', { class: `knight-piece${k.active ? ' active' : ' idle'}` }, layers.knights);
-    el('circle', { cx: v.x, cy: v.y + 0.02, r: 0.17, fill: 'rgba(0,0,0,.4)' }, g);
-    el('circle', { cx: v.x, cy: v.y, r: 0.17, fill: colors[k.player], class: 'knight-body' }, g);
-    el('circle', { cx: v.x, cy: v.y, r: 0.17, class: 'knight-ring' }, g);
-    const t = el('text', { x: v.x, y: v.y + 0.062, class: 'knight-lv' }, g);
-    t.textContent = k.level;
+    el('ellipse', { cx: v.x, cy: v.y + 0.15, rx: 0.23, ry: 0.1, class: 'knight-glow' }, g); // 激活时脚下金光
+    el('ellipse', { cx: v.x, cy: v.y + 0.15, rx: 0.15, ry: 0.055, fill: 'rgba(0,0,0,.35)' }, g); // 接地阴影
+    const tinted = tintedPiece(`/assets/opt/piece-knight${k.level}-white.webp`, colors[k.player]);
+    if (tinted) {
+      el('image', { href: tinted, x: v.x - 0.22, y: v.y - 0.5, width: 0.44, height: 0.62, class: 'knight-img' }, g);
+    } else {
+      el('circle', { cx: v.x, cy: v.y, r: 0.2, fill: colors[k.player] }, g); // 染色未就绪的兜底
+    }
+    attachInspect(g, { kind: 'knight', vid: Number(vid) });
     if (onKnightClick) {
       g.style.cursor = 'pointer';
       g.addEventListener('click', (ev) => {
@@ -449,8 +755,10 @@ export function updateCKPieces(state, colors, onKnightClick) {
   for (const m of Object.values(state.ck.metropolis)) {
     if (!m) continue;
     const v = board.vertices[m.vertex];
-    const t = el('text', { x: v.x, y: v.y - 0.28, class: 'metro-star' }, layers.marks);
-    t.textContent = '★';
+    el('image', {
+      href: '/assets/opt/metropolis.webp',
+      x: v.x - 0.17, y: v.y - 0.62, width: 0.34, height: 0.5, class: 'hex-img metro-mark',
+    }, layers.marks);
   }
   if (state.ck.merchant) {
     const hex = board.hexes[state.ck.merchant.hex];
@@ -459,8 +767,11 @@ export function updateCKPieces(state, colors, onKnightClick) {
       cx: hex.x + 0.45, cy: hex.y - 0.45, r: 0.19, class: 'merchant-bg',
       stroke: colors[state.ck.merchant.player],
     }, g);
-    const t = el('text', { x: hex.x + 0.45, y: hex.y - 0.38, class: 'merchant-ico' }, g);
-    t.textContent = '⛺';
+    el('image', {
+      href: '/assets/opt/merchant.webp',
+      x: hex.x + 0.30, y: hex.y - 0.60, width: 0.3, height: 0.3, class: 'hex-img',
+    }, g);
+    attachInspect(g, { kind: 'merchant' });
   }
 }
 
@@ -500,15 +811,18 @@ export function updateBarbarianTrack(ck, strength, defense) {
     el('rect', { x: s0.x - 1.0, y: s0.y + 0.42, width: 2.0, height: 0.56, rx: 0.28, class: 'barb-badge-bg' }, badge);
     const vs = el('text', { x: s0.x, y: s0.y + 0.81, class: 'barb-badge-text' }, badge);
     const ship = el('g', { class: 'barb-ship' }, layer);
-    el('circle', { cx: 0, cy: 0.02, r: 0.27, class: 'barb-ship-bg' }, ship);
-    const ico = el('text', { x: 0, y: 0.13, class: 'barb-ship-ico' }, ship);
-    ico.textContent = '⛵';
+    el('image', {
+      href: '/assets/opt/barbarian-ship.webp',
+      x: -0.36, y: -0.22, width: 0.72, height: 0.48, class: 'hex-img',
+    }, ship);
+    attachInspect(ship, { kind: 'barbarian' });
     barbEls = { pt, dots, ship, vs };
   }
   barbEls.dots.forEach((d, i) => d.classList.toggle('passed', i + 1 <= pos));
   const s = barbEls.pt(pos / track);
   barbEls.ship.style.transform = `translate(${s.x}px, ${s.y}px)`;
   barbEls.vs.textContent = `🏰${strength} vs ⚔️${defense}`;
+  barbInfo = { strength, defense, pos, track, x: s.x, y: s.y };
 }
 
 // ---------- 进步卡牌堆（画在棋盘左上角海面上，随棋盘缩放平移） ----------
@@ -552,12 +866,10 @@ export function updateProgressDecks(decks) {
         x: x - 0.24, y: y - 0.32, width: 0.48, height: 0.64, rx: 0.06,
         class: 'pdeck-card', fill: meta.color,
       }, card);
-      el('rect', {
-        x: x - 0.185, y: y - 0.265, width: 0.37, height: 0.53, rx: 0.04,
-        class: 'pdeck-inner',
+      el('image', {
+        href: `/assets/opt/progress-${track}.webp`,
+        x: x - 0.19, y: y - 0.30, width: 0.38, height: 0.5, class: 'hex-img',
       }, card);
-      const ico = el('text', { x, y: y - 0.03, class: 'pdeck-ico' }, card);
-      ico.textContent = meta.icon;
       const cnt = el('text', { x, y: y + 0.215, class: 'pdeck-count' }, card);
       const title = el('title', {}, g);
       title.textContent = `${meta.name}进步卡牌堆`;

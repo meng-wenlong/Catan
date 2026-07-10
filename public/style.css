@@ -432,6 +432,9 @@ body {
 .res-sheep { --res-color: #7fb845; background-color: #a4d968; background-image: url("/assets/opt/resource-sheep.webp"); }
 .res-wheat { --res-color: #d4ab2c; background-color: #eecd55; background-image: url("/assets/opt/resource-wheat.webp"); }
 .res-ore { --res-color: #7f8c99; background-color: #a8b2bb; background-image: url("/assets/opt/resource-ore.webp"); }
+.res-cloth { --res-color: #c9a227; background-color: #ddcea0; background-image: url("/assets/opt/resource-cloth.webp"); }
+.res-coin { --res-color: #3a6ea5; background-color: #ddcea0; background-image: url("/assets/opt/resource-coin.webp"); }
+.res-paper { --res-color: #4a8c4a; background-color: #ddcea0; background-image: url("/assets/opt/resource-paper.webp"); }
 
 #dev-cards { display: flex; gap: 6px; }
 .dev-card {
@@ -513,7 +516,98 @@ body {
 .road-pop { animation: road-pop .7s ease; }
 @keyframes road-pop { 0% { opacity: 0; } 100% { opacity: 1; } }
 
-#robber-piece { transition: transform 1.2s cubic-bezier(.45,.05,.35,1.2); pointer-events: none; }
+/* 放大镜：悬停即时高亮 + 停留 1.2s 升起（棋盘元素 + 手牌卡通用） */
+#layer-buildings .inspecting, #layer-knights .inspecting {
+  transform: scale(1.18); transform-box: fill-box; transform-origin: center;
+  transition: transform .12s ease;
+}
+#layer-roads .inspecting .road-piece { stroke-width: .3; transition: stroke-width .12s ease; }
+#hand-cards .inspecting, #dev-cards .inspecting { filter: brightness(1.08); transform: translateY(-2px); transition: transform .12s ease, filter .12s ease; }
+
+#piece-loupe {
+  position: fixed; left: 0; top: 0; width: 172px; z-index: 3000;
+  pointer-events: none; opacity: 0; visibility: hidden; transition: opacity .14s ease;
+}
+#piece-loupe.show { opacity: 1; visibility: visible; }
+#piece-loupe .loupe-lens {
+  width: 120px; height: 120px; margin: 0 auto; border-radius: 50%; overflow: hidden;
+  background: radial-gradient(circle at 42% 34%, #fbf3df, #e9d7ac);
+  border: 3px solid #b98a4b;
+  box-shadow: 0 0 0 3px #7a5322, 0 8px 20px rgba(35,22,4,.42), inset 0 3px 8px rgba(255,255,255,.5);
+}
+#piece-loupe .loupe-svg { width: 100%; height: 100%; display: block; }
+#piece-loupe .loupe-img { width: 100%; height: 100%; object-fit: contain; display: block; padding: 12px; box-sizing: border-box; }
+#piece-loupe .loupe-emoji { display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; font-size: 58px; }
+#piece-loupe .loupe-name {
+  margin: 9px auto 0; max-width: 168px; box-sizing: border-box; text-align: center;
+  background: rgba(38,27,12,.9); color: #f4ead2; font-size: 12.5px; line-height: 1.38;
+  padding: 4px 11px; border-radius: 9px; box-shadow: 0 3px 8px rgba(35,22,4,.3);
+}
+#piece-loupe .loupe-dot {
+  display: inline-block; vertical-align: middle; width: 9px; height: 9px;
+  border-radius: 50%; margin-right: 5px; box-shadow: 0 0 0 1px rgba(255,255,255,.7);
+}
+#piece-loupe .loupe-txt { vertical-align: middle; }
+/* 完整卡浮层：手牌/发展卡/进步卡悬停升起的放大整卡 */
+#card-preview {
+  position: fixed; left: 0; top: 0; width: 172px; z-index: 3000;
+  pointer-events: none; opacity: 0; visibility: hidden; transition: opacity .12s ease;
+  background: #f3e3c0; border-radius: 12px; overflow: hidden;
+  box-shadow: 0 14px 34px rgba(30,18,4,.5), 0 0 0 3px rgba(122,83,34,.45);
+}
+#card-preview.show { opacity: 1; visibility: visible; }
+#card-preview .cp-art {
+  height: 168px; background: url("/assets/opt/parchment-tile.webp") center/cover, #e9d7ac;
+  display: flex; align-items: center; justify-content: center;
+}
+#card-preview .cp-img { width: 100%; height: 100%; object-fit: contain; display: block; }
+#card-preview .cp-body { padding: 8px 12px 12px; text-align: center; }
+#card-preview .cp-name { font-weight: 700; font-size: 15px; color: #3a2a14; }
+#card-preview .cp-sub { font-size: 11.5px; color: #7a6338; margin-top: 3px; }
+#card-preview .cp-desc { font-size: 11.5px; color: #55452c; margin-top: 6px; line-height: 1.45; text-align: left; }
+
+/* 带框卡（发展卡/进步卡）：整卡铺满，文字叠进卡面底部空文字框 */
+#card-preview.boxed { width: 190px; background: transparent; box-shadow: none; border-radius: 0; overflow: visible; }
+#card-preview.boxed .cp-frame { position: relative; width: 190px; }
+#card-preview.boxed .cp-img { width: 100%; height: auto; object-fit: fill; filter: drop-shadow(0 10px 22px rgba(18,10,2,.6)); }
+#card-preview.boxed .cp-overlay {
+  position: absolute; left: 11%; right: 11%; top: 75.5%; bottom: 5.5%;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  text-align: center; color: #4a3213; gap: 2px; overflow: hidden;
+}
+#card-preview.boxed .cp-name { font-weight: 800; font-size: 13.5px; line-height: 1.05; }
+#card-preview.boxed .cp-desc { font-size: 10px; line-height: 1.24; color: #4a3213; margin: 0; text-align: center; }
+
+@media (prefers-reduced-motion: reduce) {
+  #layer-buildings .inspecting, #layer-knights .inspecting,
+  #layer-roads .inspecting .road-piece, #piece-loupe, #card-preview,
+  #hand-cards .inspecting, #dev-cards .inspecting { transition: none; }
+}
+
+/* 调试面板（仅调试房） */
+#dev-panel {
+  position: fixed; top: 8px; right: 8px; z-index: 2500; width: 214px;
+  background: rgba(28,20,10,.93); color: #f0e6d0; border: 1px solid #6a4a1c;
+  border-radius: 10px; font-size: 12px; box-shadow: 0 8px 24px rgba(0,0,0,.5);
+}
+#dev-panel.collapsed .dev-body { display: none; }
+#dev-panel .dev-head {
+  padding: 6px 10px; font-weight: 700; display: flex; justify-content: space-between;
+  align-items: center; border-bottom: 1px solid #6a4a1c;
+}
+#dev-panel #dev-toggle { background: none; border: none; color: #f0e6d0; font-size: 16px; cursor: pointer; line-height: 1; padding: 0 4px; }
+#dev-panel .dev-body { padding: 8px 10px; display: flex; flex-direction: column; gap: 7px; }
+#dev-panel .dev-line { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; }
+#dev-panel select, #dev-panel input { font-size: 11px; padding: 2px 3px; background: #f5edd8; color: #2f2617; border: 1px solid #6a4a1c; border-radius: 4px; max-width: 100px; }
+#dev-panel input[type=number] { width: 38px; }
+#dev-panel .dev-btn { font-size: 11px; padding: 3px 8px; background: #b0631a; color: #fff; border: none; border-radius: 5px; cursor: pointer; white-space: nowrap; }
+#dev-panel .dev-btn:hover { background: #c9772a; }
+#dev-panel #dev-hands { border-top: 1px solid #6a4a1c; padding-top: 6px; display: flex; flex-direction: column; gap: 3px; }
+#dev-panel .dev-hand { line-height: 1.35; }
+#dev-panel .dev-dim { opacity: .7; }
+
+#robber-piece { transition: transform 1.2s cubic-bezier(.45,.05,.35,1.2); pointer-events: auto; }
+#robber-piece image { pointer-events: auto; } /* 覆盖 .hex-img 的 none，让强盗可悬停放大 */
 
 .hotspot { fill: rgba(255,255,255,0); cursor: pointer; }
 .hotspot.vertex-spot { transition: fill .15s; }
@@ -729,11 +823,7 @@ body {
   box-shadow: 0 4px 10px rgba(0,0,0,.4);
 }
 
-/* 商品手牌（无插画，渐变底 + emoji 图标） */
-.res-cloth { --res-color: #c9a227; background-image: linear-gradient(165deg, #f7e08a, #d9b23a); }
-.res-coin { --res-color: #9aa2ad; background-image: linear-gradient(165deg, #e8e2c9, #b3a76c); }
-.res-paper { --res-color: #7fa36b; background-image: linear-gradient(165deg, #eef3dd, #b9cf9a); }
-/* 商品 emoji 图标为绝对定位：所有承载它的卡片容器都必须是定位上下文 */
+/* 交易/弃牌选牌卡容器需为定位上下文（数量角标绝对定位） */
 .res-picker .rp-card, .res-radio button { position: relative; }
 .com-ico {
   position: absolute; top: 46%; left: 50%; transform: translate(-50%, -50%);
@@ -750,17 +840,10 @@ body {
 .prog-card.prog-science { background: linear-gradient(160deg, #7fb877, #3d7a3d); }
 
 /* 骑士棋子 */
-.knight-body { stroke: rgba(0,0,0,.45); stroke-width: .03; }
-.knight-ring { fill: none; stroke-width: .035; }
-.knight-piece.active .knight-ring { stroke: #ffd54f; }
-.knight-piece.active .knight-body { filter: none; }
-.knight-piece.idle .knight-ring { stroke: rgba(30,30,30,.65); stroke-dasharray: .05 .04; }
-.knight-piece.idle .knight-body { opacity: .72; }
-.knight-lv {
-  font-size: .2px; font-weight: 800; text-anchor: middle; fill: #fff;
-  font-family: var(--font-num); pointer-events: none;
-  paint-order: stroke; stroke: rgba(0,0,0,.55); stroke-width: .02;
-}
+/* 骑士：染色白模图 + 激活/休整状态（激活=脚下金光，休整=去饱和变暗） */
+.knight-glow { fill: transparent; transition: fill .25s; }
+.knight-piece.active .knight-glow { fill: rgba(255,208,90,.45); }
+.knight-piece.idle .knight-img { opacity: .82; filter: saturate(.4) brightness(.85); }
 
 /* 城墙 / 大都会 / 商人标记 */
 .wall-ring { fill: none; stroke-width: .075; opacity: .9; }
