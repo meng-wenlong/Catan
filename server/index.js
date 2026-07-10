@@ -15,8 +15,9 @@ app.use(express.static(path.join(__dirname, '..', 'public')));
 const server = http.createServer(app);
 const io = new Server(server, { pingInterval: 10000, pingTimeout: 20000 });
 
-// code -> { code, hostToken, players: [{token, name, socketId, colorIdx}], game, picking, createdAt }
+// code -> { code, hostToken, players: [{token, name, socketId, colorIdx}], game, picking, createdAt, spectators }
 // picking：开局前的「选颜色/定先手」阶段 { colors: [colorIdx|null], first: -1 表示随机 }
+// spectators：观战者 [{token, name, socketId}]
 const rooms = new Map();
 
 // 调试模式开关：默认开启，线上可用 DEV=0 关闭 createDevRoom
@@ -35,6 +36,13 @@ function makeCode() {
 function roomEmit(room, event, data, perPlayer = null) {
   room.players.forEach((p, i) => {
     if (p.socketId) io.to(p.socketId).emit(event, perPlayer ? perPlayer(i) : data);
+  });
+}
+
+function emitSpectators(room, event, data) {
+  if (!room.spectators) return;
+  room.spectators.forEach((sp) => {
+    if (sp.socketId) io.to(sp.socketId).emit(event, data);
   });
 }
 
@@ -62,6 +70,8 @@ function broadcastGame(room) {
   const pub = room.game.publicState();
   const hostIndex = room.players.findIndex((p) => p.token === room.hostToken);
   roomEmit(room, 'state', null, (i) => ({ ...pub, hostIndex, you: room.game.privateState(i) }));
+  // 观战者：公开状态，不含手牌
+  emitSpectators(room, 'state', { ...pub, hostIndex, you: { spectating: true, index: -1, hand: { wood:0,brick:0,sheep:0,wheat:0,ore:0 }, devCards: [], rates: {}, hints: {}, vpTotal: 0 } });
 }
 
 // 选颜色阶段的状态快照，发给房间内所有人
@@ -84,6 +94,7 @@ function broadcastPicking(room) {
   if (!room.picking) return;
   const st = pickingState(room);
   roomEmit(room, 'picking', null, (i) => ({ ...st, you: i }));
+  emitSpectators(room, 'picking', { ...st, you: -1, spectating: true });
 }
 
 // 公开的「正在等待玩家」的房间：未开始、未满、且至少有一名在线玩家
@@ -215,6 +226,24 @@ io.on('connection', (socket) => {
     broadcastOpenRooms();
   });
 
+  socket.on('spectateRoom', ({ code, name }) => {
+    code = String(code || '').trim().toUpperCase();
+    const room = rooms.get(code);
+    if (!room) return fail('房间不存在');
+    if (!room.game && !room.picking) return fail('游戏尚未开始，可直接加入房间游玩');
+    name = String(name || '').trim().slice(0, 12);
+    if (!name) return fail('请输入昵称');
+    const token = crypto.randomUUID();
+    if (!room.spectators) room.spectators = [];
+    room.spectators.push({ token, name, socketId: socket.id });
+    myRoom = room;
+    myToken = token;
+    socket.emit('joined', { code, token, index: -1, spectating: true });
+    broadcastGame(room);
+    broadcastPicking(room);
+    broadcastOpenRooms();
+  });
+
   // 房主点「开始游戏」：先进入选颜色/定先手阶段，确认后才真正开局
   socket.on('startGame', () => {
     const room = myRoom;
@@ -277,6 +306,7 @@ io.on('connection', (socket) => {
     if (room.hostToken !== myToken) return fail('只有房主可以取消');
     room.picking = null;
     roomEmit(room, 'pickingCancelled');
+    emitSpectators(room, 'pickingCancelled');
     broadcastLobby(room);
     broadcastOpenRooms();
   });
@@ -315,6 +345,7 @@ io.on('connection', (socket) => {
     if (!room.game) return fail('游戏尚未开始');
     room.game = null;
     roomEmit(room, 'returnToLobby');
+    emitSpectators(room, 'returnToLobby');
     broadcastLobby(room);
     broadcastOpenRooms();
   });
@@ -343,6 +374,7 @@ io.on('connection', (socket) => {
     if (room.hostToken !== myToken) return fail('只有房主可以销毁房间');
     rooms.delete(room.code);
     roomEmit(room, 'roomDestroyed');
+    emitSpectators(room, 'roomDestroyed');
     // 清空残留引用：其他成员的连接仍握着此 room，防止销毁后继续收发
     room.players = [];
     room.game = null;
@@ -418,29 +450,46 @@ io.on('connection', (socket) => {
   socket.on('chat', ({ text }) => {
     const room = myRoom;
     if (!room) return;
-    const p = room.players.find((pl) => pl.token === myToken);
+    let p = room.players.find((pl) => pl.token === myToken);
+    if (!p && room.spectators) p = room.spectators.find((sp) => sp.token === myToken);
     text = String(text || '').trim().slice(0, 200);
     if (!p || !text) return;
     roomEmit(room, 'chat', { name: p.name, text });
+    emitSpectators(room, 'chat', { name: p.name, text });
   });
 
   socket.on('emote', ({ emoji }) => {
     const room = myRoom;
     if (!room) return;
-    const idx = room.players.findIndex((pl) => pl.token === myToken);
-    if (idx < 0 || !EMOTES.includes(emoji)) return;
-    const p = room.players[idx];
-    // 防刷屏：每人至少间隔 1 秒
-    const now = Date.now();
-    if (now - (p.lastEmote || 0) < 1000) return;
-    p.lastEmote = now;
-    roomEmit(room, 'emote', { index: idx, name: p.name, emoji });
+    let idx = room.players.findIndex((pl) => pl.token === myToken);
+    let name;
+    if (idx < 0 && room.spectators) {
+      const sp = room.spectators.find((s) => s.token === myToken);
+      if (sp) { idx = -1; name = sp.name; }
+    }
+    if (idx < 0 && !name) return;
+    if (!EMOTES.includes(emoji)) return;
+    const userName = name || room.players[idx].name;
+    // 观战者不防刷屏
+    if (idx >= 0) {
+      const p = room.players[idx];
+      const now = Date.now();
+      if (now - (p.lastEmote || 0) < 1000) return;
+      p.lastEmote = now;
+    }
+    roomEmit(room, 'emote', { index: idx, name: userName, emoji });
+    emitSpectators(room, 'emote', { index: idx, name: userName, emoji });
   });
 
   socket.on('disconnect', () => {
     const room = myRoom;
     if (!room) return;
-    const idx = room.players.findIndex((p) => p.token === myToken);
+    let idx = room.players.findIndex((p) => p.token === myToken);
+    if (idx < 0 && room.spectators) {
+      idx = room.spectators.findIndex((s) => s.token === myToken);
+      if (idx >= 0) { room.spectators.splice(idx, 1); myRoom = null; myToken = null; return; }
+      return;
+    }
     if (idx < 0) return;
     room.players[idx].socketId = null;
     if (room.game) {
