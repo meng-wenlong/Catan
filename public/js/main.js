@@ -104,6 +104,7 @@ const EVENT_FACE = {
 
 let S = null;          // 最新游戏状态
 let myIndex = -1;
+let isSpectating = false;
 let armed = null;      // 当前准备建造的类型
 let lastSeq = 0;       // 已播放的动画事件
 let boardReady = false;
@@ -152,6 +153,15 @@ $('btn-join').onclick = () => {
 };
 
 $('home-code').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('btn-join').click(); });
+$('home-spectate-code').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('btn-spectate').click(); });
+
+$('btn-spectate').onclick = () => {
+  const name = $('home-name').value.trim();
+  const code = $('home-spectate-code').value.trim().toUpperCase();
+  if (!name) return ($('home-error').textContent = '请输入昵称');
+  if (code.length !== 4) return ($('home-error').textContent = '房间码为 4 位字符');
+  socket.emit('spectateRoom', { code, name });
+};
 
 $('btn-copy').onclick = () => {
   navigator.clipboard?.writeText($('lobby-code').textContent).then(() => toast('已复制房间码'));
@@ -188,11 +198,23 @@ socket.on('leftRoom', () => {
 
 // ---------- 选颜色 / 定先手 ----------
 socket.on('picking', (pk) => {
+  isSpectating = !!pk.spectating;
+  if (isSpectating) {
+    renderPickingReadOnly(pk);
+    show('screen-pick');
+    return;
+  }
   renderPicking(pk);
   show('screen-pick');
 });
 
 socket.on('pickingCancelled', () => {
+  if (isSpectating) {
+    isSpectating = false;
+    show('screen-home');
+    toast('房间取消了选颜色，观战结束');
+    return;
+  }
   if (!$('screen-pick').classList.contains('hidden')) show('screen-lobby');
 });
 
@@ -261,8 +283,50 @@ function renderPicking(pk) {
   $('pick-error').textContent = '';
 }
 
+// 观战者只读版的选颜色界面：所有按钮禁用，仅展示当前状态
+function renderPickingReadOnly(pk) {
+  myIndex = -1;
+  const box = $('pick-colors');
+  box.innerHTML = '';
+  pk.palette.forEach((c, ci) => {
+    const owner = pk.players.find((p) => p.colorIdx === ci);
+    const b = document.createElement('button');
+    b.className = 'pick-swatch';
+    b.style.setProperty('--sw', c.color);
+    if (owner) b.classList.add('taken');
+    b.innerHTML = `<span class="sw-dot"></span><span class="sw-name">${owner ? esc(owner.name) : esc(c.name)}</span>`;
+    b.disabled = true;
+    box.appendChild(b);
+  });
+  const ul = $('pick-players');
+  ul.innerHTML = '';
+  pk.players.forEach((p) => {
+    const c = p.colorIdx === null ? null : pk.palette[p.colorIdx];
+    const li = document.createElement('li');
+    li.innerHTML = `<span><span class="pick-dot" style="background:${c ? c.color : 'transparent'}"></span>${esc(p.name)}${p.isHost ? ' 👑' : ''}${p.connected ? '' : ' 🔴'}</span>
+      <span>${c ? esc(c.name) : '<i>选择中…</i>'}</span>`;
+    ul.appendChild(li);
+  });
+  const fbox = $('pick-first');
+  fbox.innerHTML = '';
+  const opts = [{ index: -1, label: '🎲 随机' }, ...pk.players.map((p) => ({ index: p.index, label: p.name }))];
+  for (const o of opts) {
+    const b = document.createElement('button');
+    b.className = 'btn small pick-first-btn' + (pk.first === o.index ? ' active' : '');
+    b.textContent = o.label;
+    b.disabled = true;
+    fbox.appendChild(b);
+  }
+  $('pick-first-hint').textContent = '';
+  $('pick-confirm').classList.add('hidden');
+  $('pick-cancel').classList.add('hidden');
+  $('pick-hint').textContent = '👁️ 观战中，等待游戏开始…';
+  $('pick-error').textContent = '';
+}
+
 socket.on('roomDestroyed', () => {
   clearSession();
+  isSpectating = false;
   myRoomCode = null;
   $('home-error').textContent = '房间已被房主销毁';
   show('screen-home');
@@ -288,9 +352,16 @@ function clearSession() {
   localStorage.removeItem('catan_code');
 }
 
-socket.on('joined', ({ code, token, index }) => {
+socket.on('joined', ({ code, token, index, spectating }) => {
   autoJoining = false;
   resetDestroyBtn(); // 进入新房间时清掉上次遗留的「确认销毁」状态
+  if (spectating) {
+    isSpectating = true;
+    myRoomCode = code;
+    myIndex = -1;
+    $('home-error').textContent = '';
+    return; // 等待后续 state/picking 事件决定显示哪个屏幕
+  }
   saveSession(code, token);
   myIndex = index;
   myRoomCode = code;
@@ -426,6 +497,7 @@ let holdTimer = null;
 socket.on('state', (state) => {
   S = state;
   window.__S = state; // 调试/测试用
+  isSpectating = !!state.you.spectating;
   myIndex = state.you.index;
   if (!boardReady) {
     initBoard($('board'), state.board, state.mode === 'ck');
@@ -436,6 +508,7 @@ socket.on('state', (state) => {
     initBoard($('board'), state.board, state.mode === 'ck'); // 发明家换了数字令牌，重建棋盘
   }
   show('screen-game');
+  updateSpectatorUI();
 
   // 本批新事件里若有掷骰：先单独播放骰子动画，随后所有结算推迟到动画结束
   const diceEvent = state.events.find((e) => e.type === 'dice' && e.seq > lastSeq);
@@ -459,6 +532,14 @@ function applyState() {
 
 // 房主结束本局：清空对局相关状态，回到等待大厅（后续 lobby 事件会填充大厅）
 socket.on('returnToLobby', () => {
+  if (isSpectating) {
+    isSpectating = false;
+    boardReady = false;
+    S = null;
+    show('screen-home');
+    toast('游戏已结束，观战完毕');
+    return;
+  }
   boardReady = false;   // 下一局需重新 initBoard
   lastSeq = 0;
   lastLogSeq = 0;
@@ -484,6 +565,18 @@ const colors = () => S.players.map((p) => p.color);
 const isMyTurn = () => S.phase === 'play' && S.turn.player === myIndex;
 const isMySetup = () => S.phase === 'setup' && S.setup.current === myIndex;
 const amHost = () => !!S && S.hostIndex === myIndex;
+
+function updateSpectatorUI() {
+  const hide = isSpectating;
+  $('hand-cards').classList.toggle('hidden', hide);
+  $('dev-cards').classList.toggle('hidden', hide);
+  $('action-buttons').classList.toggle('hidden', hide);
+  $('bottom-bar').classList.toggle('spectating', hide);
+  // 观战提示
+  if (hide) {
+    $('status-text').textContent = '👁️ ' + $('status-text').textContent.replace('👁️ ', '');
+  }
+}
 
 function renderAll() {
   updatePieces(S, colors());
