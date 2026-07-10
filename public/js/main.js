@@ -515,6 +515,8 @@ function renderBarbBar() {
   updateProgressDecks(S.ck.decks);
   const canAct = isMyTurn() && S.turn.state === 'main';
   const craneOn = canAct && S.ck.crane;
+  // 官方规则：没有城市时不能购买城市升级（已有等级保留）
+  const hasCity = Object.values(S.buildings).some((b) => b.player === myIndex && b.type === 'city');
   updateImproveBoard({
     tracks: Object.fromEntries(TRACKS.map((t) => {
       const lvl = S.players[myIndex].improvements[t];
@@ -528,7 +530,8 @@ function renderBarbBar() {
         cost,
         have,
         crane: craneOn && !maxed,
-        canBuy: canAct && !maxed && have >= cost,
+        canBuy: canAct && !maxed && hasCity && have >= cost,
+        noCity: !hasCity,
         metroName: metro ? S.players[metro.player].name : null,
         metroMine: metro?.player === myIndex,
       }];

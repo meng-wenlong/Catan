@@ -653,7 +653,8 @@ export function updateImproveBoard(data, onBuy) {
     }
     impEls.tip[track].textContent = `${meta.name}：3 级 ${meta.perk3Name}；4 级率先达到可获大都会（+2 分）`
       + (t.metroName ? `\n大都会：${t.metroName}${t.metroMine ? '（你）' : ''}` : '')
-      + (t.maxed ? '' : `\n升到 ${t.lvl + 1} 级需 ${t.cost} 张${meta.com}（有 ${t.have}）${t.crane ? '，含起重机 -1' : ''}`);
+      + (t.maxed ? '' : `\n升到 ${t.lvl + 1} 级需 ${t.cost} 张${meta.com}（有 ${t.have}）${t.crane ? '，含起重机 -1' : ''}`)
+      + (t.noCity ? '\n⚠️ 需要至少拥有一座城市才能升级' : '');
   }
 }
 
