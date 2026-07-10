@@ -100,6 +100,30 @@ export const sfx = {
   danger() {
     tone({ freq: 300, freq2: 180, type: 'triangle', dur: 0.13, gain: 0.24 });
   },
+  // ---- 游戏事件音效 ----
+  // 强盗现身：低音下滑的阴森「咚——」，叠一声小二度制造不安
+  robber() {
+    tone({ freq: 200, freq2: 90, type: 'sawtooth', dur: 0.4, gain: 0.15 });
+    tone({ freq: 285, freq2: 268, type: 'triangle', dur: 0.22, gain: 0.09, when: 0.06 });
+  },
+  // 海盗船前进：短促的双声低音号角「呜·呜——」
+  ship() {
+    tone({ freq: 165, freq2: 152, type: 'sawtooth', dur: 0.16, gain: 0.12 });
+    tone({ freq: 165, freq2: 142, type: 'sawtooth', dur: 0.28, gain: 0.14, when: 0.2 });
+  },
+  // 海盗来袭结算：守住 → 上行凯旋三连音；失守 → 下行崩塌
+  barbarian(win) {
+    if (win) {
+      tone({ freq: 392, type: 'triangle', dur: 0.12, gain: 0.16 });
+      tone({ freq: 494, type: 'triangle', dur: 0.12, gain: 0.16, when: 0.13 });
+      tone({ freq: 587, type: 'triangle', dur: 0.28, gain: 0.19, when: 0.26 });
+      tone({ freq: 784, type: 'sine', dur: 0.3, gain: 0.1, when: 0.26 });
+    } else {
+      tone({ freq: 330, freq2: 240, type: 'sawtooth', dur: 0.25, gain: 0.16 });
+      tone({ freq: 245, freq2: 150, type: 'sawtooth', dur: 0.32, gain: 0.18, when: 0.2 });
+      tone({ freq: 115, freq2: 62, type: 'sawtooth', dur: 0.55, gain: 0.2, when: 0.42 });
+    }
+  },
 };
 
 // 事件委托挂在捕获阶段：即使按钮自己的 handler 里 stopPropagation 也能出声

@@ -6,7 +6,7 @@ import {
   updateBarbarianTrack, updateProgressDecks, deckPixelPosition,
   updateImproveBoard,
 } from './render.js';
-import { initSfx } from './sfx.js';
+import { initSfx, sfx } from './sfx.js';
 import { initSound } from './sound.js';
 
 initSfx();
@@ -1617,10 +1617,22 @@ function playEvents() {
       case 'turnEnd':
         showTurnBanner(ev.to);
         break;
+      case 'robber':
+        sfx.robber();
+        break;
       // ---- 城市与骑士 ----
+      case 'ship': {
+        const d = delay;
+        setTimeout(() => sfx.ship(), d);
+        delay += 500; // 同批的来袭结算（barbarian）让号角先响完
+        break;
+      }
       case 'barbarian': {
         const d = delay;
-        setTimeout(() => showBarbarianBanner(ev), d);
+        setTimeout(() => {
+          sfx.barbarian(ev.win);
+          showBarbarianBanner(ev);
+        }, d);
         delay += 1200;
         break;
       }
