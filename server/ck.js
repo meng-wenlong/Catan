@@ -406,6 +406,7 @@ export const ckMethods = {
     this.addLog(`⚔️ 野蛮人来袭！兵力 ${strength} vs 骑士防御 ${defense}`);
 
     let pending = {};
+    let defenderPickers = [];
     if (win) {
       this.addLog('🛡️ 卡坦岛守住了！');
       const max = Math.max(...pts);
@@ -415,15 +416,11 @@ export const ckMethods = {
           this.players[holders[0]].defenderVP++;
           this.addEvent('defender', { player: holders[0] });
           this.addLog(`🏅 ${this.players[holders[0]].name} 成为「卡坦守护者」（+1 分）！`);
-        } else {
-          // 并列：各从随机的非空牌堆抽一张进步卡
-          for (const i of holders) {
-            const decks = IMPROVE_TRACKS.filter((t) => this.progressDecks[t].length > 0);
-            if (decks.length === 0) break;
-            const d = decks[Math.floor(this.rng() * decks.length)];
-            this.addLog(`${this.players[i].name} 防御并列第一，抽一张进步卡`);
-            this.drawProgress(i, d);
-          }
+        } else if (IMPROVE_TRACKS.some((t) => this.progressDecks[t].length > 0)) {
+          // 并列：各自选一种颜色抽一张进步卡
+          defenderPickers = holders;
+          const names = holders.map((i) => this.players[i].name).join('、');
+          this.addLog(`${names} 防御并列第一，各自选一种进步卡`);
         }
       }
     } else {
@@ -453,7 +450,32 @@ export const ckMethods = {
       this.addLog(`等待 ${names} 选择被摧毁的城市。`);
       return true;
     }
+    if (defenderPickers.length > 0) {
+      this.turn.pendingDefenderPick = defenderPickers;
+      this.turn.postRollTotal = total;
+      this.turn.state = 'defenderPick';
+      return true;
+    }
     return false;
+  },
+
+  defenderPickDeck(p, deckName) {
+    this.requireCK();
+    this.requireState('defenderPick');
+    if (!this.turn.pendingDefenderPick.includes(p)) this.err('你不需要选择');
+    if (!IMPROVE_TRACKS.includes(deckName)) this.err('请选择一种进步卡');
+    if (this.progressDecks[deckName].length === 0) this.err('该牌堆已空');
+    this.drawProgress(p, deckName);
+    this.turn.pendingDefenderPick = this.turn.pendingDefenderPick.filter((i) => i !== p);
+    // 牌堆全部抽空时剩余玩家无从选择，直接跳过
+    if (this.turn.pendingDefenderPick.length > 0
+      && IMPROVE_TRACKS.every((t) => this.progressDecks[t].length === 0)) {
+      this.addLog('进步卡牌堆已全部抽空，其余玩家无法再抽。');
+      this.turn.pendingDefenderPick = [];
+    }
+    if (this.turn.pendingDefenderPick.length === 0) {
+      this.finishRoll(this.turn.postRollTotal);
+    }
   },
 
   pillageCity(v) {
@@ -997,6 +1019,10 @@ export const ckMethods = {
   ckHints(p, hints) {
     if (this.turn.state === 'barbarianLoss' && this.turn.pendingCityLoss[p]) {
       hints.cityLoss = this.turn.pendingCityLoss[p];
+      return;
+    }
+    if (this.turn.state === 'defenderPick' && this.turn.pendingDefenderPick.includes(p)) {
+      hints.defenderPick = true;
       return;
     }
     if (this.turn.state === 'displace' && this.turn.displace?.owner === p) {

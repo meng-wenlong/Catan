@@ -57,6 +57,7 @@ export class Game {
       // 以下仅 ck 模式使用
       eventDie: null, fleet: null, crane: false,
       pendingAqueduct: [], pendingCityLoss: {}, postRollTotal: 0,
+      pendingDefenderPick: [], // 防御并列第一：各自选颜色抽进步卡
       displace: null,    // 被驱逐骑士待安置 {owner, knight, options}
       metroChoice: null, // 大都会选城 {track, options, stolenFrom}
       pick: null,        // 商业大亨/间谍选牌 {type, from, count}
@@ -820,6 +821,7 @@ export class Game {
         decks: Object.fromEntries(IMPROVE_TRACKS.map((t) => [t, this.progressDecks[t].length])),
         pendingCityLoss: Object.keys(this.turn.pendingCityLoss).map(Number),
         pendingAqueduct: this.turn.pendingAqueduct,
+        pendingDefenderPick: this.turn.pendingDefenderPick,
         displace: this.turn.displace
           ? { owner: this.turn.displace.owner, level: this.turn.displace.knight.level }
           : null,

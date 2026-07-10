@@ -576,3 +576,30 @@ test('ck：村庄棋子用完时被拆的城市直接移除', () => {
   assert.equal(g.buildings[cityV], undefined);
   assert.equal(g.players[0].pieces.city, citiesBefore + 1);
 });
+
+test('ck：防御并列第一时各自选颜色抽进步卡', () => {
+  const g = newCK(3);
+  doSetup(g);
+  // 兵力 = 3 座城市；0/1 各一名激活的 2 级骑士 → 防御 4，并列第一
+  const v0 = g.validKnightSpots(0)[0];
+  const v1 = g.validKnightSpots(1).find((v) => v !== v0);
+  g.knights[v0] = mkKnight(0, 2, { active: true });
+  g.knights[v1] = mkKnight(1, 2, { active: true });
+  const paused = g.resolveBarbarianAttack(6);
+  assert.equal(paused, true);
+  assert.equal(g.turn.state, 'defenderPick');
+  assert.deepEqual(g.turn.pendingDefenderPick, [0, 1]);
+  assert.equal(g.players[0].defenderVP, 0); // 并列不发守护者分
+  assert.throws(() => g.defenderPickDeck(2, 'trade'), /你不需要选择/);
+  assert.throws(() => g.defenderPickDeck(0, 'wood'), /请选择一种进步卡/);
+  const before = g.progressDecks.trade.length;
+  g.defenderPickDeck(0, 'trade');
+  assert.equal(g.progressDecks.trade.length, before - 1);
+  assert.equal(g.turn.state, 'defenderPick'); // 还等玩家 1
+  assert.throws(() => g.defenderPickDeck(0, 'trade'), /你不需要选择/); // 不能重复选
+  g.progressDecks.politics = [];
+  assert.throws(() => g.defenderPickDeck(1, 'politics'), /该牌堆已空/);
+  g.defenderPickDeck(1, 'science');
+  assert.equal(g.turn.state, 'main'); // 全部选完，掷骰结算继续
+  assert.equal(g.turn.pendingDefenderPick.length, 0);
+});

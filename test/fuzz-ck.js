@@ -56,6 +56,10 @@ for (let seed = 1; seed <= 30; seed++) {
       } else if (st === 'barbarianLoss') {
         const i = Number(Object.keys(g.turn.pendingCityLoss)[0]);
         g.chooseCityLoss(i, g.turn.pendingCityLoss[i][0]);
+      } else if (st === 'defenderPick') {
+        const i = g.turn.pendingDefenderPick[0];
+        const decks = ['trade', 'politics', 'science'].filter((t) => g.progressDecks[t].length > 0);
+        g.defenderPickDeck(i, decks[rnd(decks.length)]);
       } else if (st === 'displace') {
         const d = g.turn.displace;
         g.placeDisplaced(d.owner, d.options[rnd(d.options.length)]);

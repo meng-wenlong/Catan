@@ -558,6 +558,11 @@ function renderStatus() {
       text = S.ck.pendingGive[myIndex]
         ? `💒 婚礼：请选 ${S.ck.pendingGive[myIndex]} 张牌送给 ${cur.name}`
         : `婚礼！等待 ${names} 送礼…`;
+    } else if (st === 'defenderPick') {
+      const names = S.ck.pendingDefenderPick.map((i) => S.players[i].name).join('、');
+      text = S.ck.pendingDefenderPick.includes(myIndex)
+        ? '🛡️ 防御并列第一！请选一种颜色的进步卡'
+        : `防御成功！等待 ${names} 选择进步卡…`;
     } else if (st === 'harbor') {
       const h = S.ck.harbor;
       if (h.stage === 'give') {
@@ -1289,6 +1294,15 @@ function statePickSpec() {
       title: `婚礼：选 ${H.weddingGive} 张牌送给 ${S.players[S.turn.player].name}`,
       options: cardList().filter((r) => S.you.hand[r] > 0)
         .map((r) => opt(r, S.you.hand[r], { type: 'weddingGive', card: r })),
+    };
+  }
+  if (st === 'defenderPick' && H.defenderPick) {
+    return {
+      title: '防御并列第一：选一种颜色抽 1 张进步卡',
+      options: TRACKS.filter((t) => S.ck.decks[t] > 0).map((t) => ({
+        label: `${resIcon(TRACK_META[t].com)} ${TRACK_META[t].name}（剩 ${S.ck.decks[t]} 张）`,
+        onPick: () => send({ type: 'defenderPick', deck: t }),
+      })),
     };
   }
   if (st === 'harbor' && S.ck.harbor) {

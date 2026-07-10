@@ -22,7 +22,7 @@
 
 - 扩展规则集中在 `server/ck.js`（常量 + 方法，`Object.assign(Game.prototype, ckMethods)` 挂载）；`game.js` 内用 `this.ck` 分支。开局时房主在选颜色界面选模式。
 - 商品（布匹/铸币/纸张）直接存放在 `player.hand` 里（与资源同构），`cardTypes()` 返回本模式全部牌类型——弃牌/偷牌/交易/银行全部自动覆盖商品。
-- 掷骰流程：`roll()` → 事件骰（3/6 船）→ 野蛮人前进/来袭结算 → `finishRoll()`（产出/弃牌/进步卡/引水渠）。来袭需玩家选城时状态进入 `barbarianLoss`，选完续跑 `finishRoll`。
-- 新增回合状态：`aqueduct`（引水渠选资源）、`barbarianLoss`（选被毁城市）、`displace`（被驱逐骑士由主人安置）、`metropolis`（大都会选城）、`pickCards`/`pickProgress`（商业大亨/间谍选牌）、`wedding`（送礼方选牌）、`harbor`（商业港逐个交换）。这些选择类状态的数据都挂在 `this.turn` 上，提示经 `ckHints` 只发给该选择的玩家。
+- 掷骰流程：`roll()` → 事件骰（3/6 船）→ 野蛮人前进/来袭结算 → `finishRoll()`（产出/弃牌/进步卡/引水渠）。来袭需玩家选择时（选被毁城市 `barbarianLoss`、防御并列选进步卡 `defenderPick`）掷骰结算暂停，选完续跑 `finishRoll`。
+- 新增回合状态：`aqueduct`（引水渠选资源）、`barbarianLoss`（选被毁城市）、`defenderPick`（防御并列第一各自选颜色抽进步卡）、`displace`（被驱逐骑士由主人安置）、`metropolis`（大都会选城）、`pickCards`/`pickProgress`（商业大亨/间谍选牌）、`wedding`（送礼方选牌）、`harbor`（商业港逐个交换）。这些选择类状态的数据都挂在 `this.turn` 上，提示经 `ckHints` 只发给该选择的玩家。
 - 骑士记录在 `this.knights`（vertexId → {player, level, active, builtTurn, promotedTurn, activatedTurn, actedTurn}）：激活当回合不能行动、行动后休整（active=false）、每回合限一次行动/一次升级、本回合招募不能升级、三级需政治 3；对手骑士会截断最长道路与修路。被驱逐的骑士由其主人沿自己路网重新安置，无处可放则移回补给区。
 - 有意的简化：逃兵替换的骑士直接移回补给区（官方由受害者选择哪个骑士叛逃）。
