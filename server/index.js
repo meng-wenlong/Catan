@@ -67,8 +67,15 @@ function broadcastGame(room) {
   const pub = room.game.publicState();
   const hostIndex = room.players.findIndex((p) => p.token === room.hostToken);
   roomEmit(room, 'state', null, (i) => ({ ...pub, hostIndex, you: room.game.privateState(i) }));
-  // 观战者：公开状态，不含手牌
-  emitSpectators(room, 'state', { ...pub, hostIndex, you: { spectating: true, index: -1, hand: { wood:0,brick:0,sheep:0,wheat:0,ore:0 }, devCards: [], rates: {}, hints: {}, vpTotal: 0 } });
+  // 观战者：公开状态，不含手牌；存根须与 privateState 同构（含 ck 商品与 progressCards）
+  emitSpectators(room, 'state', {
+    ...pub,
+    hostIndex,
+    you: {
+      spectating: true, index: -1, hand: room.game.blankHand(),
+      devCards: [], progressCards: [], rates: {}, hints: {}, vpTotal: 0,
+    },
+  });
 }
 
 // 选颜色阶段的状态快照，发给房间内所有人
@@ -284,6 +291,7 @@ io.on('connection', (socket) => {
     room.picking = null;
     roomEmit(room, 'pickingCancelled');
     emitSpectators(room, 'pickingCancelled');
+    room.spectators = []; // 观战者已被告知观战结束，从房间移除，避免下次开局把他们拽回来
     broadcastLobby(room);
     broadcastOpenRooms();
   });
@@ -432,24 +440,26 @@ io.on('connection', (socket) => {
   socket.on('emote', ({ emoji }) => {
     const room = myRoom;
     if (!room) return;
-    let idx = room.players.findIndex((pl) => pl.token === myToken);
-    let name;
-    if (idx < 0 && room.spectators) {
-      const sp = room.spectators.find((s) => s.token === myToken);
-      if (sp) { idx = -1; name = sp.name; }
-    }
-    if (idx < 0 && !name) return;
-    if (!EMOTES.includes(emoji)) return;
-    const userName = name || room.players[idx].name;
-    // 观战者不防刷屏
-    if (idx >= 0) {
-      const p = room.players[idx];
-      const now = Date.now();
-      if (now - (p.lastEmote || 0) < 1000) return;
-      p.lastEmote = now;
-    }
-    roomEmit(room, 'emote', { index: idx, name: userName, emoji });
-    emitSpectators(room, 'emote', { index: idx, name: userName, emoji });
+    const idx = room.players.findIndex((pl) => pl.token === myToken);
+    // 发送者：玩家或观战者，统一防刷屏（每人至少间隔 1 秒）
+    const sender = idx >= 0 ? room.players[idx]
+      : room.spectators?.find((s) => s.token === myToken);
+    if (!sender || !EMOTES.includes(emoji)) return;
+    const now = Date.now();
+    if (now - (sender.lastEmote || 0) < 1000) return;
+    sender.lastEmote = now;
+    roomEmit(room, 'emote', { index: idx, name: sender.name, emoji });
+    emitSpectators(room, 'emote', { index: idx, name: sender.name, emoji });
+  });
+
+  // 观战者主动退出
+  socket.on('leaveSpectate', () => {
+    const room = myRoom;
+    if (!room || !room.spectators) return;
+    const i = room.spectators.findIndex((s) => s.token === myToken);
+    if (i >= 0) room.spectators.splice(i, 1);
+    myRoom = null;
+    myToken = null;
   });
 
   socket.on('disconnect', () => {

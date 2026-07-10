@@ -163,6 +163,23 @@ $('btn-spectate').onclick = () => {
   socket.emit('spectateRoom', { code, name });
 };
 
+// 退出观战 / 观战结束：重置本地对局状态，回到首页
+function exitSpectate(msg) {
+  isSpectating = false;
+  boardReady = false;
+  S = null;
+  myRoomCode = null;
+  lastSeq = 0;
+  lastLogSeq = 0;
+  $('log-list').innerHTML = '';
+  show('screen-home');
+  if (msg) toast(msg);
+}
+$('btn-spec-leave').onclick = () => {
+  socket.emit('leaveSpectate');
+  exitSpectate();
+};
+
 $('btn-copy').onclick = () => {
   navigator.clipboard?.writeText($('lobby-code').textContent).then(() => toast('已复制房间码'));
 };
@@ -210,9 +227,7 @@ socket.on('picking', (pk) => {
 
 socket.on('pickingCancelled', () => {
   if (isSpectating) {
-    isSpectating = false;
-    show('screen-home');
-    toast('房间取消了选颜色，观战结束');
+    exitSpectate('房间取消了选颜色，观战结束');
     return;
   }
   if (!$('screen-pick').classList.contains('hidden')) show('screen-lobby');
@@ -533,11 +548,7 @@ function applyState() {
 // 房主结束本局：清空对局相关状态，回到等待大厅（后续 lobby 事件会填充大厅）
 socket.on('returnToLobby', () => {
   if (isSpectating) {
-    isSpectating = false;
-    boardReady = false;
-    S = null;
-    show('screen-home');
-    toast('游戏已结束，观战完毕');
+    exitSpectate('游戏已结束，观战完毕');
     return;
   }
   boardReady = false;   // 下一局需重新 initBoard
@@ -572,10 +583,8 @@ function updateSpectatorUI() {
   $('dev-cards').classList.toggle('hidden', hide);
   $('action-buttons').classList.toggle('hidden', hide);
   $('bottom-bar').classList.toggle('spectating', hide);
-  // 观战提示
-  if (hide) {
-    $('status-text').textContent = '👁️ ' + $('status-text').textContent.replace('👁️ ', '');
-  }
+  $('btn-spec-leave').classList.toggle('hidden', !hide);
+  // 观战状态前缀由 renderStatus 统一处理（这里加会被下一次渲染覆盖）
 }
 
 function renderAll() {
@@ -606,6 +615,11 @@ function renderBarbBar() {
     .reduce((s, k) => s + k.level, 0);
   updateBarbarianTrack(S.ck, strength, defense);
   updateProgressDecks(S.ck.decks);
+  // 观战者没有自己的升级数据（S.players[-1] 不存在），不渲染升级轨道
+  if (myIndex < 0) {
+    updateImproveBoard(null);
+    return;
+  }
   const canAct = isMyTurn() && S.turn.state === 'main';
   const craneOn = canAct && S.ck.crane;
   // 官方规则：没有城市时不能购买城市升级（已有等级保留）
@@ -704,7 +718,7 @@ function renderStatus() {
       }
     } else text = isMyTurn() ? '你的回合：建造、交易或结束回合' : `${cur.name} 的回合`;
   }
-  $('status-text').textContent = text;
+  $('status-text').textContent = (isSpectating ? '👁️ ' : '') + text;
 
   // ck：第一颗是红骰（与事件骰城门配合决定进步卡派发）；setDie 依赖该类，需先设置
   $('die1').classList.toggle('red-die', S.mode === 'ck');
