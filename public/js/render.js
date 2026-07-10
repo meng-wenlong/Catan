@@ -18,6 +18,7 @@ let robberEl = null;
 let isle = null;     // 岛屿几何 {cx, cy, hexR}，野蛮人航道定位用
 let barbEls = null;  // 野蛮人航道的持久元素（船用 transform 过渡动画，不能每次重建）
 let deckEls = null;  // 进步卡牌堆的持久元素 {pos, count, prev}（计数变化时播放 bump 动画）
+let impEls = null;   // 城市升级面板的持久元素（左下角，点击打开升级弹窗）
 
 // ---------- 缩放与平移 ----------
 const MAX_ZOOM = 4;
@@ -245,11 +246,12 @@ export function initBoard(svgElement, boardData) {
   buildDefs();
   vpG = el('g', { id: 'viewport' }, svg);
   applyVB();
-  for (const name of ['island', 'barb', 'decks', 'hexes', 'harbors', 'roads', 'walls', 'buildings', 'knights', 'marks', 'robber', 'hotspots']) {
+  for (const name of ['island', 'barb', 'decks', 'improve', 'hexes', 'harbors', 'roads', 'walls', 'buildings', 'knights', 'marks', 'robber', 'hotspots']) {
     layers[name] = el('g', { id: `layer-${name}` }, vpG);
   }
   barbEls = null;
   deckEls = null;
+  impEls = null;
 
   // 岛屿底座：不规则浅滩 + 沙滩海岸线（blob 形状确定性生成），外围点缀漂浮的浪花
   const cx = (Math.min(...xs) + Math.max(...xs)) / 2;
@@ -573,6 +575,55 @@ export function updateProgressDecks(decks) {
       card.classList.add('bump');
     }
     deckEls.prev[track] = n;
+  }
+}
+
+// ---------- 城市升级面板（画在棋盘左下角海面上，点击打开升级弹窗） ----------
+// data = { levels: {trade,politics,science}, metro: {track: 是否我的大都会} }；传 null 清除
+export function updateImprovementPanel(data, onClick) {
+  const layer = layers.improve;
+  if (!layer) return;
+  if (!data) {
+    layer.innerHTML = '';
+    impEls = null;
+    return;
+  }
+  if (!impEls) {
+    layer.innerHTML = '';
+    const x0 = baseVB.x + 0.5;
+    const yBot = baseVB.y + baseVB.h;
+    const g = el('g', { class: 'imp-panel' }, layer);
+    el('rect', {
+      x: x0 - 0.16, y: yBot - 1.8, width: 2.06, height: 1.46, rx: 0.12,
+      class: 'imp-panel-bg',
+    }, g);
+    impEls = { pips: {}, metro: {}, onClick: null };
+    Object.entries(DECK_META).forEach(([track, meta], i) => {
+      const y = yBot - 1.46 + i * 0.41;
+      const ico = el('text', { x: x0 + 0.12, y: y + 0.075, class: 'imp-panel-ico' }, g);
+      ico.textContent = meta.icon;
+      impEls.pips[track] = [];
+      for (let k = 0; k < 5; k++) {
+        impEls.pips[track].push(el('rect', {
+          x: x0 + 0.34 + k * 0.22, y: y - 0.085, width: 0.17, height: 0.17, rx: 0.03,
+          class: 'imp-panel-pip',
+        }, g));
+      }
+      const m = el('text', { x: x0 + 0.34 + 5 * 0.22 + 0.03, y: y + 0.07, class: 'imp-panel-metro' }, g);
+      m.textContent = '🏛️';
+      impEls.metro[track] = m;
+    });
+    const title = el('title', {}, g);
+    title.textContent = '城市升级（点击查看/购买）';
+    g.onclick = () => impEls?.onClick?.();
+  }
+  impEls.onClick = onClick;
+  for (const [track, meta] of Object.entries(DECK_META)) {
+    const lvl = data.levels[track] ?? 0;
+    impEls.pips[track].forEach((r, k) => {
+      r.style.fill = k < lvl ? meta.color : '';
+    });
+    impEls.metro[track].style.display = data.metro[track] ? '' : 'none';
   }
 }
 

@@ -4,6 +4,7 @@ import {
   showVertexSpots, showEdgeSpots, showRobberSpots, showHexSpots,
   zoomAt, resetZoom, highlightProducingHexes, hexPixelPosition,
   updateBarbarianTrack, updateProgressDecks, deckPixelPosition,
+  updateImprovementPanel,
 } from './render.js';
 import { initSfx } from './sfx.js';
 import { initSound } from './sound.js';
@@ -504,6 +505,7 @@ function renderBarbBar() {
   if (S.mode !== 'ck' || S.phase === 'setup') {
     updateBarbarianTrack(null);
     updateProgressDecks(null);
+    updateImprovementPanel(null);
     return;
   }
   const strength = Object.values(S.buildings).filter((b) => b.type === 'city').length;
@@ -511,6 +513,13 @@ function renderBarbBar() {
     .reduce((s, k) => s + k.level, 0);
   updateBarbarianTrack(S.ck, strength, defense);
   updateProgressDecks(S.ck.decks);
+  updateImprovementPanel({
+    levels: S.players[myIndex].improvements,
+    metro: Object.fromEntries(TRACKS.map((t) => [t, S.ck.metropolis[t]?.player === myIndex])),
+  }, () => {
+    renderImproveModal();
+    $('modal-improve').classList.remove('hidden');
+  });
 }
 
 function renderStatus() {

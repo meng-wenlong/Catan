@@ -710,6 +710,14 @@ body {
   100% { transform: scale(1); }
 }
 
+/* 城市升级面板（画在棋盘左下角海面上） */
+.imp-panel { cursor: pointer; }
+.imp-panel-bg { fill: rgba(20,35,52,.55); stroke: rgba(255,255,255,.35); stroke-width: .025; transition: fill .2s; }
+.imp-panel:hover .imp-panel-bg { fill: rgba(20,35,52,.78); }
+.imp-panel-ico { font-size: .2px; text-anchor: middle; }
+.imp-panel-pip { fill: rgba(255,255,255,.22); stroke: rgba(255,255,255,.6); stroke-width: .018; transition: fill .3s; }
+.imp-panel-metro { font-size: .17px; }
+
 /* 进步卡飞行动画（牌堆 ↔ 玩家面板） */
 .fly-card {
   position: fixed; left: 0; top: 0; z-index: 65;
