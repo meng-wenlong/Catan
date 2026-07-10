@@ -373,6 +373,7 @@ io.on('connection', (socket) => {
         case 'harborGive': g.harborGive(p, data.res); break;
         case 'harborTake': g.harborTake(p, data.com); break;
         case 'defenderPick': g.defenderPickDeck(p, data.deck); break;
+        case 'deserterPick': g.deserterPick(p, data.vertex); break;
         default: return fail('未知操作');
       }
       broadcastGame(room);

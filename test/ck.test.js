@@ -615,3 +615,53 @@ test('ck：用掉的进步卡放回牌堆底部', () => {
   assert.equal(g.progressDecks.trade.length, len + 1);
   assert.equal(g.progressDecks.trade[0], 'merchantFleet'); // 抽牌从末端 pop，index 0 即牌堆底
 });
+
+test('ck：逃兵由受害者选骑士，出牌者放置同级骑士', () => {
+  const g = newCK(3);
+  doSetup(g);
+  forceMain(g);
+  // 玩家 1 有两名骑士（1 级与 2 级）
+  const v1 = g.validKnightSpots(1)[0];
+  const v2 = g.validKnightSpots(1).find((v) => v !== v1);
+  g.knights[v1] = mkKnight(1, 1);
+  g.knights[v2] = mkKnight(1, 2);
+  g.players[0].progressCards.push({ type: 'deserter', deck: 'politics' });
+  assert.throws(() => g.playProgress(0, 'deserter', { target: 2 }), /该玩家没有骑士/);
+  g.playProgress(0, 'deserter', { target: 1 });
+  assert.equal(g.turn.state, 'deserterPick');
+  assert.throws(() => g.deserterPick(0, v1), /你不需要选择/); // 出牌者不能替受害者选
+  assert.throws(() => g.deserterPick(1, 999), /请选择你自己的骑士/);
+  g.deserterPick(1, v2); // 受害者交出 2 级骑士
+  assert.equal(g.knights[v2], undefined);
+  // 出牌者进入放置状态，获得同级（2 级）骑士
+  assert.equal(g.turn.state, 'displace');
+  assert.equal(g.turn.displace.owner, 0);
+  assert.equal(g.turn.displace.knight.level, 2);
+  assert.equal(g.turn.displace.reason, 'deserter');
+  const spot = g.turn.displace.options[0];
+  g.placeDisplaced(0, spot);
+  assert.equal(g.knights[spot].player, 0);
+  assert.equal(g.knights[spot].level, 2);
+  assert.equal(g.knights[spot].active, false);
+  assert.equal(g.turn.state, 'main');
+  // 本回合获得的骑士不能升级（builtTurn 生效）
+  g.players[0].hand.sheep = 1; g.players[0].hand.ore = 1;
+  assert.throws(() => g.upgradeKnight(0, spot), /本回合招募/);
+});
+
+test('ck：逃兵出牌者无可用棋子时受害者仍失去骑士', () => {
+  const g = newCK(3);
+  doSetup(g);
+  forceMain(g);
+  // 玩家 0 的 1 级骑士棋子占满（2 名），受害者交出 1 级骑士 → 无法获得
+  const s0 = g.validKnightSpots(0);
+  g.knights[s0[0]] = mkKnight(0, 1);
+  g.knights[s0[1]] = mkKnight(0, 1);
+  const v1 = g.validKnightSpots(1).find((v) => !g.knights[v]);
+  g.knights[v1] = mkKnight(1, 1);
+  g.players[0].progressCards.push({ type: 'deserter', deck: 'politics' });
+  g.playProgress(0, 'deserter', { target: 1 });
+  g.deserterPick(1, v1);
+  assert.equal(g.knights[v1], undefined); // 受害者照样失去
+  assert.equal(g.turn.state, 'main');     // 出牌者拿不到，直接回到 main
+});

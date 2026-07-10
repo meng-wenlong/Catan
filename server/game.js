@@ -58,7 +58,8 @@ export class Game {
       eventDie: null, fleet: null, crane: false,
       pendingAqueduct: [], pendingCityLoss: {}, postRollTotal: 0,
       pendingDefenderPick: [], // 防御并列第一：各自选颜色抽进步卡
-      displace: null,    // 被驱逐骑士待安置 {owner, knight, options}
+      displace: null,    // 骑士待安置 {owner, knight, options, reason?: 'deserter'}
+      deserter: null,    // 逃兵卡等受害者选骑士 {from, target}
       metroChoice: null, // 大都会选城 {track, options, stolenFrom}
       pick: null,        // 商业大亨/间谍选牌 {type, from, count}
       pendingGive: {},   // 婚礼：playerIdx -> 还需上缴张数
@@ -823,8 +824,9 @@ export class Game {
         pendingAqueduct: this.turn.pendingAqueduct,
         pendingDefenderPick: this.turn.pendingDefenderPick,
         displace: this.turn.displace
-          ? { owner: this.turn.displace.owner, level: this.turn.displace.knight.level }
+          ? { owner: this.turn.displace.owner, level: this.turn.displace.knight.level, reason: this.turn.displace.reason || null }
           : null,
+        deserter: this.turn.deserter ? { ...this.turn.deserter } : null,
         metroTrack: this.turn.metroChoice?.track ?? null,
         pick: this.turn.pick ? { type: this.turn.pick.type, from: this.turn.pick.from, count: this.turn.pick.count } : null,
         pendingGive: Object.fromEntries(Object.entries(this.turn.pendingGive)),

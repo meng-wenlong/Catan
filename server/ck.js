@@ -280,11 +280,49 @@ export const ckMethods = {
     if (!d || d.owner !== p) this.err('你不需要安置骑士');
     if (!d.options.includes(v)) this.err('无效的位置');
     this.knights[v] = d.knight;
+    const fromDeserter = d.reason === 'deserter';
     this.turn.displace = null;
     this.turn.state = 'main';
     this.addEvent('build', { player: p, kind: 'knight', vertex: v });
-    this.addLog(`${this.players[p].name} 重新安置了被驱逐的骑士`);
+    this.addLog(fromDeserter
+      ? `${this.players[p].name} 放置了获得的 ${d.knight.level} 级骑士`
+      : `${this.players[p].name} 重新安置了被驱逐的骑士`);
     this.updateLongestRoad();
+  },
+
+  // 逃兵卡：受害者选择交出哪个骑士，随后出牌者放置同级（棋子不足自动降级）骑士
+  deserterPick(p, v) {
+    this.requireCK();
+    this.requireState('deserterPick');
+    const d = this.turn.deserter;
+    if (!d || d.target !== p) this.err('你不需要选择');
+    const k = this.knights[v];
+    if (!k || k.player !== p) this.err('请选择你自己的骑士');
+    delete this.knights[v];
+    this.addLog(`${this.players[p].name} 的 ${k.level} 级骑士叛逃了！`);
+    this.turn.deserter = null;
+    this.turn.state = 'main';
+    this.updateLongestRoad();
+    // 出牌者尽量获得同级骑士；棋子不足或未解锁三级则依次降级
+    const from = d.from;
+    let level = k.level;
+    while (level > 0) {
+      if (level === 3 && this.players[from].improvements.politics < 3) { level--; continue; }
+      if (this.knightCountAtLevel(from, level) >= KNIGHT_PER_LEVEL) { level--; continue; }
+      break;
+    }
+    const spots = level > 0 ? this.validKnightSpots(from) : [];
+    if (level === 0 || spots.length === 0) {
+      this.addLog(`${this.players[from].name} 没有可用的骑士棋子或位置，未获得骑士`);
+      return;
+    }
+    const knight = {
+      player: from, level, active: false,
+      builtTurn: this.turn.count, promotedTurn: 0, activatedTurn: 0, actedTurn: 0,
+    };
+    this.turn.displace = { owner: from, knight, options: spots, reason: 'deserter' };
+    this.turn.state = 'displace';
+    this.addLog(`等待 ${this.players[from].name} 放置获得的 ${level} 级骑士`);
   },
 
   chaseRobber(p, v) {
@@ -780,29 +818,14 @@ export const ckMethods = {
         break;
       }
       case 'deserter': {
-        const kv = payload.knight;
-        const k = this.knights[kv];
-        if (!k || k.player === p) this.err('请选择一名对手的骑士');
-        const spots = this.validKnightSpots(p);
-        if (!spots.includes(payload.place)) this.err('没有可放置骑士的位置');
-        // 尽量放同级骑士；棋子不足或未解锁三级则依次降级
-        let level = k.level;
-        while (level > 0) {
-          if (level === 3 && this.players[p].improvements.politics < 3) { level--; continue; }
-          if (this.knightCountAtLevel(p, level) >= KNIGHT_PER_LEVEL) { level--; continue; }
-          break;
-        }
-        if (level === 0) this.err('你没有可用的骑士棋子');
+        // 官方规则：只指定对手，由受害者自己选哪个骑士叛逃（deserterPick 状态）
+        const t = payload.target;
+        if (!Number.isInteger(t) || t === p || !this.players[t]) this.err('请选择一名对手');
+        if (!Object.values(this.knights).some((k) => k.player === t)) this.err('该玩家没有骑士');
         spend();
-        this.addLog(`${this.players[k.player].name} 的 ${k.level} 级骑士叛逃了！`);
-        delete this.knights[kv];
-        this.knights[payload.place] = {
-          player: p, level, active: false,
-          builtTurn: this.turn.count, promotedTurn: 0, activatedTurn: 0, actedTurn: 0,
-        };
-        this.addEvent('build', { player: p, kind: 'knight', vertex: payload.place });
-        this.addLog(`${pl.name} 获得一名 ${level} 级骑士`);
-        this.updateLongestRoad();
+        this.turn.deserter = { from: p, target: t };
+        this.turn.state = 'deserterPick';
+        this.addLog(`等待 ${this.players[t].name} 选择叛逃的骑士…`);
         break;
       }
       case 'diplomat': {
@@ -1028,6 +1051,11 @@ export const ckMethods = {
     }
     if (this.turn.state === 'displace' && this.turn.displace?.owner === p) {
       hints.displaceSpots = this.turn.displace.options;
+      return;
+    }
+    if (this.turn.state === 'deserterPick' && this.turn.deserter?.target === p) {
+      hints.deserterKnights = Object.keys(this.knights)
+        .filter((v) => this.knights[v].player === p).map(Number);
       return;
     }
     if (this.turn.state === 'wedding' && this.turn.pendingGive[p]) {

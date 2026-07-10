@@ -71,7 +71,7 @@ const PROG_META = {
   resourceMonopoly: { name: '资源垄断', desc: '指定一种资源，每位对手最多上缴 2 张' },
   tradeMonopoly: { name: '商品垄断', desc: '指定一种商品，每位对手上缴 1 张' },
   bishop: { name: '主教', desc: '移动强盗，并从相邻的每位玩家各偷 1 张牌' },
-  deserter: { name: '逃兵', desc: '移除一名对手的骑士，你在自己路网上放置一个同级骑士' },
+  deserter: { name: '逃兵', desc: '指定一名对手，由对方选一名骑士叛逃；你放置一个同级骑士（棋子不足自动降级）' },
   diplomat: { name: '外交官', desc: '移除一条「开放道路」（自己的可立即重放）' },
   intrigue: { name: '阴谋', desc: '驱逐一名位于你道路上的对手骑士' },
   saboteur: { name: '破坏者', desc: '分数不低于你的玩家全部弃一半手牌' },
@@ -567,9 +567,20 @@ function renderStatus() {
         : `野蛮人来袭！等待 ${names} 选择被摧毁的城市…`;
     } else if (st === 'displace') {
       const d = S.ck.displace;
-      text = d.owner === myIndex
-        ? '⚔️ 你的骑士被驱逐！请点击新位置安置'
-        : `等待 ${S.players[d.owner].name} 安置被驱逐的骑士…`;
+      if (d.reason === 'deserter') {
+        text = d.owner === myIndex
+          ? `🏇 逃兵：请点击位置放置获得的 ${d.level} 级骑士`
+          : `等待 ${S.players[d.owner].name} 放置获得的骑士…`;
+      } else {
+        text = d.owner === myIndex
+          ? '⚔️ 你的骑士被驱逐！请点击新位置安置'
+          : `等待 ${S.players[d.owner].name} 安置被驱逐的骑士…`;
+      }
+    } else if (st === 'deserterPick') {
+      const d = S.ck.deserter;
+      text = d.target === myIndex
+        ? '🏳️ 逃兵！请点击你要交出的骑士'
+        : `等待 ${S.players[d.target].name} 选择叛逃的骑士…`;
     } else if (st === 'metropolis') {
       text = isMyTurn() ? '🏛️ 请点击一座城市建立大都会' : `${cur.name} 正在选择大都会城市…`;
     } else if (st === 'pickCards') {
@@ -807,11 +818,16 @@ function playProgressCard(type) {
       if (!(S.you.hints.intrigueKnights || []).length) return toast('你的道路上没有对手骑士');
       startProgAction(type, '阴谋：点击你道路上的对手骑士');
       break;
-    case 'deserter':
-      if (!Object.values(S.ck.knights).some((k) => k.player !== myIndex)) return toast('对手没有骑士');
-      if (!(S.you.hints.knightSpots || []).length) return toast('你没有可放骑士的位置');
-      startProgAction(type, '逃兵：点击一名对手的骑士');
+    case 'deserter': {
+      const targets = S.players.map((_, i) => i).filter((i) => i !== myIndex
+        && Object.values(S.ck.knights).some((k) => k.player === i));
+      if (!targets.length) return toast('对手没有骑士');
+      openPickModal('逃兵：指定一名对手（由对方选择叛逃的骑士）', targets.map((i) => ({
+        label: `${esc(S.players[i].name)}（${Object.values(S.ck.knights).filter((k) => k.player === i).length} 名骑士）`,
+        onPick: () => sendProg('deserter', { target: i }),
+      })));
       break;
+    }
     case 'smith': {
       const upgradable = Object.entries(S.you.hints.myKnights || {}).filter(([, k]) => k.upgrade);
       if (upgradable.length === 0) return toast('没有可升级的骑士');
@@ -958,6 +974,11 @@ function renderHotspots() {
     showVertexSpots(S.you.hints.displaceSpots, (v) => send({ type: 'placeDisplaced', vertex: v }));
     return;
   }
+  // 逃兵：受害者点选交出的骑士（非当前回合玩家）
+  if (S.turn.state === 'deserterPick' && (S.you.hints.deserterKnights || []).length) {
+    showVertexSpots(S.you.hints.deserterKnights, (v) => send({ type: 'deserterPick', vertex: v }));
+    return;
+  }
   if (isMyTurn()) {
     const st = S.turn.state;
     if (st === 'metropolis') {
@@ -1030,17 +1051,6 @@ function renderProgSpots() {
     case 'diplomat':
       showEdgeSpots(S.you.hints.openRoads || [], (e) => { cancelProgAction(); sendProg('diplomat', { edge: e }); });
       break;
-    case 'deserter':
-      if (pa.step === 1) {
-        showVertexSpots(S.you.hints.knightSpots || [], (v) => {
-          const kv = pa.data.knight;
-          cancelProgAction();
-          sendProg('deserter', { knight: kv, place: v });
-        });
-      } else {
-        clearHotspots(); // 等待点击对手骑士（骑士棋子自带点击）
-      }
-      break;
     case 'intrigue':
     case 'smith':
       clearHotspots(); // 点击骑士棋子完成
@@ -1057,13 +1067,6 @@ function onKnightClick(v, k) {
     if (pa.card === 'intrigue' && (S.you.hints.intrigueKnights || []).includes(v)) {
       cancelProgAction();
       sendProg('intrigue', { vertex: v });
-      return;
-    }
-    if (pa.card === 'deserter' && pa.step === 0 && k.player !== myIndex) {
-      pa.step = 1;
-      pa.data.knight = v;
-      $('prog-banner-text').textContent = '逃兵：点击你要放置骑士的位置';
-      renderProgSpots();
       return;
     }
     if (pa.card === 'smith' && k.player === myIndex) {
