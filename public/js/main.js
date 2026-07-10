@@ -4,7 +4,7 @@ import {
   showVertexSpots, showEdgeSpots, showRobberSpots, showHexSpots,
   zoomAt, resetZoom, highlightProducingHexes, hexPixelPosition,
   updateBarbarianTrack, updateProgressDecks, deckPixelPosition,
-  updateImproveBoard,
+  updateImproveBoard, attachCardInspect,
 } from './render.js';
 import { initSfx, sfx } from './sfx.js';
 import { initSound } from './sound.js';
@@ -28,10 +28,8 @@ const RES_META = {
 };
 // 当前模式下的全部牌类型
 const cardList = () => (S && S.mode === 'ck' ? [...RES, ...COM] : RES);
-// 行内资源小图标（资源用插画，商品用 emoji）
-const resIcon = (r) => (COM.includes(r)
-  ? `<span class="res-ico-emoji" title="${RES_META[r].name}">${RES_META[r].icon}</span>`
-  : `<img class="res-ico" src="/assets/opt/icon-${r}.webp" alt="${RES_META[r].name}">`);
+// 行内资源/商品小图标（均用设计师插画）
+const resIcon = (r) => `<img class="res-ico" src="/assets/opt/icon-${r}.webp" alt="${RES_META[r].name}">`;
 // 骰面插画；红骰（ck）用 canvas 预染色的副本 —— Safari 对 img 的 CSS 滤镜链渲染不稳定
 const redDieSrc = {};
 for (let n = 1; n <= 6; n++) {
@@ -56,12 +54,14 @@ const setDie = (el, n) => {
   el.innerHTML = `<img src="${red || `/assets/opt/die-${n}.webp`}" alt="${n}">`;
 };
 const DEV_META = {
-  knight: { icon: '⚔️', name: '骑士' },
-  vp: { icon: '🏆', name: '分数' },
-  roadBuilding: { icon: '🛤️', name: '修路' },
-  yearOfPlenty: { icon: '🌟', name: '丰收' },
-  monopoly: { icon: '💰', name: '垄断' },
+  knight: { icon: '⚔️', name: '骑士', desc: '移动强盗，并从相邻的一名玩家偷 1 张牌' },
+  vp: { icon: '🏆', name: '分数', desc: '胜利点数：+1 分，保留在手中计入总分' },
+  roadBuilding: { icon: '🛤️', name: '修路', desc: '免费建造 2 条道路' },
+  yearOfPlenty: { icon: '🌟', name: '丰收', desc: '从银行任取 2 张资源' },
+  monopoly: { icon: '💰', name: '垄断', desc: '指定一种资源，收取所有对手手中的该资源' },
 };
+// 发展卡类型 → 插画文件名（完整卡浮层用）
+const DEV_ASSET = { knight: 'knight', vp: 'vp', roadBuilding: 'road', yearOfPlenty: 'plenty', monopoly: 'monopoly' };
 // 进步卡（城市与骑士）
 const PROG_META = {
   merchant: { name: '商人', desc: '放在自己建筑相邻的板块上：该资源 2:1 交易，+1 分（可被他人夺走）' },
@@ -185,6 +185,66 @@ $('btn-copy').onclick = () => {
 };
 
 $('btn-start').onclick = () => socket.emit('startGame');
+
+// ---------- 单人调试模式（仅 /?dev 显示入口；面板仅在 dev 房渲染） ----------
+if (new URLSearchParams(location.search).has('dev')) $('btn-dev').classList.remove('hidden');
+$('btn-dev').onclick = () => {
+  const name = $('home-name').value.trim() || '调试';
+  localStorage.setItem('catan_name', name);
+  socket.emit('createDevRoom', { name });
+};
+
+let devBuilt = false;
+function buildDevPanel() {
+  if (devBuilt) return;
+  devBuilt = true;
+  const opt = (pairs) => pairs.map(([v, t]) => `<option value="${v}">${t}</option>`).join('');
+  const devCards = [['knight', '骑士'], ['roadBuilding', '修路'], ['yearOfPlenty', '丰收'], ['monopoly', '垄断'], ['vp', '分数']];
+  const progCards = Object.entries(PROG_META).map(([k, v]) => [k, v.name]);
+  const events = [['', '随机事件骰'], ['ship', '⛵ 船'], ['trade', '贸易门'], ['politics', '政治门'], ['science', '科学门']];
+  $('dev-panel').innerHTML = `
+    <div class="dev-head">🛠 调试面板 <button id="dev-toggle" title="收起/展开">–</button></div>
+    <div class="dev-body">
+      <button class="dev-btn" data-act="fill">💰 填满我的资源</button>
+      <div class="dev-line"><select id="dev-c1">${opt(devCards)}</select><button class="dev-btn" data-act="grantDev">发展卡→我</button></div>
+      <div class="dev-line"><select id="dev-c2">${opt(progCards)}</select><button class="dev-btn" data-act="grantProg">进步卡→我</button></div>
+      <div class="dev-line">🎲 <input id="dev-d1" type="number" min="1" max="6" value="4"><input id="dev-d2" type="number" min="1" max="6" value="4"><select id="dev-ev">${opt(events)}</select><button class="dev-btn" data-act="dice">掷</button></div>
+      <div class="dev-line">给 <select id="dev-npc"></select><select id="dev-card"></select><button class="dev-btn" data-act="give">发牌</button></div>
+      <div id="dev-hands"></div>
+    </div>`;
+  $('dev-toggle').onclick = () => $('dev-panel').classList.toggle('collapsed');
+  $('dev-panel').querySelector('.dev-body').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-act]');
+    if (!b) return;
+    const a = b.dataset.act;
+    if (a === 'fill') send({ type: 'devFill' });
+    else if (a === 'grantDev') send({ type: 'devGrantDev', card: $('dev-c1').value });
+    else if (a === 'grantProg') send({ type: 'devGrantProgress', card: $('dev-c2').value });
+    else if (a === 'dice') send({ type: 'devSetDice', d1: +$('dev-d1').value, d2: +$('dev-d2').value, eventDie: $('dev-ev').value || null });
+    else if (a === 'give') send({ type: 'devGiveNPC', target: +$('dev-npc').value, card: $('dev-card').value, n: 1 });
+  });
+}
+
+function renderDevPanel() {
+  const el = $('dev-panel');
+  if (!S || !S.dev) { el.classList.add('hidden'); return; }
+  buildDevPanel();
+  el.classList.remove('hidden');
+  // NPC 下拉（排除玩家 0）与卡牌下拉
+  const npcSel = $('dev-npc');
+  if (npcSel.options.length !== S.players.length - 1) {
+    npcSel.innerHTML = S.players.map((p, i) => (i === 0 ? '' : `<option value="${i}">${esc(p.name)}</option>`)).join('');
+  }
+  const cardSel = $('dev-card');
+  if (!cardSel.options.length) cardSel.innerHTML = cardList().map((r) => `<option value="${r}">${RES_META[r].name}</option>`).join('');
+  // 所有玩家手牌一览（含 NPC）
+  const dp = S.you.devPlayers || [];
+  $('dev-hands').innerHTML = dp.map((p) => {
+    const cards = cardList().filter((r) => p.hand[r] > 0).map((r) => `${RES_META[r].name}${p.hand[r]}`).join(' ');
+    const extra = [(p.devCards || []).length ? `发×${p.devCards.length}` : '', (p.progressCards || []).length ? `进×${p.progressCards.length}` : ''].filter(Boolean).join(' ');
+    return `<div class="dev-hand"><b style="color:${p.color}">${esc(p.name)}</b>：${cards || '空'}${extra ? ` <span class="dev-dim">${extra}</span>` : ''}</div>`;
+  }).join('');
+}
 
 // 非房主：退出房间
 $('btn-leave').onclick = () => socket.emit('leaveRoom');
@@ -599,6 +659,7 @@ function renderAll() {
   renderHotspots();
   renderLog();
   renderModals();
+  renderDevPanel();
   renderTradeBanner();
 }
 
@@ -791,10 +852,15 @@ function renderHand() {
     const n = S.you.hand[r];
     const div = document.createElement('div');
     div.className = `res-card res-${r}`;
-    // 资源卡面是插画（CSS 背景图）；商品卡无插画，叠 emoji 图标
-    div.innerHTML = `${COM.includes(r) ? `<span class="com-ico">${RES_META[r].icon}</span>` : ''}<span class="cnt">${n}</span>`;
+    // 资源与商品卡面都是插画（CSS 背景图）
+    div.innerHTML = `<span class="cnt">${n}</span>`;
     div.title = `${RES_META[r].name} ×${n}（银行汇率 ${S.you.rates[r]}:1）`;
     if (prevHand && n > (prevHand[r] || 0)) div.classList.add('bump');
+    attachCardInspect(div, () => ({
+      img: `/assets/opt/resource-${r}.webp`,
+      name: RES_META[r].name,
+      sub: `×${S.you.hand[r]} · 银行汇率 ${S.you.rates[r]}:1`,
+    }));
     wrap.appendChild(div);
   }
   prevHand = { ...S.you.hand };
@@ -825,6 +891,12 @@ function renderDevCards() {
     btn.disabled = !canPlay || type === 'vp';
     if (type === 'vp') btn.title = '分数卡：保留在手中，计入总分';
     btn.onclick = () => playDevCard(type);
+    attachCardInspect(btn, () => ({
+      img: `/assets/opt/dev-${DEV_ASSET[type]}.webp`,
+      name: `${DEV_META[type].name}${g.total > 1 ? ` ×${g.total}` : ''}`,
+      desc: DEV_META[type].desc,
+      boxed: true,
+    }));
     wrap.appendChild(btn);
   }
 }
@@ -859,6 +931,12 @@ function renderProgressCards(wrap) {
     const canPlay = isMyTurn() && (type === 'alchemist' ? st === 'preroll' : st === 'main');
     btn.disabled = !canPlay;
     btn.onclick = () => playProgressCard(type);
+    attachCardInspect(btn, () => ({
+      img: `/assets/opt/progress-${type}.webp`,
+      name: `${PROG_META[type].name}${g.n > 1 ? ` ×${g.n}` : ''}`,
+      desc: PROG_META[type].desc,
+      boxed: true,
+    }));
     wrap.appendChild(btn);
   }
 }
@@ -1328,7 +1406,7 @@ function makePickers(container, sel, limits, onChange) {
     const div = document.createElement('div');
     div.className = 'res-picker';
     div.innerHTML = `
-      <div class="rp-card res-${r}" title="${RES_META[r].name}">${COM.includes(r) ? `<span class="com-ico small">${RES_META[r].icon}</span>` : ''}<span class="rp-cnt">${sel[r] || 0}</span></div>
+      <div class="rp-card res-${r}" title="${RES_META[r].name}"><span class="rp-cnt">${sel[r] || 0}</span></div>
       <div class="rp-btns">
         <button data-d="-1">−</button>
         <button data-d="1">＋</button>
@@ -1516,7 +1594,6 @@ function renderBankPane() {
     for (const r of cardList()) {
       const b = document.createElement('button');
       b.className = `res-${r}`;
-      if (COM.includes(r)) b.innerHTML = `<span class="com-ico small">${RES_META[r].icon}</span>`;
       b.title = `${RES_META[r].name}${isGive ? `（${S.you.rates[r]}:1）` : ''}`;
       b.onclick = () => {
         if (isGive) bankGiveSel = r; else bankGetSel = r;

@@ -30,6 +30,36 @@ function doSetup(g) {
   }
 }
 
+test('调试模式隔离：正常局 dev=false，所有 dev 方法一律拒绝', () => {
+  const g = newGame(3);
+  assert.equal(g.dev, false);
+  assert.throws(() => g.devFill(0), (e) => e.isGameError);
+  assert.throws(() => g.devGrantDev('knight'), (e) => e.isGameError);
+  assert.throws(() => g.devSetDice(3, 4), (e) => e.isGameError);
+  assert.throws(() => g.devQuickStart(), (e) => e.isGameError);
+});
+
+test('调试模式：dev 局 quickStart 后为玩家0、资源填满；endTurn 跳过 NPC 回到玩家0', () => {
+  const g = new Game(
+    Array.from({ length: 4 }, (_, i) => ({ name: `玩家${i + 1}` })),
+    seeded(7), 0, 'ck', { dev: true },
+  );
+  assert.equal(g.dev, true);
+  g.devQuickStart();
+  assert.equal(g.phase, 'play');
+  assert.equal(g.turn.player, 0);
+  assert.ok(g.players[0].hand.wood >= 20);
+  g.devGrantDev('knight');
+  assert.ok(g.players[0].devCards.some((c) => c.type === 'knight' && !c.played));
+  g.devGrantProgress('merchant');
+  assert.ok(g.players[0].progressCards.some((c) => c.type === 'merchant'));
+  g.devSetDice(2, 3, 'trade'); // 非 7，避免进入弃牌/强盗分支
+  assert.deepEqual(g.turn.dice, [2, 3]);
+  g.turn.state = 'main';
+  g.endTurn(0);
+  assert.equal(g.turn.player, 0); // 没有跳到 NPC
+});
+
 test('初始放置：蛇形顺序，距离规则生效', () => {
   const g = newGame(3);
   assert.deepEqual(g.setup.order, [0, 1, 2, 2, 1, 0]);

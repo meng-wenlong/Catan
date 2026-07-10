@@ -20,6 +20,9 @@ const io = new Server(server, { pingInterval: 10000, pingTimeout: 20000 });
 // spectators：观战者 [{token, name, socketId}]
 const rooms = new Map();
 
+// 调试模式开关：默认开启，线上可用 DEV=0 关闭 createDevRoom
+const DEV_ENABLED = process.env.DEV !== '0';
+
 function makeCode() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   let code;
@@ -169,6 +172,26 @@ io.on('connection', (socket) => {
     socket.emit('joined', { code, token, index: 0 });
     broadcastLobby(room);
     broadcastOpenRooms();
+  });
+
+  // 单人调试房：1 真人 + 3 NPC，直接进 play。dev 房不进大厅/开放列表，与正常流程隔离
+  socket.on('createDevRoom', ({ name } = {}) => {
+    if (!DEV_ENABLED) return fail('调试模式未启用');
+    name = String(name || '调试').trim().slice(0, 12) || '调试';
+    const code = makeCode();
+    const token = crypto.randomUUID();
+    const room = {
+      code, hostToken: token, game: null, picking: null, createdAt: Date.now(),
+      players: [{ token, name, socketId: socket.id }],
+    };
+    const infos = [{ name }, { name: '电脑1' }, { name: '电脑2' }, { name: '电脑3' }];
+    room.game = new Game(infos, Math.random, 0, 'ck', { dev: true });
+    room.game.devQuickStart();
+    rooms.set(code, room);
+    myRoom = room;
+    myToken = token;
+    socket.emit('joined', { code, token, index: 0 });
+    broadcastGame(room);
   });
 
   socket.on('joinRoom', ({ code, name, token }) => {
@@ -414,6 +437,12 @@ io.on('connection', (socket) => {
         case 'harborTake': g.harborTake(p, data.com); break;
         case 'defenderPick': g.defenderPickDeck(p, data.deck); break;
         case 'deserterPick': g.deserterPick(p, data.vertex); break;
+        // ---- 调试模式（g.dev 为 false 时下列方法内部直接报错）----
+        case 'devFill': g.devFill(0); break;
+        case 'devGrantDev': g.devGrantDev(data.card); break;
+        case 'devGrantProgress': g.devGrantProgress(data.card); break;
+        case 'devSetDice': g.devSetDice(data.d1, data.d2, data.eventDie || null); break;
+        case 'devGiveNPC': g.devGiveNPC(data.target, data.card, data.n || 1); break;
         default: return fail('未知操作');
       }
       broadcastGame(room);

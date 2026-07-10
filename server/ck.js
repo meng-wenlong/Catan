@@ -1108,4 +1108,16 @@ export const ckMethods = {
       };
     }
   },
+
+  // 调试模式：直接把指定进步卡塞进玩家 0 的手里（dev-only）
+  devGrantProgress(type) {
+    if (!this.dev) this.err('非调试模式');
+    let deck = null;
+    for (const [d, list] of Object.entries(PROGRESS_DECKS)) {
+      if (list.includes(type)) { deck = d; break; }
+    }
+    if (!deck) this.err('未知进步卡');
+    this.players[0].progressCards.push({ type, deck });
+    this.addLog(`🛠 获得进步卡：${PROGRESS_NAME[type]}`);
+  },
 };

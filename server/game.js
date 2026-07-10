@@ -21,10 +21,11 @@ function handCount(hand) {
 
 export class Game {
   // first：起始玩家下标（初始放置与第一个回合都从他开始）
-  constructor(playerInfos, rng = Math.random, first = 0, mode = 'base') {
+  constructor(playerInfos, rng = Math.random, first = 0, mode = 'base', opts = {}) {
     this.rng = rng;
     this.mode = mode === 'ck' ? 'ck' : 'base';
     this.ck = this.mode === 'ck';
+    this.dev = !!opts.dev; // 调试模式：仅经专用入口开启，正常局恒为 false
     this.board = generateBoard(rng);
     this.robber = this.board.robber;
     this.buildings = {}; // vertexId -> {player, type}
@@ -253,7 +254,7 @@ export class Game {
     let eventFace = null;
     if (this.ck) {
       const f = Math.floor(this.rng() * 6);
-      eventFace = f < 3 ? 'ship' : IMPROVE_TRACKS[f - 3];
+      eventFace = (forced && forced.eventDie) ? forced.eventDie : (f < 3 ? 'ship' : IMPROVE_TRACKS[f - 3]);
       this.turn.eventDie = eventFace;
     }
     this.addEvent('dice', { player: p, dice: [d1, d2], eventDie: eventFace });
@@ -687,7 +688,8 @@ export class Game {
     this.requireTurn(p);
     this.requireState('main');
     this.trade = null;
-    this.turn.player = (this.turn.player + 1) % this.players.length;
+    // 调试模式：跳过所有 NPC，直接回到玩家 0（NPC 仅作卡牌目标，不占回合）
+    this.turn.player = this.dev ? 0 : (this.turn.player + 1) % this.players.length;
     this.turn.count++;
     this.turn.rolled = false;
     this.turn.dice = null;
@@ -795,6 +797,7 @@ export class Game {
     return {
       phase: this.phase,
       mode: this.mode,
+      dev: this.dev,
       winGoal: this.winGoal(),
       board: this.board,
       robber: this.robber,
@@ -895,7 +898,65 @@ export class Game {
       rates: Object.fromEntries(this.cardTypes().map((r) => [r, this.bankRate(p, r)])),
       hints,
       vpTotal: this.victoryPoints(p, true),
+      // 调试模式：附带所有玩家（含 NPC）的手牌，便于验证偷牌/间谍等效果
+      devPlayers: this.dev ? this.players.map((pl) => ({
+        name: pl.name,
+        color: pl.color,
+        hand: pl.hand,
+        devCards: pl.devCards.filter((c) => !c.played).map((c) => c.type),
+        progressCards: this.ck ? pl.progressCards.map((c) => c.type) : [],
+      })) : undefined,
     };
+  }
+
+  // ---------- 调试模式方法（dev-only；正常局 this.dev=false 时一律拒绝） ----------
+  requireDev() { if (!this.dev) this.err('非调试模式'); }
+
+  devFill(target = 0) {
+    this.requireDev();
+    const pl = this.players[target];
+    if (!pl) this.err('玩家无效');
+    for (const r of this.cardTypes()) pl.hand[r] = Math.max(pl.hand[r], 20);
+    this.addLog(`🛠 ${pl.name} 资源已填满`);
+  }
+
+  devGrantDev(type) {
+    this.requireDev();
+    if (!DEV_DECK.includes(type)) this.err('未知发展卡');
+    this.players[0].devCards.push({ type, boughtTurn: 0, played: false });
+    this.addLog(`🛠 获得发展卡：${type}`);
+  }
+
+  devSetDice(d1, d2, eventDie = null) {
+    this.requireDev();
+    this.roll(0, { d1, d2, eventDie });
+  }
+
+  devGiveNPC(target, card, n = 1) {
+    this.requireDev();
+    if (target === 0 || !this.players[target]) this.err('目标无效');
+    if (!this.cardTypes().includes(card)) this.err('未知牌');
+    this.players[target].hand[card] += n;
+    this.addLog(`🛠 ${this.players[target].name} +${n} ${this.cardName(card)}`);
+  }
+
+  devQuickStart() {
+    this.requireDev();
+    let guard = 0;
+    while (this.phase === 'setup' && guard++ < 60) {
+      const p = this.currentSetupPlayer();
+      if (this.setup.awaiting === 'settlement') {
+        this.placeSetupSettlement(p, this.validSettlementVertices(p, true)[0]);
+      } else {
+        this.placeSetupRoad(p, this.validRoadEdges(p, this.setup.lastSettlement)[0]);
+      }
+    }
+    if (this.phase === 'play') {
+      this.turn.player = 0;
+      this.turn.state = 'preroll';
+      this.turn.rolled = false;
+    }
+    this.devFill(0);
   }
 }
 
