@@ -63,6 +63,10 @@ for (let seed = 1; seed <= 30; seed++) {
       } else if (st === 'displace') {
         const d = g.turn.displace;
         g.placeDisplaced(d.owner, d.options[rnd(d.options.length)]);
+      } else if (st === 'deserterPick') {
+        const t = g.turn.deserter.target;
+        const mine = Object.keys(g.knights).filter((v) => g.knights[v].player === t);
+        g.deserterPick(t, Number(mine[rnd(mine.length)]));
       } else if (st === 'metropolis') {
         const o = g.turn.metroChoice.options;
         g.chooseMetropolis(p, o[rnd(o.length)]);
@@ -150,13 +154,17 @@ for (let seed = 1; seed <= 30; seed++) {
                 if (to !== null) g.moveKnight(p, v, to);
               }
             } else if (roll === 9) {
-              // 打需要选目标的进步卡（商业大亨/间谍/阴谋）
-              const targeted = g.players[p].progressCards.find((c) => ['masterMerchant', 'spy', 'intrigue'].includes(c.type));
+              // 打需要选目标的进步卡（商业大亨/间谍/阴谋/逃兵）
+              const targeted = g.players[p].progressCards.find((c) => ['masterMerchant', 'spy', 'intrigue', 'deserter'].includes(c.type));
               if (targeted) {
                 if (targeted.type === 'intrigue') {
                   const ks = Object.keys(g.knights).filter((v) => g.knights[v].player !== p
                     && g.board.vertices[v].adjE.some((e) => g.roads[e] === p));
                   if (ks.length) g.playProgress(p, 'intrigue', { vertex: Number(ks[0]) });
+                } else if (targeted.type === 'deserter') {
+                  const ts = [0, 1, 2].filter((i) => i !== p
+                    && Object.values(g.knights).some((k) => k.player === i));
+                  if (ts.length) g.playProgress(p, 'deserter', { target: ts[rnd(ts.length)] });
                 } else {
                   g.playProgress(p, targeted.type, { target: (p + 1 + rnd(2)) % 3 });
                 }

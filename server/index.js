@@ -396,6 +396,7 @@ io.on('connection', (socket) => {
         case 'harborGive': g.harborGive(p, data.res); break;
         case 'harborTake': g.harborTake(p, data.com); break;
         case 'defenderPick': g.defenderPickDeck(p, data.deck); break;
+        case 'deserterPick': g.deserterPick(p, data.vertex); break;
         // ---- 调试模式（g.dev 为 false 时下列方法内部直接报错）----
         case 'devFill': g.devFill(0); break;
         case 'devGrantDev': g.devGrantDev(data.card); break;

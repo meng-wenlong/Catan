@@ -4,9 +4,9 @@ import {
   showVertexSpots, showEdgeSpots, showRobberSpots, showHexSpots,
   zoomAt, resetZoom, highlightProducingHexes, hexPixelPosition,
   updateBarbarianTrack, updateProgressDecks, deckPixelPosition,
-  updateImprovementPanel, attachCardInspect,
+  updateImproveBoard, attachCardInspect,
 } from './render.js';
-import { initSfx } from './sfx.js';
+import { initSfx, sfx } from './sfx.js';
 import { initSound } from './sound.js';
 
 initSfx();
@@ -71,7 +71,7 @@ const PROG_META = {
   resourceMonopoly: { name: '资源垄断', desc: '指定一种资源，每位对手最多上缴 2 张' },
   tradeMonopoly: { name: '商品垄断', desc: '指定一种商品，每位对手上缴 1 张' },
   bishop: { name: '主教', desc: '移动强盗，并从相邻的每位玩家各偷 1 张牌' },
-  deserter: { name: '逃兵', desc: '移除一名对手的骑士，你在自己路网上放置一个同级骑士' },
+  deserter: { name: '逃兵', desc: '指定一名对手，由对方选一名骑士叛逃；你放置一个同级骑士（棋子不足自动降级）' },
   diplomat: { name: '外交官', desc: '移除一条「开放道路」（自己的可立即重放）' },
   intrigue: { name: '阴谋', desc: '驱逐一名位于你道路上的对手骑士' },
   saboteur: { name: '破坏者', desc: '分数不低于你的玩家全部弃一半手牌' },
@@ -488,12 +488,12 @@ socket.on('state', (state) => {
   window.__S = state; // 调试/测试用
   myIndex = state.you.index;
   if (!boardReady) {
-    initBoard($('board'), state.board);
+    initBoard($('board'), state.board, state.mode === 'ck');
     boardReady = true;
     // 首次加载/重连：不重播历史动画事件
     lastSeq = state.events.reduce((m, e) => Math.max(m, e.seq), lastSeq);
   } else if (state.events.some((e) => e.type === 'inventor' && e.seq > lastSeq)) {
-    initBoard($('board'), state.board); // 发明家换了数字令牌，重建棋盘
+    initBoard($('board'), state.board, state.mode === 'ck'); // 发明家换了数字令牌，重建棋盘
   }
   show('screen-game');
 
@@ -530,7 +530,7 @@ socket.on('returnToLobby', () => {
   holdUntil = 0;
   clearTimeout(holdTimer);
   for (const m of ['modal-winner', 'modal-discard', 'modal-steal', 'modal-trade',
-    'modal-yop', 'modal-monopoly', 'modal-endgame', 'modal-improve', 'modal-aqueduct',
+    'modal-yop', 'modal-monopoly', 'modal-endgame', 'modal-aqueduct',
     'modal-alchemist', 'modal-pick', 'modal-knightmenu']) {
     $(m).classList.add('hidden');
   }
@@ -566,7 +566,7 @@ function renderBarbBar() {
   if (S.mode !== 'ck' || S.phase === 'setup') {
     updateBarbarianTrack(null);
     updateProgressDecks(null);
-    updateImprovementPanel(null);
+    updateImproveBoard(null);
     return;
   }
   const strength = Object.values(S.buildings).filter((b) => b.type === 'city').length;
@@ -574,13 +574,30 @@ function renderBarbBar() {
     .reduce((s, k) => s + k.level, 0);
   updateBarbarianTrack(S.ck, strength, defense);
   updateProgressDecks(S.ck.decks);
-  updateImprovementPanel({
-    levels: S.players[myIndex].improvements,
-    metro: Object.fromEntries(TRACKS.map((t) => [t, S.ck.metropolis[t]?.player === myIndex])),
-  }, () => {
-    renderImproveModal();
-    $('modal-improve').classList.remove('hidden');
-  });
+  const canAct = isMyTurn() && S.turn.state === 'main';
+  const craneOn = canAct && S.ck.crane;
+  // 官方规则：没有城市时不能购买城市升级（已有等级保留）
+  const hasCity = Object.values(S.buildings).some((b) => b.player === myIndex && b.type === 'city');
+  updateImproveBoard({
+    tracks: Object.fromEntries(TRACKS.map((t) => {
+      const lvl = S.players[myIndex].improvements[t];
+      const maxed = lvl >= 5;
+      const cost = maxed ? 0 : Math.max(0, lvl + 1 - (craneOn ? 1 : 0));
+      const have = S.you.hand[TRACK_META[t].com];
+      const metro = S.ck.metropolis[t];
+      return [t, {
+        lvl,
+        maxed,
+        cost,
+        have,
+        crane: craneOn && !maxed,
+        canBuy: canAct && !maxed && hasCity && have >= cost,
+        noCity: !hasCity,
+        metroName: metro ? S.players[metro.player].name : null,
+        metroMine: metro?.player === myIndex,
+      }];
+    })),
+  }, (t) => send({ type: 'buyImprovement', track: t }));
 }
 
 function renderStatus() {
@@ -614,9 +631,20 @@ function renderStatus() {
         : `野蛮人来袭！等待 ${names} 选择被摧毁的城市…`;
     } else if (st === 'displace') {
       const d = S.ck.displace;
-      text = d.owner === myIndex
-        ? '⚔️ 你的骑士被驱逐！请点击新位置安置'
-        : `等待 ${S.players[d.owner].name} 安置被驱逐的骑士…`;
+      if (d.reason === 'deserter') {
+        text = d.owner === myIndex
+          ? `🏇 逃兵：请点击位置放置获得的 ${d.level} 级骑士`
+          : `等待 ${S.players[d.owner].name} 放置获得的骑士…`;
+      } else {
+        text = d.owner === myIndex
+          ? '⚔️ 你的骑士被驱逐！请点击新位置安置'
+          : `等待 ${S.players[d.owner].name} 安置被驱逐的骑士…`;
+      }
+    } else if (st === 'deserterPick') {
+      const d = S.ck.deserter;
+      text = d.target === myIndex
+        ? '🏳️ 逃兵！请点击你要交出的骑士'
+        : `等待 ${S.players[d.target].name} 选择叛逃的骑士…`;
     } else if (st === 'metropolis') {
       text = isMyTurn() ? '🏛️ 请点击一座城市建立大都会' : `${cur.name} 正在选择大都会城市…`;
     } else if (st === 'pickCards') {
@@ -871,11 +899,16 @@ function playProgressCard(type) {
       if (!(S.you.hints.intrigueKnights || []).length) return toast('你的道路上没有对手骑士');
       startProgAction(type, '阴谋：点击你道路上的对手骑士');
       break;
-    case 'deserter':
-      if (!Object.values(S.ck.knights).some((k) => k.player !== myIndex)) return toast('对手没有骑士');
-      if (!(S.you.hints.knightSpots || []).length) return toast('你没有可放骑士的位置');
-      startProgAction(type, '逃兵：点击一名对手的骑士');
+    case 'deserter': {
+      const targets = S.players.map((_, i) => i).filter((i) => i !== myIndex
+        && Object.values(S.ck.knights).some((k) => k.player === i));
+      if (!targets.length) return toast('对手没有骑士');
+      openPickModal('逃兵：指定一名对手（由对方选择叛逃的骑士）', targets.map((i) => ({
+        label: `${esc(S.players[i].name)}（${Object.values(S.ck.knights).filter((k) => k.player === i).length} 名骑士）`,
+        onPick: () => sendProg('deserter', { target: i }),
+      })));
       break;
+    }
     case 'smith': {
       const upgradable = Object.entries(S.you.hints.myKnights || {}).filter(([, k]) => k.upgrade);
       if (upgradable.length === 0) return toast('没有可升级的骑士');
@@ -970,51 +1003,6 @@ $('alchemist-confirm').onclick = () => {
 };
 
 // ---------- 城市升级面板 ----------
-function renderImproveModal() {
-  const box = $('improve-tracks');
-  box.innerHTML = '';
-  const my = S.players[myIndex];
-  for (const t of TRACKS) {
-    const meta = TRACK_META[t];
-    const lvl = my.improvements[t];
-    const next = lvl + 1;
-    const com = meta.com;
-    const have = S.you.hand[com];
-    const div = document.createElement('div');
-    div.className = 'improve-track';
-    div.style.borderLeftColor = meta.color;
-    const boxes = Array.from({ length: 5 }, (_, i) => `<span class="imp-box${i < lvl ? ' on' : ''}" style="${i < lvl ? `background:${meta.color}` : ''}"></span>`).join('');
-    const metro = S.ck.metropolis[t];
-    const metroTxt = metro ? `（大都会：${esc(S.players[metro.player].name)}）` : '';
-    div.innerHTML = `
-      <div class="imp-head">
-        <b style="color:${meta.color}">${meta.name}</b>
-        <span class="imp-boxes">${boxes}</span>
-        <span class="imp-metro">${metroTxt}</span>
-      </div>
-      <p class="imp-desc">3 级：${meta.perk3}；4 级：率先达到可获大都会（+2 分）</p>`;
-    const btn = document.createElement('button');
-    btn.className = 'btn primary small';
-    if (lvl >= 5) {
-      btn.textContent = '已满级';
-      btn.disabled = true;
-    } else {
-      const craneOn = isMyTurn() && S.ck && S.ck.crane;
-      const cost = Math.max(0, next - (craneOn ? 1 : 0));
-      btn.innerHTML = `升到 ${next} 级（${cost} ${resIcon(com)}${RES_META[com].name}，有 ${have}）${craneOn ? ' 🏗️起重机 -1' : ''}`;
-      btn.disabled = !(isMyTurn() && S.turn.state === 'main' && have >= cost);
-    }
-    btn.onclick = () => {
-      send({ type: 'buyImprovement', track: t });
-    };
-    div.appendChild(btn);
-    box.appendChild(div);
-  }
-}
-$('btn-improve').onclick = () => {
-  renderImproveModal();
-  $('modal-improve').classList.remove('hidden');
-};
 
 function renderButtons() {
   const my = isMyTurn();
@@ -1029,13 +1017,9 @@ function renderButtons() {
   $('btn-buydev').disabled = !(main && hand.sheep >= 1 && hand.wheat >= 1 && hand.ore >= 1 && S.bank.devDeck > 0);
   $('btn-knight').classList.toggle('hidden', !ckMode);
   $('btn-wall').classList.toggle('hidden', !ckMode);
-  $('btn-improve').classList.toggle('hidden', !ckMode);
   if (ckMode) {
     $('btn-knight').disabled = !(main && hand.sheep >= 1 && hand.ore >= 1 && (S.you.hints.knightSpots || []).length > 0);
     $('btn-wall').disabled = !(main && hand.brick >= 2 && (S.you.hints.wallSpots || []).length > 0);
-    $('btn-improve').disabled = !main;
-    // 升级面板开着时跟随状态刷新
-    if (!$('modal-improve').classList.contains('hidden')) renderImproveModal();
   }
   $('btn-trade').disabled = !main;
   $('btn-end').disabled = !main;
@@ -1069,6 +1053,11 @@ function renderHotspots() {
   // 被驱逐骑士安置：同样可能不是当前回合玩家
   if (S.turn.state === 'displace' && (S.you.hints.displaceSpots || []).length) {
     showVertexSpots(S.you.hints.displaceSpots, (v) => send({ type: 'placeDisplaced', vertex: v }));
+    return;
+  }
+  // 逃兵：受害者点选交出的骑士（非当前回合玩家）
+  if (S.turn.state === 'deserterPick' && (S.you.hints.deserterKnights || []).length) {
+    showVertexSpots(S.you.hints.deserterKnights, (v) => send({ type: 'deserterPick', vertex: v }));
     return;
   }
   if (isMyTurn()) {
@@ -1143,17 +1132,6 @@ function renderProgSpots() {
     case 'diplomat':
       showEdgeSpots(S.you.hints.openRoads || [], (e) => { cancelProgAction(); sendProg('diplomat', { edge: e }); });
       break;
-    case 'deserter':
-      if (pa.step === 1) {
-        showVertexSpots(S.you.hints.knightSpots || [], (v) => {
-          const kv = pa.data.knight;
-          cancelProgAction();
-          sendProg('deserter', { knight: kv, place: v });
-        });
-      } else {
-        clearHotspots(); // 等待点击对手骑士（骑士棋子自带点击）
-      }
-      break;
     case 'intrigue':
     case 'smith':
       clearHotspots(); // 点击骑士棋子完成
@@ -1170,13 +1148,6 @@ function onKnightClick(v, k) {
     if (pa.card === 'intrigue' && (S.you.hints.intrigueKnights || []).includes(v)) {
       cancelProgAction();
       sendProg('intrigue', { vertex: v });
-      return;
-    }
-    if (pa.card === 'deserter' && pa.step === 0 && k.player !== myIndex) {
-      pa.step = 1;
-      pa.data.knight = v;
-      $('prog-banner-text').textContent = '逃兵：点击你要放置骑士的位置';
-      renderProgSpots();
       return;
     }
     if (pa.card === 'smith' && k.player === myIndex) {
@@ -1726,10 +1697,22 @@ function playEvents() {
       case 'turnEnd':
         showTurnBanner(ev.to);
         break;
+      case 'robber':
+        sfx.robber();
+        break;
       // ---- 城市与骑士 ----
+      case 'ship': {
+        const d = delay;
+        setTimeout(() => sfx.ship(), d);
+        delay += 500; // 同批的来袭结算（barbarian）让号角先响完
+        break;
+      }
       case 'barbarian': {
         const d = delay;
-        setTimeout(() => showBarbarianBanner(ev), d);
+        setTimeout(() => {
+          sfx.barbarian(ev.win);
+          showBarbarianBanner(ev);
+        }, d);
         delay += 1200;
         break;
       }
