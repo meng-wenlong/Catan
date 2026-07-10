@@ -696,11 +696,11 @@ body {
 .pdeck-back { stroke: rgba(255,255,255,.55); stroke-width: .022; opacity: .85; }
 .pdeck-card { stroke: rgba(255,255,255,.8); stroke-width: .028; }
 .pdeck-inner { fill: none; stroke: rgba(255,255,255,.45); stroke-width: .018; stroke-dasharray: .05 .04; }
-.pdeck-ico { font-size: .26px; text-anchor: middle; }
+.pdeck-ico { font-size: .34px; text-anchor: middle; }
 .pdeck-count {
-  font-size: .19px; text-anchor: middle; fill: #fff;
+  font-size: .26px; text-anchor: middle; fill: #fff;
   font-weight: 700; font-family: var(--font-num);
-  paint-order: stroke; stroke: rgba(0,0,0,.35); stroke-width: .03;
+  paint-order: stroke; stroke: rgba(0,0,0,.35); stroke-width: .04;
 }
 .pdeck-top { transform-box: fill-box; transform-origin: center; }
 .pdeck-top.bump { animation: pdeck-bump .5s ease; }
@@ -710,13 +710,26 @@ body {
   100% { transform: scale(1); }
 }
 
-/* 城市升级面板（画在棋盘左下角海面上） */
-.imp-panel { cursor: pointer; }
-.imp-panel-bg { fill: rgba(20,35,52,.55); stroke: rgba(255,255,255,.35); stroke-width: .025; transition: fill .2s; }
-.imp-panel:hover .imp-panel-bg { fill: rgba(20,35,52,.78); }
-.imp-panel-ico { font-size: .2px; text-anchor: middle; }
-.imp-panel-pip { fill: rgba(255,255,255,.22); stroke: rgba(255,255,255,.6); stroke-width: .018; transition: fill .3s; }
-.imp-panel-metro { font-size: .17px; }
+/* 城市升级轨道（左列，与上方进步卡牌堆同列同色） */
+.impb-cell-bg {
+  fill: rgba(20,35,52,.5); stroke: rgba(255,255,255,.5); stroke-width: .022;
+  transition: fill .3s;
+}
+.impb-cell-bg.on { stroke: rgba(255,255,255,.85); }
+.impb-cell-txt {
+  font-size: .2px; text-anchor: middle; fill: rgba(255,255,255,.75);
+  font-weight: 600;
+}
+.impb-cell-txt.on { fill: #fff; paint-order: stroke; stroke: rgba(0,0,0,.25); stroke-width: .03; }
+.impb-buy-bg {
+  fill: rgba(20,35,52,.35); stroke: rgba(255,255,255,.35); stroke-width: .022;
+  stroke-dasharray: .06 .05; transition: fill .2s, stroke .2s;
+}
+.impb-buy-txt { font-size: .2px; text-anchor: middle; fill: rgba(255,255,255,.55); font-weight: 700; }
+.impb-buy.can { cursor: pointer; }
+.impb-buy.can .impb-buy-bg { fill: rgba(46,139,87,.85); stroke: #bdf0d2; stroke-dasharray: none; }
+.impb-buy.can:hover .impb-buy-bg { fill: rgba(56,165,104,.95); }
+.impb-buy.can .impb-buy-txt { fill: #fff; }
 
 /* 进步卡飞行动画（牌堆 ↔ 玩家面板） */
 .fly-card {
@@ -771,22 +784,6 @@ body {
 }
 .merchant-bg { fill: #fbf3da; stroke-width: .04; }
 .merchant-ico { font-size: .24px; text-anchor: middle; pointer-events: none; }
-
-/* 城市升级面板 */
-#improve-tracks { display: flex; flex-direction: column; gap: 10px; margin: 6px 0 10px; }
-.improve-track {
-  text-align: left; background: rgba(255,253,244,.85);
-  border: 1px solid rgba(140,110,60,.2); border-left: 6px solid;
-  border-radius: 10px; padding: 10px 12px;
-}
-.imp-head { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
-.imp-boxes { display: inline-flex; gap: 3px; }
-.imp-box {
-  width: 14px; height: 14px; border-radius: 4px;
-  border: 1.5px solid rgba(120,95,50,.4); background: rgba(0,0,0,.06);
-}
-.imp-metro { font-size: 12px; color: #888; }
-.imp-desc { font-size: 12px; color: #777; margin: 2px 0 8px; }
 
 /* 多步进步卡操作提示条 */
 #prog-banner {

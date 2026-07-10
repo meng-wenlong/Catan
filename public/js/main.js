@@ -4,7 +4,7 @@ import {
   showVertexSpots, showEdgeSpots, showRobberSpots, showHexSpots,
   zoomAt, resetZoom, highlightProducingHexes, hexPixelPosition,
   updateBarbarianTrack, updateProgressDecks, deckPixelPosition,
-  updateImprovementPanel,
+  updateImproveBoard,
 } from './render.js';
 import { initSfx } from './sfx.js';
 import { initSound } from './sound.js';
@@ -428,12 +428,12 @@ socket.on('state', (state) => {
   window.__S = state; // 调试/测试用
   myIndex = state.you.index;
   if (!boardReady) {
-    initBoard($('board'), state.board);
+    initBoard($('board'), state.board, state.mode === 'ck');
     boardReady = true;
     // 首次加载/重连：不重播历史动画事件
     lastSeq = state.events.reduce((m, e) => Math.max(m, e.seq), lastSeq);
   } else if (state.events.some((e) => e.type === 'inventor' && e.seq > lastSeq)) {
-    initBoard($('board'), state.board); // 发明家换了数字令牌，重建棋盘
+    initBoard($('board'), state.board, state.mode === 'ck'); // 发明家换了数字令牌，重建棋盘
   }
   show('screen-game');
 
@@ -470,7 +470,7 @@ socket.on('returnToLobby', () => {
   holdUntil = 0;
   clearTimeout(holdTimer);
   for (const m of ['modal-winner', 'modal-discard', 'modal-steal', 'modal-trade',
-    'modal-yop', 'modal-monopoly', 'modal-endgame', 'modal-improve', 'modal-aqueduct',
+    'modal-yop', 'modal-monopoly', 'modal-endgame', 'modal-aqueduct',
     'modal-alchemist', 'modal-pick', 'modal-knightmenu']) {
     $(m).classList.add('hidden');
   }
@@ -505,7 +505,7 @@ function renderBarbBar() {
   if (S.mode !== 'ck' || S.phase === 'setup') {
     updateBarbarianTrack(null);
     updateProgressDecks(null);
-    updateImprovementPanel(null);
+    updateImproveBoard(null);
     return;
   }
   const strength = Object.values(S.buildings).filter((b) => b.type === 'city').length;
@@ -513,13 +513,27 @@ function renderBarbBar() {
     .reduce((s, k) => s + k.level, 0);
   updateBarbarianTrack(S.ck, strength, defense);
   updateProgressDecks(S.ck.decks);
-  updateImprovementPanel({
-    levels: S.players[myIndex].improvements,
-    metro: Object.fromEntries(TRACKS.map((t) => [t, S.ck.metropolis[t]?.player === myIndex])),
-  }, () => {
-    renderImproveModal();
-    $('modal-improve').classList.remove('hidden');
-  });
+  const canAct = isMyTurn() && S.turn.state === 'main';
+  const craneOn = canAct && S.ck.crane;
+  updateImproveBoard({
+    tracks: Object.fromEntries(TRACKS.map((t) => {
+      const lvl = S.players[myIndex].improvements[t];
+      const maxed = lvl >= 5;
+      const cost = maxed ? 0 : Math.max(0, lvl + 1 - (craneOn ? 1 : 0));
+      const have = S.you.hand[TRACK_META[t].com];
+      const metro = S.ck.metropolis[t];
+      return [t, {
+        lvl,
+        maxed,
+        cost,
+        have,
+        crane: craneOn && !maxed,
+        canBuy: canAct && !maxed && have >= cost,
+        metroName: metro ? S.players[metro.player].name : null,
+        metroMine: metro?.player === myIndex,
+      }];
+    })),
+  }, (t) => send({ type: 'buyImprovement', track: t }));
 }
 
 function renderStatus() {
@@ -892,51 +906,6 @@ $('alchemist-confirm').onclick = () => {
 };
 
 // ---------- 城市升级面板 ----------
-function renderImproveModal() {
-  const box = $('improve-tracks');
-  box.innerHTML = '';
-  const my = S.players[myIndex];
-  for (const t of TRACKS) {
-    const meta = TRACK_META[t];
-    const lvl = my.improvements[t];
-    const next = lvl + 1;
-    const com = meta.com;
-    const have = S.you.hand[com];
-    const div = document.createElement('div');
-    div.className = 'improve-track';
-    div.style.borderLeftColor = meta.color;
-    const boxes = Array.from({ length: 5 }, (_, i) => `<span class="imp-box${i < lvl ? ' on' : ''}" style="${i < lvl ? `background:${meta.color}` : ''}"></span>`).join('');
-    const metro = S.ck.metropolis[t];
-    const metroTxt = metro ? `（大都会：${esc(S.players[metro.player].name)}）` : '';
-    div.innerHTML = `
-      <div class="imp-head">
-        <b style="color:${meta.color}">${meta.name}</b>
-        <span class="imp-boxes">${boxes}</span>
-        <span class="imp-metro">${metroTxt}</span>
-      </div>
-      <p class="imp-desc">3 级：${meta.perk3}；4 级：率先达到可获大都会（+2 分）</p>`;
-    const btn = document.createElement('button');
-    btn.className = 'btn primary small';
-    if (lvl >= 5) {
-      btn.textContent = '已满级';
-      btn.disabled = true;
-    } else {
-      const craneOn = isMyTurn() && S.ck && S.ck.crane;
-      const cost = Math.max(0, next - (craneOn ? 1 : 0));
-      btn.innerHTML = `升到 ${next} 级（${cost} ${resIcon(com)}${RES_META[com].name}，有 ${have}）${craneOn ? ' 🏗️起重机 -1' : ''}`;
-      btn.disabled = !(isMyTurn() && S.turn.state === 'main' && have >= cost);
-    }
-    btn.onclick = () => {
-      send({ type: 'buyImprovement', track: t });
-    };
-    div.appendChild(btn);
-    box.appendChild(div);
-  }
-}
-$('btn-improve').onclick = () => {
-  renderImproveModal();
-  $('modal-improve').classList.remove('hidden');
-};
 
 function renderButtons() {
   const my = isMyTurn();
@@ -951,13 +920,9 @@ function renderButtons() {
   $('btn-buydev').disabled = !(main && hand.sheep >= 1 && hand.wheat >= 1 && hand.ore >= 1 && S.bank.devDeck > 0);
   $('btn-knight').classList.toggle('hidden', !ckMode);
   $('btn-wall').classList.toggle('hidden', !ckMode);
-  $('btn-improve').classList.toggle('hidden', !ckMode);
   if (ckMode) {
     $('btn-knight').disabled = !(main && hand.sheep >= 1 && hand.ore >= 1 && (S.you.hints.knightSpots || []).length > 0);
     $('btn-wall').disabled = !(main && hand.brick >= 2 && (S.you.hints.wallSpots || []).length > 0);
-    $('btn-improve').disabled = !main;
-    // 升级面板开着时跟随状态刷新
-    if (!$('modal-improve').classList.contains('hidden')) renderImproveModal();
   }
   $('btn-trade').disabled = !main;
   $('btn-end').disabled = !main;

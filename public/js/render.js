@@ -224,7 +224,9 @@ function blobPath(cx, cy, r0, amp, seed) {
   return `M ${pts.join(' L ')} Z`;
 }
 
-export function initBoard(svgElement, boardData) {
+const CK_PANEL_W = 3.6; // ck 模式：左侧额外扩出的海面宽度（放进步卡牌堆 + 升级面板）
+
+export function initBoard(svgElement, boardData, ck = false) {
   svg = svgElement;
   board = boardData;
   svg.innerHTML = '';
@@ -234,7 +236,7 @@ export function initBoard(svgElement, boardData) {
   const xs = board.vertices.map((v) => v.x);
   const ys = board.vertices.map((v) => v.y);
   const pad = 1.35;
-  const minX = Math.min(...xs) - pad;
+  const minX = Math.min(...xs) - pad - (ck ? CK_PANEL_W : 0);
   const minY = Math.min(...ys) - pad;
   const w = Math.max(...xs) - minX + pad;
   const h = Math.max(...ys) - minY + pad;
@@ -511,12 +513,14 @@ export function updateBarbarianTrack(ck, strength, defense) {
   barbEls.vs.textContent = `🏰${strength} vs ⚔️${defense}`;
 }
 
-// ---------- 进步卡牌堆（画在棋盘左上角海面上，随棋盘缩放平移） ----------
+// ---------- 左列面板：进步卡牌堆（上排）+ 城市升级轨道（下方三列） ----------
 const DECK_META = {
-  trade: { name: '贸易', icon: '🧶', color: '#c9a227' },
-  politics: { name: '政治', icon: '🪙', color: '#3a6ea5' },
-  science: { name: '科学', icon: '📜', color: '#4a8c4a' },
+  trade: { name: '贸易', icon: '🧶', com: '布匹', color: '#c9a227', perk3: '🏪', perk3Name: '商栈：商品可 2:1 与银行交易' },
+  politics: { name: '政治', icon: '🪙', com: '铸币', color: '#3a6ea5', perk3: '🏰', perk3Name: '城堡：可将骑士升到 3 级' },
+  science: { name: '科学', icon: '📜', com: '纸张', color: '#4a8c4a', perk3: '🚰', perk3Name: '引水渠：无产出时任选 1 张资源' },
 };
+// 三列的中心 x 与竖向锚点（ck 模式 initBoard 向左多扩了 CK_PANEL_W 的海面）
+const colX = (i) => baseVB.x + 0.85 + i * 1.3;
 
 // decks = { trade: n, politics: n, science: n }；传 null 时清除（基础版/初始放置阶段）
 export function updateProgressDecks(decks) {
@@ -529,36 +533,33 @@ export function updateProgressDecks(decks) {
   }
   if (!deckEls) {
     layer.innerHTML = '';
-    // 左上角外海竖排三摞（野蛮人航道占了东侧，这里与之相对）
-    const x0 = baseVB.x + 0.62;
-    const y0 = baseVB.y + 0.78;
+    const y = isle.cy - 2.72; // 牌堆一排横放在升级轨道上方
     deckEls = { pos: {}, count: {}, card: {}, prev: {} };
     Object.entries(DECK_META).forEach(([track, meta], i) => {
-      const x = x0;
-      const y = y0 + i * 1.0;
+      const x = colX(i);
       deckEls.pos[track] = { x, y };
       const g = el('g', { class: 'pdeck' }, layer);
       // 两张错位垫底的“牌背”营造一摞的效果
       el('rect', {
-        x: x - 0.24, y: y - 0.32, width: 0.48, height: 0.64, rx: 0.06,
-        class: 'pdeck-back', fill: meta.color, transform: `rotate(-7 ${x} ${y})`,
+        x: x - 0.36, y: y - 0.48, width: 0.72, height: 0.96, rx: 0.08,
+        class: 'pdeck-back', fill: meta.color, transform: `rotate(-6 ${x} ${y})`,
       }, g);
       el('rect', {
-        x: x - 0.24, y: y - 0.32, width: 0.48, height: 0.64, rx: 0.06,
-        class: 'pdeck-back', fill: meta.color, transform: `rotate(4 ${x} ${y})`,
+        x: x - 0.36, y: y - 0.48, width: 0.72, height: 0.96, rx: 0.08,
+        class: 'pdeck-back', fill: meta.color, transform: `rotate(3.5 ${x} ${y})`,
       }, g);
       const card = el('g', { class: 'pdeck-top' }, g);
       el('rect', {
-        x: x - 0.24, y: y - 0.32, width: 0.48, height: 0.64, rx: 0.06,
+        x: x - 0.36, y: y - 0.48, width: 0.72, height: 0.96, rx: 0.08,
         class: 'pdeck-card', fill: meta.color,
       }, card);
       el('rect', {
-        x: x - 0.185, y: y - 0.265, width: 0.37, height: 0.53, rx: 0.04,
+        x: x - 0.285, y: y - 0.405, width: 0.57, height: 0.81, rx: 0.06,
         class: 'pdeck-inner',
       }, card);
-      const ico = el('text', { x, y: y - 0.03, class: 'pdeck-ico' }, card);
+      const ico = el('text', { x, y: y - 0.02, class: 'pdeck-ico' }, card);
       ico.textContent = meta.icon;
-      const cnt = el('text', { x, y: y + 0.215, class: 'pdeck-count' }, card);
+      const cnt = el('text', { x, y: y + 0.33, class: 'pdeck-count' }, card);
       const title = el('title', {}, g);
       title.textContent = `${meta.name}进步卡牌堆`;
       deckEls.count[track] = cnt;
@@ -578,9 +579,10 @@ export function updateProgressDecks(decks) {
   }
 }
 
-// ---------- 城市升级面板（画在棋盘左下角海面上，点击打开升级弹窗） ----------
-// data = { levels: {trade,politics,science}, metro: {track: 是否我的大都会} }；传 null 清除
-export function updateImprovementPanel(data, onClick) {
+// ---------- 城市升级轨道：每列 5 个等级格 + 底部购买按钮，与上方牌堆同列同色 ----------
+// data = { tracks: { trade: { lvl, cost, have, canBuy, crane, maxed, metroName, metroMine }, ... } }
+// onBuy(track)：点击购买按钮时回调；传 null 清除
+export function updateImproveBoard(data, onBuy) {
   const layer = layers.improve;
   if (!layer) return;
   if (!data) {
@@ -588,42 +590,70 @@ export function updateImprovementPanel(data, onClick) {
     impEls = null;
     return;
   }
+  const CELL_H = 0.46;
+  const CELL_GAP = 0.1;
+  const yCell = (k) => isle.cy - 1.9 + k * (CELL_H + CELL_GAP); // 等级格顶边（1 级在最上）
   if (!impEls) {
     layer.innerHTML = '';
-    const x0 = baseVB.x + 0.5;
-    const yBot = baseVB.y + baseVB.h;
-    const g = el('g', { class: 'imp-panel' }, layer);
-    el('rect', {
-      x: x0 - 0.16, y: yBot - 1.8, width: 2.06, height: 1.46, rx: 0.12,
-      class: 'imp-panel-bg',
-    }, g);
-    impEls = { pips: {}, metro: {}, onClick: null };
+    impEls = { cells: {}, cellTxt: {}, buy: {}, buyTxt: {}, tip: {}, onBuy: null };
     Object.entries(DECK_META).forEach(([track, meta], i) => {
-      const y = yBot - 1.46 + i * 0.41;
-      const ico = el('text', { x: x0 + 0.12, y: y + 0.075, class: 'imp-panel-ico' }, g);
-      ico.textContent = meta.icon;
-      impEls.pips[track] = [];
+      const x = colX(i);
+      const g = el('g', { class: 'impb-col' }, layer);
+      impEls.cells[track] = [];
+      impEls.cellTxt[track] = [];
       for (let k = 0; k < 5; k++) {
-        impEls.pips[track].push(el('rect', {
-          x: x0 + 0.34 + k * 0.22, y: y - 0.085, width: 0.17, height: 0.17, rx: 0.03,
-          class: 'imp-panel-pip',
-        }, g));
+        const y = yCell(k);
+        const cell = el('g', { class: 'impb-cell' }, g);
+        el('rect', {
+          x: x - 0.55, y, width: 1.1, height: CELL_H, rx: 0.08,
+          class: 'impb-cell-bg',
+        }, cell);
+        const txt = el('text', { x, y: y + CELL_H / 2 + 0.065, class: 'impb-cell-txt' }, cell);
+        // 3 级解锁能力，4 级大都会；其余格只标等级
+        txt.textContent = k === 2 ? `3 级 ${meta.perk3}` : (k === 3 ? '4 级 🏛️' : `${k + 1} 级`);
+        impEls.cells[track].push(cell);
+        impEls.cellTxt[track].push(txt);
       }
-      const m = el('text', { x: x0 + 0.34 + 5 * 0.22 + 0.03, y: y + 0.07, class: 'imp-panel-metro' }, g);
-      m.textContent = '🏛️';
-      impEls.metro[track] = m;
+      // 购买按钮
+      const buy = el('g', { class: 'impb-buy' }, g);
+      el('rect', {
+        x: x - 0.55, y: yCell(5) + 0.06, width: 1.1, height: 0.5, rx: 0.12,
+        class: 'impb-buy-bg',
+      }, buy);
+      const buyTxt = el('text', { x, y: yCell(5) + 0.06 + 0.32, class: 'impb-buy-txt' }, buy);
+      buy.onclick = () => {
+        if (buy.classList.contains('can')) impEls?.onBuy?.(track);
+      };
+      impEls.buy[track] = buy;
+      impEls.buyTxt[track] = buyTxt;
+      const tip = el('title', {}, g);
+      impEls.tip[track] = tip;
     });
-    const title = el('title', {}, g);
-    title.textContent = '城市升级（点击查看/购买）';
-    g.onclick = () => impEls?.onClick?.();
   }
-  impEls.onClick = onClick;
+  impEls.onBuy = onBuy;
   for (const [track, meta] of Object.entries(DECK_META)) {
-    const lvl = data.levels[track] ?? 0;
-    impEls.pips[track].forEach((r, k) => {
-      r.style.fill = k < lvl ? meta.color : '';
+    const t = data.tracks[track];
+    impEls.cells[track].forEach((cell, k) => {
+      const bg = cell.firstChild;
+      const on = k < t.lvl;
+      bg.classList.toggle('on', on);
+      bg.style.fill = on ? meta.color : '';
+      impEls.cellTxt[track][k].classList.toggle('on', on);
     });
-    impEls.metro[track].style.display = data.metro[track] ? '' : 'none';
+    // 4 级格：大都会有主时显示归属
+    impEls.cellTxt[track][3].textContent = t.metroName
+      ? `🏛️ ${t.metroName.slice(0, 4)}` : '4 级 🏛️';
+    const buy = impEls.buy[track];
+    if (t.maxed) {
+      impEls.buyTxt[track].textContent = '已满级';
+      buy.classList.remove('can');
+    } else {
+      impEls.buyTxt[track].textContent = `${t.crane ? '🏗️' : ''}升级 ${t.cost}${meta.icon}`;
+      buy.classList.toggle('can', t.canBuy);
+    }
+    impEls.tip[track].textContent = `${meta.name}：3 级 ${meta.perk3Name}；4 级率先达到可获大都会（+2 分）`
+      + (t.metroName ? `\n大都会：${t.metroName}${t.metroMine ? '（你）' : ''}` : '')
+      + (t.maxed ? '' : `\n升到 ${t.lvl + 1} 级需 ${t.cost} 张${meta.com}（有 ${t.have}）${t.crane ? '，含起重机 -1' : ''}`);
   }
 }
 
