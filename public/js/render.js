@@ -20,6 +20,8 @@ let barbEls = null;  // 野蛮人航道的持久元素（船用 transform 过渡
 let deckEls = null;  // 进步卡牌堆的持久元素 {pos, count, prev}（计数变化时播放 bump 动画）
 let impEls = null;   // 城市升级面板的持久元素（左下角，点击打开升级弹窗）
 let curState = null, curColors = null; // 放大镜取当前状态/配色的快照
+// 各建筑白模「可视底部」在图内的纵向占比（模型底部留白不同，用于把底座精确落到顶点）
+const BASE_FRAC = { settlement: 0.85, city: 0.93, 'city-walled': 0.93, metropolis: 0.96, 'metropolis-walled': 0.96 };
 
 // ---------- 缩放与平移 ----------
 const MAX_ZOOM = 4;
@@ -424,7 +426,7 @@ function describe(desc) {
       }
     }
     if (st.ck && st.ck.walls && st.ck.walls[desc.vid] !== undefined) type += '（含城墙，上限+2）';
-    return { label: `${st.players[b.player].name}的${type}`, color: cols[b.player], cx: v.x, cy: v.y, R: 0.34 };
+    return { label: `${st.players[b.player].name}的${type}`, color: cols[b.player], cx: v.x, cy: v.y - 0.12, R: 0.4 };
   }
   if (desc.kind === 'road') {
     if (!st) return null;
@@ -451,6 +453,11 @@ function describe(desc) {
     if (!res) label = `${tname} · 不产出`;
     else if (!hx.number) label = `${tname} · 产${res}`;
     else label = `${tname} · 产${res} · 骰${hx.number}（${6 - Math.abs(7 - hx.number)}/36）`;
+    // 城市与骑士：城市在部分地形上另产商品
+    if (st && st.ck && res) {
+      const com = { forest: '纸张', pasture: '布匹', mountains: '铸币' }[hx.terrain];
+      if (com) label += ` · 城市另产${com}`;
+    }
     return { label, color: grad ? grad[1] : null, cx: hx.x, cy: hx.y, R: 1.02 };
   }
   if (desc.kind === 'robber') {
@@ -633,45 +640,63 @@ export function updateRobber(hexId) {
 export function updatePieces(state, colors) {
   curState = state;
   curColors = colors;
+  lastPiecesArgs = { state, colors };
+  onTintReady = rerenderTinted;
   hideLoupe();
   // 被移除的道路（外交官卡）
-  for (const [eid, g] of [...roadEls]) {
+  for (const [eid, r] of [...roadEls]) {
     if (state.roads[eid] === undefined) {
-      g.remove();
+      r.el.remove();
       roadEls.delete(eid);
     }
   }
-  // 道路
+  // 道路：细长矩形（方头），沿边填色，像把地图上那条"路槽"填上玩家色
   for (const [eid, player] of Object.entries(state.roads)) {
     if (roadEls.has(eid)) continue;
     const e = board.edges[eid];
-    const v1 = board.vertices[e.v1];
-    const v2 = board.vertices[e.v2];
-    const t1 = 0.18, t2 = 0.82;
+    const v1 = board.vertices[e.v1], v2 = board.vertices[e.v2];
+    const t1 = 0.01, t2 = 0.99;
     const x1 = v1.x + (v2.x - v1.x) * t1, y1 = v1.y + (v2.y - v1.y) * t1;
     const x2 = v1.x + (v2.x - v1.x) * t2, y2 = v1.y + (v2.y - v1.y) * t2;
     const g = el('g', { class: 'road-pop' }, layers.roads);
-    el('line', { x1, y1, x2, y2, class: 'road-piece', stroke: 'rgba(0,0,0,.4)', 'stroke-width': '0.2' }, g);
-    el('line', { x1, y1, x2, y2, class: 'road-piece', stroke: colors[player] }, g);
+    el('line', { x1, y1, x2, y2, class: 'road-piece', stroke: 'rgba(0,0,0,.4)', style: 'stroke-linecap: butt; stroke-width: 0.08' }, g);
+    el('line', { x1, y1, x2, y2, class: 'road-piece', stroke: colors[player], style: 'stroke-linecap: butt; stroke-width: 0.08' }, g);
     attachInspect(g, { kind: 'road', eid: Number(eid) });
-    roadEls.set(eid, g);
+    roadEls.set(eid, { el: g, pending: false });
   }
 
-  // 建筑
+  // 建筑：村庄/城市/大都会染色白模；城墙用独立石色层叠加（不参与染色，便于区分）
   for (const [vid, b] of Object.entries(state.buildings)) {
+    let variant = 'settlement';
+    if (b.type === 'city') {
+      const walled = state.ck && state.ck.walls && state.ck.walls[vid] !== undefined;
+      const metro = state.ck && state.ck.metropolis
+        && Object.values(state.ck.metropolis).some((m) => m && m.vertex === Number(vid));
+      variant = (metro ? 'metropolis' : 'city') + (walled ? '-walled' : '');
+    }
     const existing = buildingEls.get(vid);
-    if (existing && existing.type === b.type) continue;
+    if (existing && existing.variant === variant && !existing.pending) continue;
     if (existing) existing.el.remove();
     const v = board.vertices[vid];
     const g = el('g', { class: 'piece-pop' }, layers.buildings);
-    if (b.type === 'settlement') {
-      el('path', { d: settlementD(v.x, v.y), fill: colors[b.player], class: 'piece' }, g);
+    const walled = variant.endsWith('-walled');
+    const base = walled ? variant.slice(0, -7) : variant; // settlement / city / metropolis
+    const tinted = tintedPiece(`/assets/opt/piece-${base}-white.webp`, colors[b.player]);
+    let pending = false;
+    if (tinted) {
+      const w = base === 'metropolis' ? 0.66 : base === 'settlement' ? 0.65 : 0.56;
+      // 按模型底部内容占比把可视底座落到顶点（不作阴影、不悬空）
+      const x = v.x - w / 2, y = v.y + 0.02 - w * BASE_FRAC[base];
+      el('image', { href: tinted, x, y, width: w, height: w, class: 'piece-img' }, g);
+      if (walled) { // 城墙独立石色层：同位置同尺寸叠上去，不染色
+        el('image', { href: `/assets/opt/piece-${base}-wall.webp`, x, y: y + 0.1, width: w, height: w, class: 'piece-img' }, g);
+      }
     } else {
-      el('path', { d: cityD(v.x, v.y), fill: colors[b.player], class: 'piece' }, g);
-      el('circle', { cx: v.x + 0.13, cy: v.y + 0.06, r: 0.04, fill: 'rgba(255,255,255,.7)' }, g);
+      el('path', { d: (b.type === 'city' ? cityD : settlementD)(v.x, v.y), fill: colors[b.player], class: 'piece' }, g);
+      pending = true;
     }
     attachInspect(g, { kind: 'building', vid: Number(vid) });
-    buildingEls.set(vid, { el: g, type: b.type });
+    buildingEls.set(vid, { el: g, variant, pending });
   }
 
   updateRobber(state.robber);
@@ -684,9 +709,26 @@ const tintCache = new Map(); // 'src|color' -> dataURL
 const tintImgs = new Map();  // src -> Image
 let onTintReady = null;      // 某张白模异步加载完成后触发重渲染
 let lastCKArgs = null;
+let lastPiecesArgs = null;
 
-function tintedPiece(src, color) {
-  const key = `${src}|${color}`;
+// 白模异步加载完成后，重渲染棋子（基础棋子 + 骑士）
+function rerenderTinted() {
+  if (lastPiecesArgs) updatePieces(lastPiecesArgs.state, lastPiecesArgs.colors);
+  if (lastCKArgs) updateCKPieces(lastCKArgs.state, lastCKArgs.colors, lastCKArgs.onKnightClick);
+}
+
+// 高亮选中的骑士（铁匠等多选进步卡用）
+export function highlightKnights(vertexIds) {
+  if (!layers.knights) return;
+  const set = new Set((vertexIds || []).map(Number));
+  for (const g of layers.knights.children) {
+    g.classList.toggle('knight-selected', set.has(Number(g.getAttribute('data-vid'))));
+  }
+}
+
+// keepBelow>0：底部该占比以下保持白（城墙留白，便于区分带城墙的城市）
+function tintedPiece(src, color, keepBelow = 0) {
+  const key = `${src}|${color}|${keepBelow}`;
   if (tintCache.has(key)) return tintCache.get(key);
   let img = tintImgs.get(src);
   if (!img) { img = new Image(); img.src = src; tintImgs.set(src, img); }
@@ -699,7 +741,16 @@ function tintedPiece(src, color) {
   const ctx = c.getContext('2d');
   ctx.drawImage(img, 0, 0);
   ctx.globalCompositeOperation = 'multiply'; // 白身→玩家色，深色描边/阴影保持
-  ctx.fillStyle = color;
+  if (keepBelow > 0) {
+    // 纵向渐变：下部乘白＝不染，城墙保持白色
+    const grad = ctx.createLinearGradient(0, 0, 0, c.height);
+    grad.addColorStop(0, color);
+    grad.addColorStop(Math.max(0, keepBelow - 0.06), color);
+    grad.addColorStop(keepBelow, '#ffffff');
+    ctx.fillStyle = grad;
+  } else {
+    ctx.fillStyle = color;
+  }
   ctx.fillRect(0, 0, c.width, c.height);
   ctx.globalCompositeOperation = 'destination-in'; // 恢复白模的透明区
   ctx.drawImage(img, 0, 0);
@@ -707,40 +758,33 @@ function tintedPiece(src, color) {
   tintCache.set(key, url);
   return url;
 }
-// 预加载骑士白模，降低首次染色的等待
-for (const n of [1, 2, 3]) {
-  const s = `/assets/opt/piece-knight${n}-white.webp`;
+// 预加载全部白模，降低首次染色的等待
+for (const name of ['settlement', 'city', 'metropolis', 'knight1', 'knight2', 'knight3']) {
+  const s = `/assets/opt/piece-${name}-white.webp`;
   const i = new Image(); i.src = s; tintImgs.set(s, i);
 }
+for (const w of ['city-wall', 'metropolis-wall']) { new Image().src = `/assets/opt/piece-${w}.webp`; }
 
 export function updateCKPieces(state, colors, onKnightClick) {
   if (!state.ck) return;
   curState = state;
   curColors = colors;
   lastCKArgs = { state, colors, onKnightClick };
-  onTintReady = () => { if (lastCKArgs) updateCKPieces(lastCKArgs.state, lastCKArgs.colors, lastCKArgs.onKnightClick); };
-  // 城墙：城市底下的一圈护环
+  onTintReady = rerenderTinted;
+  // 城墙已并入城市白模（piece-city-walled-white 等），不再单独画护环
   layers.walls.innerHTML = '';
-  for (const [vid, owner] of Object.entries(state.ck.walls)) {
-    const v = board.vertices[vid];
-    el('circle', {
-      cx: v.x, cy: v.y + 0.02, r: 0.3, class: 'wall-ring',
-      stroke: colors[owner],
-    }, layers.walls);
-  }
 
-  // 骑士：圆形棋子 + 等级数字；激活亮金边，未激活灰暗
+  // 骑士：染色白模；激活亮金光，未激活灰暗
   layers.knights.innerHTML = '';
   for (const [vid, k] of Object.entries(state.ck.knights)) {
     const v = board.vertices[vid];
-    const g = el('g', { class: `knight-piece${k.active ? ' active' : ' idle'}` }, layers.knights);
-    el('ellipse', { cx: v.x, cy: v.y + 0.15, rx: 0.23, ry: 0.1, class: 'knight-glow' }, g); // 激活时脚下金光
-    el('ellipse', { cx: v.x, cy: v.y + 0.15, rx: 0.15, ry: 0.055, fill: 'rgba(0,0,0,.35)' }, g); // 接地阴影
+    const g = el('g', { class: `knight-piece${k.active ? ' active' : ' idle'}`, 'data-vid': vid }, layers.knights);
+    el('ellipse', { cx: v.x, cy: v.y + 0.13, rx: 0.24, ry: 0.09, class: 'knight-glow' }, g); // 激活时脚下金光（不作阴影）
     const tinted = tintedPiece(`/assets/opt/piece-knight${k.level}-white.webp`, colors[k.player]);
     if (tinted) {
-      el('image', { href: tinted, x: v.x - 0.22, y: v.y - 0.5, width: 0.44, height: 0.62, class: 'knight-img' }, g);
+      el('image', { href: tinted, x: v.x - 0.27, y: v.y - 0.58, width: 0.54, height: 0.74, class: 'knight-img' }, g);
     } else {
-      el('circle', { cx: v.x, cy: v.y, r: 0.2, fill: colors[k.player] }, g); // 染色未就绪的兜底
+      el('circle', { cx: v.x, cy: v.y - 0.06, r: 0.2, fill: colors[k.player] }, g); // 染色未就绪的兜底
     }
     attachInspect(g, { kind: 'knight', vid: Number(vid) });
     if (onKnightClick) {
@@ -752,16 +796,8 @@ export function updateCKPieces(state, colors, onKnightClick) {
     }
   }
 
-  // 大都会：城市上方的金星；商人：板块上的商栈标记
+  // 大都会已并入建筑白模（piece-metropolis-white 等）；此处只画商人标记
   layers.marks.innerHTML = '';
-  for (const m of Object.values(state.ck.metropolis)) {
-    if (!m) continue;
-    const v = board.vertices[m.vertex];
-    el('image', {
-      href: '/assets/opt/metropolis.webp',
-      x: v.x - 0.17, y: v.y - 0.62, width: 0.34, height: 0.5, class: 'hex-img metro-mark',
-    }, layers.marks);
-  }
   if (state.ck.merchant) {
     const hex = board.hexes[state.ck.merchant.hex];
     const g = el('g', { class: 'merchant-mark' }, layers.marks);
@@ -779,7 +815,7 @@ export function updateCKPieces(state, colors, onKnightClick) {
 
 // ---------- 野蛮人航道（画在海面上，随棋盘缩放平移） ----------
 // ck 传 null 时清除；船的位置用 transform 过渡，元素持久化避免重建打断动画
-export function updateBarbarianTrack(ck, strength, defense) {
+export function updateBarbarianTrack(ck, strength, defense, detail) {
   const layer = layers.barb;
   if (!layer) return;
   if (!ck) {
@@ -809,21 +845,23 @@ export function updateBarbarianTrack(ck, strength, defense) {
     }
     // 🏰 vs ⚔️ 徽章挂在航线起点（右下角外海）下方
     const s0 = pt(0);
-    const badge = el('g', {}, layer);
+    const badge = el('g', { style: 'cursor: help' }, layer);
     el('rect', { x: s0.x - 1.0, y: s0.y + 0.42, width: 2.0, height: 0.56, rx: 0.28, class: 'barb-badge-bg' }, badge);
     const vs = el('text', { x: s0.x, y: s0.y + 0.81, class: 'barb-badge-text' }, badge);
+    const badgeTitle = el('title', {}, badge); // 悬浮显示各玩家城市/防御明细
     const ship = el('g', { class: 'barb-ship' }, layer);
     el('image', {
       href: '/assets/opt/barbarian-ship.webp',
       x: -0.36, y: -0.22, width: 0.72, height: 0.48, class: 'hex-img',
     }, ship);
     attachInspect(ship, { kind: 'barbarian' });
-    barbEls = { pt, dots, ship, vs };
+    barbEls = { pt, dots, ship, vs, badgeTitle };
   }
   barbEls.dots.forEach((d, i) => d.classList.toggle('passed', i + 1 <= pos));
   const s = barbEls.pt(pos / track);
   barbEls.ship.style.transform = `translate(${s.x}px, ${s.y}px)`;
   barbEls.vs.textContent = `🏰${strength} vs ⚔️${defense}`;
+  if (detail && barbEls.badgeTitle) barbEls.badgeTitle.textContent = detail;
   barbInfo = { strength, defense, pos, track, x: s.x, y: s.y };
 }
 
@@ -1084,6 +1122,17 @@ export function hexPixelPosition(hexId, svgElement) {
   const pt = svgElement.createSVGPoint();
   pt.x = hex.x; pt.y = hex.y;
   const ctm = svgElement.querySelector('#layer-hexes')?.getScreenCTM();
+  if (!ctm) return null;
+  return pt.matrixTransform(ctm);
+}
+
+// 顶点的屏幕坐标（毁城爆炸等定位用）
+export function vertexPixelPosition(vid, svgElement) {
+  const v = board.vertices[vid];
+  if (!v) return null;
+  const pt = svgElement.createSVGPoint();
+  pt.x = v.x; pt.y = v.y;
+  const ctm = svgElement.querySelector('#layer-buildings')?.getScreenCTM();
   if (!ctm) return null;
   return pt.matrixTransform(ctm);
 }
