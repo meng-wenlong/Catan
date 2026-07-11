@@ -127,6 +127,12 @@
     <div id="side-panel">
       <div id="players-panel"></div>
       <div id="log-panel">
+        <div id="log-filter">
+          <button data-lf="all" class="active">全部</button>
+          <button data-lf="chat" title="聊天/表情">💬</button>
+          <button data-lf="dice" title="骰子">🎲</button>
+          <button data-lf="progress" title="进步卡">🎴</button>
+        </div>
         <div id="log-list"></div>
         <div id="chat-row">
           <div id="emote-box">
@@ -141,6 +147,7 @@
   </div>
 
   <div id="bottom-bar">
+    <div id="hand-count" title="手牌数 / 掷 7 弃牌上限"></div>
     <div id="hand-cards"></div>
     <div id="dev-cards"></div>
     <div id="action-buttons">

@@ -351,6 +351,13 @@ body {
   display: flex; flex-direction: column; min-height: 0;
   box-shadow: 0 2px 8px rgba(0,20,35,.18);
 }
+#log-filter { display: flex; gap: 4px; padding: 5px 8px 0; flex-wrap: wrap; }
+#log-filter button {
+  font-size: 12px; padding: 2px 9px; border: 1px solid var(--panel-line);
+  border-radius: 999px; background: rgba(255,253,244,.55); cursor: pointer; color: var(--text);
+}
+#log-filter button.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+.log-hidden { display: none; }
 #log-list { flex: 1; overflow-y: auto; padding: 10px 12px; font-size: 12.5px; line-height: 1.75; }
 #log-list::-webkit-scrollbar { width: 8px; }
 #log-list::-webkit-scrollbar-thumb { background: #d5c9a8; border-radius: 4px; }
@@ -405,6 +412,15 @@ body {
   box-shadow: 0 -6px 20px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,235,200,.22);
 }
 #hand-cards { display: flex; gap: 6px; }
+#hand-count {
+  align-self: center; font-size: 13px; font-weight: 700; color: #f6ecd6;
+  padding: 5px 10px; background: rgba(0,0,0,.28); border-radius: 8px; white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+#hand-count.over { color: #ffd7c8; background: rgba(180,55,32,.6); box-shadow: 0 0 0 1px rgba(255,120,90,.5); }
+/* 被间谍/大亨盯上时，被偷的那类卡脉冲告警 */
+#hand-cards.being-spied, #dev-cards.being-spied { border-radius: 8px; animation: spied-pulse .7s ease-in-out infinite; }
+@keyframes spied-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(230,60,50,0); } 50% { box-shadow: 0 0 16px 5px rgba(232,64,52,.85); } }
 .res-card {
   width: 56px; height: 74px; border-radius: 10px; position: relative;
   border: 2px solid rgba(255,250,235,.75);
@@ -420,6 +436,7 @@ body {
   border-radius: 10px; padding: 0 8px; margin-bottom: 2px;
 }
 .res-card.bump { animation: card-bump .9s ease; }
+.player-card.bump { animation: card-bump .9s ease; } /* 别人收获资源飞到状态栏时 pop 一下 */
 @keyframes card-bump {
   0% { transform: scale(1); }
   40% { transform: scale(1.18) translateY(-8px); }
@@ -451,6 +468,8 @@ body {
   transition: transform .2s ease; font-family: inherit;
 }
 .dev-card small { font-size: 10px; font-weight: 700; line-height: 1.3; }
+.dev-card.vp-card { background: linear-gradient(160deg, #f3d876, #caa42a); color: #4a3308; opacity: 1; cursor: default; }
+.dev-card.vp-card:disabled { opacity: 1; }
 .dev-card.t-knight { background-image: url("/assets/opt/dev-knight.webp"); }
 .dev-card.t-vp { background-image: url("/assets/opt/dev-vp.webp"); }
 .dev-card.t-roadBuilding { background-image: url("/assets/opt/dev-road.webp"); }
@@ -701,6 +720,8 @@ body {
   animation: slide-down .6s ease;
   max-width: 90vw;
 }
+#trade-banner .trade-desc { font-weight: 600; }
+#trade-banner .trade-chip { padding: 2px 9px; border-radius: 999px; background: rgba(120,95,50,.14); font-size: 13px; white-space: nowrap; }
 @keyframes slide-down { from { transform: translate(-50%,-120%); } to { transform: translate(-50%,0); } }
 
 /* ---------- 浮动提示 ---------- */
@@ -720,6 +741,14 @@ body {
   filter: drop-shadow(0 3px 5px rgba(0,0,0,.4));
 }
 .fly-res img { width: 30px; height: 30px; display: block; }
+/* 产出飞卡：小张资源卡从地块长出并飞向玩家（独立类，与进步卡 .fly-progcard 分开） */
+.fly-rescard {
+  position: fixed; left: 0; top: 0; z-index: 65; pointer-events: none;
+  width: 42px; height: 56px; border-radius: 6px;
+  background-size: cover; background-position: center;
+  border: 1.5px solid rgba(255,248,230,.9);
+  box-shadow: 0 4px 11px rgba(0,0,0,.45);
+}
 
 /* 行内资源小图标：飘字、交易横幅、垄断按钮等处替代 emoji */
 .res-ico {
@@ -731,6 +760,23 @@ body {
   text-shadow: 0 2px 5px rgba(0,0,0,.5); white-space: nowrap;
   animation: float-up 4.8s ease forwards;
 }
+/* 强反馈爆开（毁城等）+ 棋盘震动 */
+.fx-burst {
+  position: fixed; transform: translate(-50%, -50%); z-index: 60; pointer-events: none;
+  font-size: 46px; filter: drop-shadow(0 3px 6px rgba(0,0,0,.5)); animation: fx-burst 1.1s ease-out forwards;
+}
+@keyframes fx-burst {
+  0% { transform: translate(-50%,-50%) scale(.3); opacity: 0; }
+  20% { transform: translate(-50%,-50%) scale(1.6); opacity: 1; }
+  100% { transform: translate(-50%,-72%) scale(1.15); opacity: 0; }
+}
+#board-area.shake { animation: board-shake .45s ease; }
+@keyframes board-shake {
+  0%, 100% { transform: translate(0, 0); }
+  15% { transform: translate(-5px, 3px); } 30% { transform: translate(5px, -3px); }
+  45% { transform: translate(-4px, -2px); } 60% { transform: translate(4px, 2px); } 75% { transform: translate(-3px, 1px); }
+}
+@media (prefers-reduced-motion: reduce) { .fx-burst, #board-area.shake { animation: none; } }
 /* 上飘幅度要小：飘字锚定在玩家卡片旁，飘太高会跑到上一张卡片旁边 */
 @keyframes float-up {
   0% { opacity: 0; transform: translateY(8px) scale(.8); }
@@ -826,15 +872,19 @@ body {
 .impb-buy.can .impb-buy-txt { fill: #fff; }
 
 /* 进步卡飞行动画（牌堆 ↔ 玩家面板） */
-.fly-card {
-  position: fixed; left: 0; top: 0; z-index: 65;
+/* 进步卡飞卡：两段式（牌堆/手处长出 → 飞向目标），带真实卡面 / 牌堆背美术。256:341≈0.75 */
+.fly-progcard {
+  position: fixed; left: 0; top: 0; z-index: 66;
   pointer-events: none; transform: translate(-50%, -50%);
-  width: 34px; height: 46px; border-radius: 5px;
-  border: 2px solid rgba(255,255,255,.85);
-  display: flex; align-items: center; justify-content: center;
-  font-size: 18px;
-  box-shadow: 0 4px 10px rgba(0,0,0,.4);
+  width: 46px; height: 61px; border-radius: 6px; overflow: hidden;
+  background-size: cover; background-position: center;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, .45);
 }
+.fly-progcard.back { /* 牌堆背：色底 + 居中徽记（与棋盘上的牌堆一致，不剧透抽到的卡） */
+  display: flex; align-items: center; justify-content: center;
+  border: 2px solid rgba(255, 255, 255, .85);
+}
+.fly-progcard.back img { width: 78%; height: 78%; object-fit: contain; }
 
 /* 交易/弃牌选牌卡容器需为定位上下文（数量角标绝对定位） */
 .res-picker .rp-card, .res-radio button { position: relative; }
@@ -854,9 +904,12 @@ body {
 
 /* 骑士棋子 */
 /* 骑士：染色白模图 + 激活/休整状态（激活=脚下金光，休整=去饱和变暗） */
-.knight-glow { fill: transparent; transition: fill .25s; }
-.knight-piece.active .knight-glow { fill: rgba(255,208,90,.45); }
+.knight-glow { fill: transparent; transition: fill .25s; } /* 常态无光环，仅铁匠选中时变绿 */
 .knight-piece.idle .knight-img { opacity: .82; filter: saturate(.4) brightness(.85); }
+/* 铁匠等多选：选中骑士绿色脉冲高亮 */
+.knight-piece.knight-selected .knight-glow { fill: rgba(70,205,130,.9); }
+.knight-piece.knight-selected { animation: knight-sel-pulse 1s ease-in-out infinite; transform-box: fill-box; transform-origin: center bottom; }
+@keyframes knight-sel-pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.13); } }
 
 /* 城墙 / 大都会 / 商人标记 */
 .wall-ring { fill: none; stroke-width: .075; opacity: .9; }

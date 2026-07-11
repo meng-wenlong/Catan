@@ -96,7 +96,8 @@ export const ckMethods = {
     for (const pl of this.players) {
       pl.improvements = { trade: 0, politics: 0, science: 0 };
       pl.progressCards = []; // {type, deck}
-      pl.progressVP = 0;     // 已亮出的分数进步卡（宪法/印刷机）
+      pl.progressVP = 0;     // 已亮出的分数进步卡（宪法/印刷机）数量
+      pl.vpCards = [];       // 已亮出的分数进步卡类型列表（用于在拥有者界面显示为卡）
       pl.defenderVP = 0;     // 「卡坦守护者」分数
     }
   },
@@ -565,8 +566,9 @@ export const ckMethods = {
     const type = deck.pop();
     if (PROGRESS_VP_CARDS.includes(type)) {
       pl.progressVP++;
+      pl.vpCards.push(type);
       this.addEvent('progressVP', { player: p, card: type, deck: deckName });
-      this.addLog(`📜 ${pl.name} 抽到「${PROGRESS_NAME[type]}」，立即亮出（+1 分）！`);
+      this.addLog(`📜 ${pl.name} 抽到「${PROGRESS_NAME[type]}」，立即亮出（+1 分）！`, { cat: 'progress' });
       return;
     }
     if (pl.progressCards.length >= MAX_PROGRESS_HAND) {
@@ -576,7 +578,7 @@ export const ckMethods = {
     }
     pl.progressCards.push({ type, deck: deckName });
     this.addEvent('progress', { player: p, deck: deckName });
-    this.addLog(`${pl.name} 抽到一张${TRACK_NAME[deckName]}进步卡`);
+    this.addLog(`${pl.name} 抽到一张${TRACK_NAME[deckName]}进步卡`, { cat: 'progress' });
   },
 
   aqueductPick(p, res) {
@@ -605,8 +607,11 @@ export const ckMethods = {
     this.players[p].hand[card]++;
     pick.count--;
     this.addEvent('steal', { from: pick.from, to: p });
+    const cn = this.cardName(card);
+    this.addLog(`🔍 你从 ${from.name} 拿走了 ${cn}`, { to: [p], cat: 'steal' });
+    this.addLog(`🔍 ${this.players[p].name} 从你这里拿走了 ${cn}`, { to: [pick.from], cat: 'steal' });
     if (pick.count <= 0 || cardsOf(from.hand, this.cardTypes()).length === 0) {
-      this.addLog(`${this.players[p].name} 拿走了 ${from.name} 的牌`);
+      this.addLog(`${this.players[p].name} 拿走了 ${from.name} 的牌`, { cat: 'steal' });
       this.turn.pick = null;
       this.turn.state = 'main';
     }
@@ -623,7 +628,10 @@ export const ckMethods = {
     if (idx < 0) this.err('对方没有这张进步卡');
     this.players[p].progressCards.push(cards.splice(idx, 1)[0]);
     this.addEvent('steal', { from: pick.from, to: p });
-    this.addLog(`${this.players[p].name} 偷走了 ${this.players[pick.from].name} 的一张进步卡`);
+    const cn = PROGRESS_NAME[card];
+    this.addLog(`${this.players[p].name} 偷走了 ${this.players[pick.from].name} 的一张进步卡`, { cat: 'steal' });
+    this.addLog(`🔍 你偷到了 ${this.players[pick.from].name} 的进步卡「${cn}」`, { to: [p], cat: 'steal' });
+    this.addLog(`🔍 ${this.players[p].name} 偷走了你的进步卡「${cn}」`, { to: [pick.from], cat: 'steal' });
     this.turn.pick = null;
     this.turn.state = 'main';
   },
@@ -639,6 +647,9 @@ export const ckMethods = {
     pl.hand[card]--;
     this.players[this.turn.player].hand[card]++;
     this.addEvent('steal', { from: p, to: this.turn.player });
+    const gn = this.cardName(card);
+    this.addLog(`🎁 你送给 ${this.players[this.turn.player].name} 一张 ${gn}`, { to: [p], cat: 'steal' });
+    this.addLog(`🎁 ${pl.name} 送给你一张 ${gn}`, { to: [this.turn.player], cat: 'steal' });
     const left = need - 1;
     if (left <= 0 || cardsOf(pl.hand, this.cardTypes()).length === 0) {
       delete this.turn.pendingGive[p];
@@ -880,8 +891,9 @@ export const ckMethods = {
           this.turn.pendingDiscards = pending;
           this.turn.discardThen = 'main';
           this.turn.state = 'discard';
+          this.addEvent('saboteur', { players: Object.keys(pending).map(Number) });
           const names = Object.keys(pending).map((i) => this.players[i].name).join('、');
-          this.addLog(`破坏者！${names} 需要弃掉一半手牌。`);
+          this.addLog(`破坏者！${names} 需要弃掉一半手牌。`, { cat: 'progress' });
         }
         break;
       }
@@ -961,9 +973,10 @@ export const ckMethods = {
         const ok = (h) => h && h.number && !INVENTOR_FORBIDDEN.includes(h.number);
         if (!ok(h1) || !ok(h2) || h1.id === h2.id) this.err('请选择两块数字为 3/4/5/9/10/11 的板块');
         spend();
+        const n1 = h1.number, n2 = h2.number;
         [h1.number, h2.number] = [h2.number, h1.number];
         this.addEvent('inventor', { h1: h1.id, h2: h2.id });
-        this.addLog(`${pl.name} 交换了两块板块的数字（${h1.number} ↔ ${h2.number}）`);
+        this.addLog(`${pl.name} 用发明家交换了 ${this.hexPos(h1)}(${n1}) 与 ${this.hexPos(h2)}(${n2}) 的数字`, { cat: 'progress' });
         break;
       }
       case 'irrigation':

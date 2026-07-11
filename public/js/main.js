@@ -1,8 +1,8 @@
 // 客户端主逻辑：Socket 通信、界面状态、交互与动画
 import {
-  initBoard, updatePieces, updateCKPieces, clearHotspots,
+  initBoard, updatePieces, updateCKPieces, highlightKnights, clearHotspots,
   showVertexSpots, showEdgeSpots, showRobberSpots, showHexSpots,
-  zoomAt, resetZoom, highlightProducingHexes, hexPixelPosition,
+  zoomAt, resetZoom, highlightProducingHexes, hexPixelPosition, vertexPixelPosition,
   updateBarbarianTrack, updateProgressDecks, deckPixelPosition,
   updateImproveBoard, attachCardInspect,
 } from './render.js';
@@ -75,7 +75,7 @@ const PROG_META = {
   diplomat: { name: '外交官', desc: '移除一条「开放道路」（自己的可立即重放）' },
   intrigue: { name: '阴谋', desc: '驱逐一名位于你道路上的对手骑士' },
   saboteur: { name: '破坏者', desc: '分数不低于你的玩家全部弃一半手牌' },
-  spy: { name: '间谍', desc: '偷看并拿走一名对手的进步卡（随机）' },
+  spy: { name: '间谍', desc: '偷看一名对手的进步卡，从中选取 1 张拿走' },
   warlord: { name: '军阀', desc: '免费激活你的所有骑士' },
   wedding: { name: '婚礼', desc: '分数比你高的玩家各给你 2 张牌' },
   alchemist: { name: '炼金术士', desc: '掷骰前打出：自选两个骰子的点数' },
@@ -650,6 +650,11 @@ function updateSpectatorUI() {
 function renderAll() {
   updatePieces(S, colors());
   if (S.mode === 'ck') updateCKPieces(S, colors(), onKnightClick);
+  if (progAction?.card === 'smith') highlightKnights(progAction.sel); // 重渲染后重新套用选中高亮
+  // 被间谍/大亨盯上时，脉冲高亮自己正被偷的那类卡
+  const spyPick = S.mode === 'ck' ? S.ck?.pick : null;
+  $('dev-cards').classList.toggle('being-spied', !!(spyPick && S.turn.state === 'pickProgress' && spyPick.from === myIndex));
+  $('hand-cards').classList.toggle('being-spied', !!(spyPick && S.turn.state === 'pickCards' && spyPick.from === myIndex));
   renderStatus();
   renderBarbBar();
   renderPlayers();
@@ -674,7 +679,14 @@ function renderBarbBar() {
   const strength = Object.values(S.buildings).filter((b) => b.type === 'city').length;
   const defense = Object.values(S.ck.knights).filter((k) => k.active)
     .reduce((s, k) => s + k.level, 0);
-  updateBarbarianTrack(S.ck, strength, defense);
+  // 各玩家的城市数（兵力目标）与激活骑士防御贡献（悬浮明细）
+  const detail = `野蛮人兵力（城市总数） ${strength}\n骑士总防御 ${defense}\n──────────\n`
+    + S.players.map((p, i) => {
+      const cities = Object.values(S.buildings).filter((b) => b.player === i && b.type === 'city').length;
+      const def = Object.values(S.ck.knights).filter((k) => k.player === i && k.active).reduce((s, k) => s + k.level, 0);
+      return `${p.name}：城市 ${cities} · 防御 ${def}`;
+    }).join('\n');
+  updateBarbarianTrack(S.ck, strength, defense, detail);
   updateProgressDecks(S.ck.decks);
   // 观战者没有自己的升级数据（S.players[-1] 不存在），不渲染升级轨道
   if (myIndex < 0) {
@@ -757,9 +769,12 @@ function renderStatus() {
     } else if (st === 'pickCards') {
       text = isMyTurn()
         ? `🃏 商业大亨：请从对方手牌中拿 ${S.ck.pick.count} 张`
-        : `${cur.name} 正在拿取 ${S.players[S.ck.pick.from].name} 的手牌…`;
+        : S.ck.pick.from === myIndex ? `⚠️ ${cur.name} 正在从你的手牌中拿牌！`
+          : `${cur.name} 正在拿取 ${S.players[S.ck.pick.from].name} 的手牌…`;
     } else if (st === 'pickProgress') {
-      text = isMyTurn() ? '🎴 间谍：请选择要偷的进步卡' : `${cur.name} 正在查看 ${S.players[S.ck.pick.from].name} 的进步卡…`;
+      text = isMyTurn() ? '🎴 间谍：请选择要偷的进步卡'
+        : S.ck.pick.from === myIndex ? `⚠️ ${cur.name} 正在查看并偷取你的进步卡！`
+          : `${cur.name} 正在查看 ${S.players[S.ck.pick.from].name} 的进步卡…`;
     } else if (st === 'wedding') {
       const names = Object.keys(S.ck.pendingGive).map((i) => S.players[i].name).join('、');
       text = S.ck.pendingGive[myIndex]
@@ -847,6 +862,15 @@ function renderPlayers() {
 
 function renderHand() {
   const wrap = $('hand-cards');
+  // 手牌数 / 弃牌上限（掷 7）
+  const total = cardList().reduce((s, r) => s + S.you.hand[r], 0);
+  const limit = S.you.handLimit ?? 7;
+  const hc = $('hand-count');
+  if (hc) {
+    hc.textContent = `🃏 ${total} / ${limit}`;
+    hc.title = `手牌 ${total} 张 · 掷 7 弃牌上限 ${limit}（超过则弃一半）`;
+    hc.classList.toggle('over', total > limit);
+  }
   wrap.innerHTML = '';
   for (const r of cardList()) {
     const n = S.you.hand[r];
@@ -939,17 +963,40 @@ function renderProgressCards(wrap) {
     }));
     wrap.appendChild(btn);
   }
+  // 分数进步卡（宪法/印刷机）：已亮出、计入总分，作为卡显示在自己界面
+  for (const type of (S.you.vpCards || [])) {
+    const btn = document.createElement('button');
+    btn.className = 'dev-card prog-card vp-card';
+    btn.disabled = true;
+    btn.innerHTML = `<small>🏆 ${PROG_META[type].name}</small>`;
+    btn.title = `${PROG_META[type].name}：分数卡，已亮出 +1 分`;
+    attachCardInspect(btn, () => ({
+      img: `/assets/opt/progress-${type}.webp`,
+      name: `${PROG_META[type].name}（+1 分）`,
+      desc: PROG_META[type].desc,
+      boxed: true,
+    }));
+    wrap.appendChild(btn);
+  }
 }
 
 const sendProg = (card, payload = {}) => send({ type: 'playProgress', card, payload });
 
+// 打出前二次确认，防止误触立即生效的卡效
+function confirmProg(msg, onYes) {
+  openPickModal(msg, [
+    { label: '✅ 确定打出', onPick: onYes },
+    { label: '取消', onPick: () => {} },
+  ]);
+}
+
 function playProgressCard(type) {
   cancelProgAction();
   switch (type) {
-    // 直接生效
+    // 无目标、立即生效 —— 打出前确认，防误触
     case 'warlord': case 'crane': case 'irrigation': case 'mining':
     case 'commercialHarbor': case 'wedding': case 'saboteur': case 'roadBuilding':
-      sendProg(type);
+      confirmProg(`确定打出「${PROG_META[type].name}」？${PROG_META[type].desc}`, () => sendProg(type));
       break;
     // 选一种牌
     case 'merchantFleet':
@@ -1012,7 +1059,7 @@ function playProgressCard(type) {
       if (!targets.length) return toast('对手没有骑士');
       openPickModal('逃兵：指定一名对手（由对方选择叛逃的骑士）', targets.map((i) => ({
         label: `${esc(S.players[i].name)}（${Object.values(S.ck.knights).filter((k) => k.player === i).length} 名骑士）`,
-        onPick: () => sendProg('deserter', { target: i }),
+        onPick: () => confirmProg(`确定对 ${S.players[i].name} 使用逃兵？`, () => sendProg('deserter', { target: i })),
       })));
       break;
     }
@@ -1043,6 +1090,7 @@ function startProgAction(card, tip, opts = {}) {
 function cancelProgAction() {
   progAction = null;
   $('prog-banner').classList.add('hidden');
+  highlightKnights([]);
   if (S) renderHotspots();
 }
 $('prog-cancel').onclick = () => cancelProgAction();
@@ -1263,6 +1311,7 @@ function onKnightClick(v, k) {
       const i = pa.sel.indexOf(v);
       if (i >= 0) pa.sel.splice(i, 1);
       else if (pa.sel.length < 2) pa.sel.push(v);
+      highlightKnights(pa.sel);
       $('prog-banner-text').textContent = `铁匠：已选 ${pa.sel.length} 名骑士（可选 1-2 名）`;
       $('prog-confirm').disabled = pa.sel.length < 1;
       return;
@@ -1334,19 +1383,35 @@ $('btn-again').onclick = () => socket.emit('endGame');
 // ---------- 日志 ----------
 // 按服务端的日志 seq 增量渲染（发送的是最近 60 条的滑动窗口，不能按数组下标对齐）
 let lastLogSeq = 0;
+let logFilter = 'all'; // log 过滤：all / chat / dice / progress / game
 function renderLog() {
+  // 公开 log + 只发给我的私密 log（偷牌具体牌等），按 seq 合并
+  const entries = [...(S.log || []), ...((S.you && S.you.privLog) || [])].sort((a, b) => a.seq - b.seq);
   let appended = false;
-  for (const entry of S.log) {
+  for (const entry of entries) {
     if (entry.seq <= lastLogSeq) continue;
     lastLogSeq = entry.seq;
-    appendLog(esc(entry.text), false);
+    appendLog(esc(entry.text), false, entry.cat || 'game');
     appended = true;
   }
   if (appended) $('log-list').scrollTop = $('log-list').scrollHeight;
 }
 
-function appendLog(html, scroll) {
+$('log-filter').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-lf]');
+  if (!b) return;
+  logFilter = b.dataset.lf;
+  for (const x of $('log-filter').children) x.classList.toggle('active', x.dataset.lf === logFilter);
+  for (const div of $('log-list').children) {
+    div.classList.toggle('log-hidden', logFilter !== 'all' && div.dataset.cat !== logFilter);
+  }
+});
+
+function appendLog(html, scroll, cat = 'chat') {
   const div = document.createElement('div');
+  div.className = 'log-entry';
+  div.dataset.cat = cat;
+  if (logFilter !== 'all' && logFilter !== cat) div.classList.add('log-hidden');
   div.innerHTML = html;
   $('log-list').appendChild(div);
   if (scroll) $('log-list').scrollTop = $('log-list').scrollHeight;
@@ -1637,49 +1702,53 @@ function renderTradeBanner() {
   banner.classList.remove('hidden');
   banner.innerHTML = '';
 
+  const iAmFrom = t.from === myIndex;
+  const iAmPlayer = myIndex >= 0 && !!S.players[myIndex];
+
   const label = document.createElement('span');
-  if (t.from === myIndex) {
-    label.innerHTML = `你发起的交易：出 ${fmt(t.give)} ➡️ 换 ${fmt(t.get)}`;
-    banner.appendChild(label);
-    S.players.forEach((p, i) => {
-      if (i === myIndex) return;
-      const resp = t.responses[i];
-      const chip = document.createElement('span');
-      if (resp === 'accept') {
-        const b = document.createElement('button');
-        b.className = 'btn primary small';
-        b.textContent = `✅ 与 ${p.name} 成交`;
-        b.onclick = () => send({ type: 'acceptTradeWith', target: i });
-        banner.appendChild(b);
-        return;
-      }
-      chip.textContent = resp === 'decline' ? `❌ ${p.name}` : `⏳ ${p.name}`;
-      banner.appendChild(chip);
-    });
+  label.className = 'trade-desc';
+  label.innerHTML = iAmFrom
+    ? `你发起的交易：出 ${fmt(t.give)} ➡️ 换 ${fmt(t.get)}`
+    : `${esc(S.players[t.from].name)} 想用 ${fmt(t.give)} 换 ${fmt(t.get)}`;
+  banner.appendChild(label);
+
+  // 全局视角：所有对手的应答状态，人人（含观战者）可见
+  S.players.forEach((p, i) => {
+    if (i === t.from) return;
+    const resp = t.responses[i];
+    if (iAmFrom && resp === 'accept') {
+      // 发起者：同意者变成「成交」按钮
+      const b = document.createElement('button');
+      b.className = 'btn primary small';
+      b.textContent = `✅ 与 ${p.name} 成交`;
+      b.onclick = () => send({ type: 'acceptTradeWith', target: i });
+      banner.appendChild(b);
+      return;
+    }
+    const chip = document.createElement('span');
+    chip.className = 'trade-chip';
+    const face = resp === 'accept' ? '✅' : resp === 'decline' ? '❌' : '⏳';
+    chip.textContent = `${face} ${p.name}${i === myIndex ? '（你）' : ''}`;
+    banner.appendChild(chip);
+  });
+
+  // 视角相关操作按钮（观战者无）
+  if (iAmFrom) {
     const cancel = document.createElement('button');
     cancel.className = 'btn small';
     cancel.textContent = '取消';
     cancel.onclick = () => send({ type: 'cancelTrade' });
     banner.appendChild(cancel);
-  } else {
-    label.innerHTML = `${esc(S.players[t.from].name)} 想用 ${fmt(t.give)} 换你的 ${fmt(t.get)}`;
-    banner.appendChild(label);
-    const my = t.responses[myIndex];
-    if (!my) {
-      const yes = document.createElement('button');
-      yes.className = 'btn primary small';
-      yes.textContent = '✅ 同意';
-      yes.onclick = () => send({ type: 'respondTrade', accept: true });
-      const no = document.createElement('button');
-      no.className = 'btn small';
-      no.textContent = '❌ 拒绝';
-      no.onclick = () => send({ type: 'respondTrade', accept: false });
-      banner.append(yes, no);
-    } else {
-      const st = document.createElement('span');
-      st.textContent = my === 'accept' ? '已同意，等待对方确认…' : '已拒绝';
-      banner.appendChild(st);
-    }
+  } else if (iAmPlayer && !t.responses[myIndex]) {
+    const yes = document.createElement('button');
+    yes.className = 'btn primary small';
+    yes.textContent = '✅ 同意';
+    yes.onclick = () => send({ type: 'respondTrade', accept: true });
+    const no = document.createElement('button');
+    no.className = 'btn small';
+    no.textContent = '❌ 拒绝';
+    no.onclick = () => send({ type: 'respondTrade', accept: false });
+    banner.append(yes, no);
   }
 }
 
@@ -1782,8 +1851,8 @@ function playEvents() {
         const d = delay;
         const { player, res, n } = ev;
         setTimeout(() => {
-          // 自己的产出：资源图标从产出地块飞进手牌；条件不满足时回落为飘字
-          if (player !== myIndex || !flyResourceFromHex(res, n)) {
+          // 从产出地块飞牌：自己飞进手牌，别人飞到其状态栏卡片；条件不满足时回落为飘字
+          if (!flyResourceFromHex(res, n, player)) {
             floatOverPlayer(player, `+${n} ${resIcon(res)}`);
           }
         }, d);
@@ -1823,8 +1892,19 @@ function playEvents() {
         delay += 1200;
         break;
       }
-      case 'pillage':
-        floatOverPlayer(ev.player, '💥 城市被毁');
+      case 'pillage': {
+        const d = delay;
+        setTimeout(() => {
+          const pos = vertexPixelPosition(ev.vertex, $('board'));
+          if (pos) burstAt(pos.x, pos.y, '💥');
+          shakeBoard();
+          floatOverPlayer(ev.player, '💥 城市被毁！');
+        }, d);
+        delay += 400;
+        break;
+      }
+      case 'saboteur':
+        for (const i of ev.players) floatOverPlayer(i, '💥 破坏者：弃一半手牌');
         break;
       case 'progress': {
         const d = delay;
@@ -1837,9 +1917,9 @@ function playEvents() {
       }
       case 'progressVP': {
         const d = delay;
-        const { player, deck } = ev;
+        const { player, deck, card } = ev;
         setTimeout(() => {
-          flyProgressCard(deck, player);
+          flyProgressCard(deck, player, false, card); // 分数卡已亮出，飞真实卡面
           floatOverPlayer(player, '📜 +1 分');
         }, d);
         delay += 250;
@@ -1852,7 +1932,7 @@ function playEvents() {
         floatOverPlayer(ev.player, '🏛️ 大都会');
         break;
       case 'playProgress':
-        flyProgressCard(ev.deck, ev.player, true); // 用掉的卡飞回牌堆底部
+        flyProgressCard(ev.deck, ev.player, true, ev.card); // 打出的卡（真实卡面）飞回牌堆底部
         floatOverPlayer(ev.player, `🎴 ${PROG_META[ev.card]?.name || ''}`);
         break;
       default:
@@ -1911,35 +1991,46 @@ function showTurnBanner(to) {
 }
 
 // 产出飞卡：按掷骰点数反查产出该资源的地块，把资源图标从地块飞到底部对应手牌
-const RES_TERRAIN = { wood: 'forest', brick: 'hills', sheep: 'pasture', wheat: 'fields', ore: 'mountains' };
-function flyResourceFromHex(res, n) {
+const RES_TERRAIN = {
+  wood: 'forest', brick: 'hills', sheep: 'pasture', wheat: 'fields', ore: 'mountains',
+  paper: 'forest', cloth: 'pasture', coin: 'mountains', // CK：城市在对应地形产出商品，同样从该地块飞出
+};
+function flyResourceFromHex(res, n, player) {
   if (!S || !lastDiceTotal) return false;
   const hexes = S.board.hexes.filter(
     (h) => h.number === lastDiceTotal && h.terrain === RES_TERRAIN[res] && h.id !== S.robber,
   );
-  const card = document.querySelector(`#hand-cards .res-card.res-${res}`);
-  if (!hexes.length || !card) return false;
-  const rect = card.getBoundingClientRect();
+  if (!hexes.length) return false;
+  // 目标：自己 → 对应手牌卡；别人 → 其状态栏玩家卡片
+  const targetEl = player === myIndex
+    ? document.querySelector(`#hand-cards .res-card.res-${res}`)
+    : $(`player-card-${player}`);
+  if (!targetEl) return false;
+  const rect = targetEl.getBoundingClientRect();
   const ex = rect.left + rect.width / 2;
   const ey = rect.top + rect.height / 2;
   for (let i = 0; i < Math.min(n, 6); i++) {
     const from = hexPixelPosition(hexes[i % hexes.length].id, $('board'));
     if (!from) return false;
     const f = document.createElement('div');
-    f.className = 'fly-res';
-    f.innerHTML = resIcon(res); // .fly-res img 的尺寸规则会覆盖 .res-ico
+    f.className = 'fly-rescard';
+    f.style.backgroundImage = `url("/assets/opt/resource-${res}.webp")`;
     f.style.left = `${from.x}px`;
     f.style.top = `${from.y}px`;
     document.body.appendChild(f);
+    // 两段：① 从地里长出来（回弹放大 + 微升，停一下）② 飞向目标
     const anim = f.animate([
-      { transform: 'translate(-50%,-50%) scale(.4)', opacity: 0 },
-      { transform: 'translate(-50%,-50%) scale(1.25)', opacity: 1, offset: 0.2 },
-      { transform: `translate(calc(${ex - from.x}px - 50%), calc(${ey - from.y}px - 50%)) scale(.6)`, opacity: .9 },
-    ], { duration: 900, delay: i * 140, easing: 'cubic-bezier(.45,.05,.55,.95)', fill: 'backwards' });
+      { transform: 'translate(-50%, -50%) scale(0)', opacity: 0, easing: 'cubic-bezier(.34,1.56,.64,1)' },
+      { transform: 'translate(-50%, calc(-50% - 14px)) scale(1.15)', opacity: 1, offset: 0.3 },
+      { transform: 'translate(-50%, calc(-50% - 14px)) scale(1)', opacity: 1, offset: 0.46, easing: 'cubic-bezier(.5,0,.4,1)' },
+      { transform: `translate(calc(${ex - from.x}px - 50%), calc(${ey - from.y}px - 50%)) scale(.5)`, opacity: .9, offset: 1 },
+    ], { duration: 1500, delay: i * 240, fill: 'backwards' });
     anim.onfinish = () => {
       f.remove();
-      // 到达时再顶一下手牌（renderHand 可能已重建卡片，按需重新查找）
-      const c = document.querySelector(`#hand-cards .res-card.res-${res}`);
+      // 到达时顶一下目标（自己→手牌卡；别人→玩家卡片）。重渲染可能已重建，按需重查
+      const c = player === myIndex
+        ? document.querySelector(`#hand-cards .res-card.res-${res}`)
+        : $(`player-card-${player}`);
       if (c) {
         c.classList.remove('bump');
         void c.offsetWidth;
@@ -1951,7 +2042,8 @@ function flyResourceFromHex(res, n) {
 }
 
 // 进步卡飞行动画：从棋盘上的牌堆飞向玩家面板（reverse 表示打出后飞回牌堆底）
-function flyProgressCard(deck, playerIdx, reverse = false) {
+// cardId 传入具体卡 id（打出/分数卡，已公开）时飞真实卡面；否则飞牌堆背（色底+徽记，不剧透抽到什么）
+function flyProgressCard(deck, playerIdx, reverse = false, cardId = null) {
   const meta = TRACK_META[deck];
   const deckPos = deckPixelPosition(deck, $('board'));
   const panel = $(`player-card-${playerIdx}`);
@@ -1960,22 +2052,52 @@ function flyProgressCard(deck, playerIdx, reverse = false) {
   const panelPos = { x: r.left + r.width / 2, y: r.top + r.height / 2 };
   const [from, to] = reverse ? [panelPos, deckPos] : [deckPos, panelPos];
   const f = document.createElement('div');
-  f.className = 'fly-card';
-  f.style.background = meta.color;
-  f.textContent = RES_META[meta.com].icon;
+  f.className = 'fly-progcard';
+  if (cardId) {
+    f.style.backgroundImage = `url(/assets/opt/progress-${cardId}.webp)`;
+  } else {
+    f.classList.add('back');
+    f.style.background = meta.color;
+    const em = document.createElement('img');
+    em.src = `/assets/opt/progress-${deck}.webp`;
+    f.appendChild(em);
+  }
   f.style.left = `${from.x}px`;
   f.style.top = `${from.y}px`;
   document.body.appendChild(f);
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  // 两段式：先在起点弹出+抬升+停顿（像从牌堆/手中长出），再飞向目标
   const anim = f.animate([
-    { transform: 'translate(-50%,-50%) scale(.5) rotate(-8deg)', opacity: 0 },
-    { transform: 'translate(-50%,-50%) scale(1.15) rotate(0deg)', opacity: 1, offset: 0.25 },
-    { transform: `translate(calc(${to.x - from.x}px - 50%), calc(${to.y - from.y}px - 50%)) scale(.55) rotate(10deg)`, opacity: .85 },
-  ], { duration: 950, easing: 'cubic-bezier(.45,.05,.55,.95)' });
+    { transform: 'translate(-50%,-50%) scale(0) rotate(-10deg)', opacity: 0, easing: 'cubic-bezier(.34,1.56,.64,1)' },
+    { transform: 'translate(-50%, calc(-50% - 12px)) scale(1.18) rotate(0deg)', opacity: 1, offset: 0.3 },
+    { transform: 'translate(-50%, calc(-50% - 12px)) scale(1) rotate(0deg)', opacity: 1, offset: 0.46, easing: 'cubic-bezier(.5,0,.4,1)' },
+    { transform: `translate(calc(${dx}px - 50%), calc(${dy}px - 50%)) scale(.5) rotate(8deg)`, opacity: .9, offset: 1 },
+  ], { duration: 1300, fill: 'backwards' });
   anim.onfinish = () => f.remove();
   return true;
 }
 
 // html 只拼接内部常量（图标 img / emoji / 数字），无用户输入
+// 在屏幕坐标放一个放大爆开的表情（毁城等强反馈）
+function burstAt(x, y, emoji) {
+  const b = document.createElement('div');
+  b.className = 'fx-burst';
+  b.textContent = emoji;
+  b.style.left = `${x}px`;
+  b.style.top = `${y}px`;
+  document.body.appendChild(b);
+  setTimeout(() => b.remove(), 1200);
+}
+function shakeBoard() {
+  const el = $('board-area');
+  if (!el) return;
+  el.classList.remove('shake');
+  void el.offsetWidth;
+  el.classList.add('shake');
+  setTimeout(() => el.classList.remove('shake'), 500);
+}
+
 function floatOverPlayer(playerIdx, html) {
   const card = $(`player-card-${playerIdx}`);
   if (!card) return;

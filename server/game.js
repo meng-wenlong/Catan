@@ -92,9 +92,18 @@ export class Game {
 
   // ---------- 工具 ----------
   // 日志带自增 seq：客户端按 seq 增量渲染（发送窗口只有最近 60 条，不能按下标对齐）
-  addLog(msg) {
-    this.log.push({ seq: ++this.logSeq, text: msg });
+  // opts.to：仅这些玩家下标可见（私密 log，如偷牌具体牌）；opts.cat：分类（用于 log 过滤）
+  addLog(msg, opts = {}) {
+    this.log.push({ seq: ++this.logSeq, text: msg, to: opts.to || null, cat: opts.cat || 'game' });
     if (this.log.length > 120) this.log.shift();
+  }
+
+  // 板块的人类可读位置「第X行第Y列」（r 为行，行内按 q 排序为列）
+  hexPos(hex) {
+    const row = hex.r + 3;
+    const sameRow = this.board.hexes.filter((h) => h.r === hex.r).sort((a, b) => a.q - b.q);
+    const col = sameRow.findIndex((h) => h.id === hex.id) + 1;
+    return `第${row}行第${col}列`;
   }
 
   addEvent(type, data = {}) {
@@ -258,7 +267,7 @@ export class Game {
       this.turn.eventDie = eventFace;
     }
     this.addEvent('dice', { player: p, dice: [d1, d2], eventDie: eventFace });
-    this.addLog(`${this.players[p].name} 掷出了 ${total}（${d1}+${d2}）`);
+    this.addLog(`${this.players[p].name} 掷出了 ${total}（${d1}+${d2}）`, { cat: 'dice' });
 
     if (eventFace === 'ship') {
       this.barbarians.pos++;
@@ -278,11 +287,13 @@ export class Game {
   finishRoll(total) {
     if (total === 7) {
       const pending = {};
-      this.players.forEach((pl, i) => {
-        const c = handCount(pl.hand);
-        const limit = this.ck ? 7 + 2 * this.wallCountOf(i) : 7;
-        if (c > limit) pending[i] = Math.floor(c / 2);
-      });
+      if (!this.dev) { // 调试模式：手牌填满，跳过弃牌免得点到手麻
+        this.players.forEach((pl, i) => {
+          const c = handCount(pl.hand);
+          const limit = this.ck ? 7 + 2 * this.wallCountOf(i) : 7;
+          if (c > limit) pending[i] = Math.floor(c / 2);
+        });
+      }
       this.turn.pendingDiscards = pending;
       // 城市与骑士：野蛮人首次来袭前强盗不动（弃牌照常）
       this.turn.discardThen = this.ck && this.barbarians.attacks === 0 ? 'main' : 'robber';
@@ -446,7 +457,10 @@ export class Game {
     hand[res]--;
     this.players[p].hand[res]++;
     this.addEvent('steal', { from: target, to: p });
-    this.addLog(`${this.players[p].name} 从 ${this.players[target].name} 那里偷了一张牌`);
+    const rn = this.cardName(res);
+    this.addLog(`${this.players[p].name} 从 ${this.players[target].name} 那里偷了一张牌`, { cat: 'steal' });
+    this.addLog(`🔍 你从 ${this.players[target].name} 偷到了 ${rn}`, { to: [p], cat: 'steal' });
+    this.addLog(`🔍 ${this.players[p].name} 从你这里偷走了 ${rn}`, { to: [target], cat: 'steal' });
   }
 
   // ---------- 建造 ----------
@@ -863,7 +877,7 @@ export class Game {
           defenderVP: pl.defenderVP,
         } : {}),
       })),
-      log: this.log.slice(-60),
+      log: this.log.filter((e) => !e.to).slice(-60), // 公开 log（私密的走 privateState.privLog）
       events: this.events,
     };
   }
@@ -895,9 +909,12 @@ export class Game {
         played: c.played,
       })),
       progressCards: this.ck ? pl.progressCards : [],
+      vpCards: this.ck ? pl.vpCards : [], // 已亮出的分数进步卡（宪法/印刷机），显示在自己界面
       rates: Object.fromEntries(this.cardTypes().map((r) => [r, this.bankRate(p, r)])),
       hints,
       vpTotal: this.victoryPoints(p, true),
+      handLimit: this.ck ? 7 + 2 * this.wallCountOf(p) : 7, // 掷 7 弃牌线（含城墙 +2）
+      privLog: this.log.filter((e) => e.to && e.to.includes(p)), // 只发给我的私密 log
       // 调试模式：附带所有玩家（含 NPC）的手牌，便于验证偷牌/间谍等效果
       devPlayers: this.dev ? this.players.map((pl) => ({
         name: pl.name,
