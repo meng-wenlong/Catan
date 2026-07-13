@@ -146,8 +146,8 @@ body {
 
 /* ---------- 按钮 ---------- */
 .btn {
-  border: 1px solid rgba(120,95,50,.35); border-radius: 10px; padding: 9px 16px;
-  font-size: 14px; cursor: pointer; color: var(--text);
+  border: 1px solid rgba(120,95,50,.35); border-radius: 10px; padding: 10px 17px;
+  font-size: 15px; cursor: pointer; color: var(--text);
   background: linear-gradient(180deg, #f7f1de, #e5dab9);
   box-shadow: inset 0 1px 0 rgba(255,255,255,.65), 0 2px 5px rgba(0,0,0,.15);
   transition: transform .12s ease, box-shadow .12s ease, background .15s, opacity .15s;
@@ -227,7 +227,7 @@ body {
 
 #status-bar {
   display: flex; align-items: center; gap: 16px;
-  padding: 10px 18px; color: #fff; font-size: 15px; font-weight: 500;
+  padding: 10px 18px; color: #fff; font-size: 18px; font-weight: 600;
   text-shadow: 0 1px 3px rgba(0,0,0,.35);
   /* 固定高度：骰子框显隐时状态栏高度不变，避免棋盘区域被挤压导致地图突然缩放。
      必须 ≥ 骰子行高：.die 36px + 上下 padding 各 10px = 56px（54px 会差 2px 仍抖动） */
@@ -318,7 +318,7 @@ body {
 
 /* ---------- 侧边栏 ---------- */
 #side-panel {
-  width: 280px; display: flex; flex-direction: column; gap: 10px;
+  width: 300px; display: flex; flex-direction: column; gap: 10px;
   padding: 10px; min-height: 0;
 }
 #players-panel { display: flex; flex-direction: column; gap: 8px; }
@@ -328,18 +328,18 @@ body {
     url("/assets/opt/parchment-tile.webp") repeat;
   background-size: auto, 340px;
   border: 1px solid var(--panel-line);
-  border-radius: 11px; padding: 8px 12px;
+  border-radius: 11px; padding: 10px 13px;
   border-left: 6px solid; transition: box-shadow .5s, transform .5s;
-  font-size: 13px; box-shadow: 0 2px 8px rgba(0,20,35,.18);
+  font-size: 14.5px; box-shadow: 0 2px 8px rgba(0,20,35,.18);
 }
 .player-card.active { box-shadow: 0 0 0 3px #ffd54f, 0 4px 12px rgba(0,0,0,.25); transform: scale(1.02); }
-.player-card .p-name { font-weight: 600; font-size: 14px; display: flex; justify-content: space-between; }
-.player-card .p-stats { display: flex; gap: 10px; margin-top: 4px; color: #666; flex-wrap: wrap; }
+.player-card .p-name { font-weight: 600; font-size: 16px; display: flex; justify-content: space-between; align-items: center; }
+.player-card .p-stats { display: flex; gap: 11px; margin-top: 5px; color: #666; flex-wrap: wrap; }
 .player-card .badge {
-  background: #f0c040; border-radius: 6px; padding: 0 6px; font-size: 11px; color: #5a4500;
+  background: #f0c040; border-radius: 6px; padding: 0 7px; font-size: 12px; color: #5a4500;
 }
-.player-card .offline { color: #c0392b; font-size: 11px; }
-.vp-big { font-size: 16px; color: var(--accent); font-weight: 700; }
+.player-card .offline { color: #c0392b; font-size: 12px; }
+.vp-big { font-size: 22px; color: var(--accent); font-weight: 700; line-height: 1; }
 
 #log-panel {
   flex: 1;
@@ -351,14 +351,32 @@ body {
   display: flex; flex-direction: column; min-height: 0;
   box-shadow: 0 2px 8px rgba(0,20,35,.18);
 }
-#log-filter { display: flex; gap: 4px; padding: 5px 8px 0; flex-wrap: wrap; }
+/* 战报默认折叠成一条细栏（Master Duel 式收纳：流水信息点开才看） */
+#log-head {
+  display: flex; align-items: center; gap: 8px;
+  padding: 9px 12px; cursor: pointer; user-select: none;
+  font-size: 13.5px; font-weight: 700; color: #6b5a3e;
+}
+#log-head:hover { color: #3a3128; }
+#log-head .lh-title { flex: 1; text-align: left; }
+#log-head .lh-arrow { font-size: 12px; color: #a08c66; }
+#log-unread {
+  background: #e0574a; color: #fff; font-size: 11px; font-weight: 700;
+  border-radius: 999px; padding: 1px 7px; min-width: 18px; text-align: center;
+  animation: pop-in .25s ease;
+}
+#log-panel.collapsed { flex: 0 0 auto; }
+#log-panel.collapsed #log-filter,
+#log-panel.collapsed #log-list,
+#log-panel.collapsed #chat-row { display: none; }
+#log-filter { display: flex; gap: 4px; padding: 0 8px; flex-wrap: wrap; }
 #log-filter button {
   font-size: 12px; padding: 2px 9px; border: 1px solid var(--panel-line);
   border-radius: 999px; background: rgba(255,253,244,.55); cursor: pointer; color: var(--text);
 }
 #log-filter button.active { background: var(--accent); color: #fff; border-color: var(--accent); }
 .log-hidden { display: none; }
-#log-list { flex: 1; overflow-y: auto; padding: 10px 12px; font-size: 12.5px; line-height: 1.75; }
+#log-list { flex: 1; overflow-y: auto; padding: 8px 12px 10px; font-size: 13.5px; line-height: 1.75; }
 #log-list::-webkit-scrollbar { width: 8px; }
 #log-list::-webkit-scrollbar-thumb { background: #d5c9a8; border-radius: 4px; }
 #log-list .chat-msg { color: #2471a3; }
@@ -413,7 +431,7 @@ body {
 }
 #hand-cards { display: flex; gap: 6px; }
 #hand-count {
-  align-self: center; font-size: 13px; font-weight: 700; color: #f6ecd6;
+  align-self: center; font-size: 15px; font-weight: 700; color: #f6ecd6;
   padding: 5px 10px; background: rgba(0,0,0,.28); border-radius: 8px; white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
@@ -422,7 +440,7 @@ body {
 #hand-cards.being-spied, #dev-cards.being-spied { border-radius: 8px; animation: spied-pulse .7s ease-in-out infinite; }
 @keyframes spied-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(230,60,50,0); } 50% { box-shadow: 0 0 16px 5px rgba(232,64,52,.85); } }
 .res-card {
-  width: 56px; height: 74px; border-radius: 10px; position: relative;
+  width: 62px; height: 82px; border-radius: 10px; position: relative;
   border: 2px solid rgba(255,250,235,.75);
   display: flex; flex-direction: column; align-items: center; justify-content: flex-end;
   padding-bottom: 6px; font-size: 22px; color: #fff;
@@ -432,8 +450,8 @@ body {
 }
 .res-card:hover { transform: translateY(-6px); }
 .res-card .cnt {
-  font-size: 15px; font-weight: 700; background: rgba(0,0,0,.4);
-  border-radius: 10px; padding: 0 8px; margin-bottom: 2px;
+  font-size: 17px; font-weight: 700; background: rgba(0,0,0,.4);
+  border-radius: 10px; padding: 0 9px; margin-bottom: 2px;
 }
 .res-card.bump { animation: card-bump .9s ease; }
 .player-card.bump { animation: card-bump .9s ease; } /* 别人收获资源飞到状态栏时 pop 一下 */
@@ -455,7 +473,7 @@ body {
 
 #dev-cards { display: flex; gap: 6px; }
 .dev-card {
-  width: 56px; height: 74px; border-radius: 10px; cursor: pointer;
+  width: 62px; height: 82px; border-radius: 10px; cursor: pointer;
   border: 2px solid rgba(255,250,235,.75);
   /* 每种卡有专属插画卡面（.t-* 类），紫色渐变作加载兜底；
      卡名叠在卡面底部自带的羊皮纸留白区上 */
@@ -467,7 +485,7 @@ body {
   box-shadow: inset 0 1px 0 rgba(255,255,255,.35), 0 3px 7px rgba(0,0,0,.4);
   transition: transform .2s ease; font-family: inherit;
 }
-.dev-card small { font-size: 10px; font-weight: 700; line-height: 1.3; }
+.dev-card small { font-size: 11.5px; font-weight: 700; line-height: 1.3; }
 .dev-card.vp-card { background: linear-gradient(160deg, #f3d876, #caa42a); color: #4a3308; opacity: 1; cursor: default; }
 .dev-card.vp-card:disabled { opacity: 1; }
 .dev-card.t-knight { background-image: url("/assets/opt/dev-knight.webp"); }
@@ -850,26 +868,45 @@ body {
   100% { transform: scale(1); }
 }
 
-/* 城市升级轨道（左列，与上方进步卡牌堆同列同色） */
-.impb-cell-bg {
-  fill: rgba(20,35,52,.5); stroke: rgba(255,255,255,.5); stroke-width: .022;
-  transition: fill .3s;
+/* 牌堆下方：自己的升级进度点（升级详情收进升级面板弹窗） */
+.pdeck-pip { fill: rgba(20,35,52,.45); stroke: rgba(255,255,255,.55); stroke-width: .02; transition: fill .3s; }
+
+/* 城市升级面板（弹窗；收纳原棋盘左列的升级轨道） */
+.improve-box { min-width: min(880px, 92vw); }
+#improve-cols { display: flex; gap: 14px; justify-content: center; align-items: stretch; }
+.imp-col {
+  flex: 1; min-width: 0; max-width: 270px;
+  background: rgba(255,253,244,.72); border: 1px solid rgba(140,110,60,.22);
+  border-top: 5px solid var(--imp-color);
+  border-radius: 12px; padding: 12px 14px 14px;
+  display: flex; flex-direction: column; gap: 8px; text-align: left;
 }
-.impb-cell-bg.on { stroke: rgba(255,255,255,.85); }
-.impb-cell-txt {
-  font-size: .2px; text-anchor: middle; fill: rgba(255,255,255,.75);
-  font-weight: 600;
+.imp-head { display: flex; align-items: center; gap: 10px; }
+.imp-head img { width: 52px; height: 68px; object-fit: cover; border-radius: 7px; box-shadow: 0 3px 8px rgba(0,0,0,.3); }
+.imp-title { font-size: 19px; font-weight: 800; color: var(--imp-color); display: flex; flex-direction: column; }
+.imp-title small { font-size: 12px; font-weight: 500; color: #8a7350; }
+.imp-pips { display: flex; gap: 6px; }
+.imp-pip {
+  flex: 1; text-align: center; padding: 6px 0; border-radius: 8px;
+  background: rgba(120,95,50,.12); color: #a08c66; font-weight: 700; font-size: 14px;
+  border: 1px solid rgba(120,95,50,.18);
 }
-.impb-cell-txt.on { fill: #fff; paint-order: stroke; stroke: rgba(0,0,0,.25); stroke-width: .03; }
-.impb-buy-bg {
-  fill: rgba(20,35,52,.35); stroke: rgba(255,255,255,.35); stroke-width: .022;
-  stroke-dasharray: .06 .05; transition: fill .2s, stroke .2s;
+.imp-pip.on { background: var(--imp-color); color: #fff; border-color: transparent; text-shadow: 0 1px 2px rgba(0,0,0,.3); }
+.imp-perk { font-size: 12.5px; color: #6b5a3e; line-height: 1.4; }
+.imp-players { font-size: 12.5px; color: #6b5a3e; display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+.imp-plvl {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px; border-radius: 50%;
+  background: var(--pc); color: #fff; font-weight: 700; font-size: 12px;
+  text-shadow: 0 1px 2px rgba(0,0,0,.4); box-shadow: inset 0 -2px 3px rgba(0,0,0,.2);
 }
-.impb-buy-txt { font-size: .2px; text-anchor: middle; fill: rgba(255,255,255,.55); font-weight: 700; }
-.impb-buy.can { cursor: pointer; }
-.impb-buy.can .impb-buy-bg { fill: rgba(46,139,87,.85); stroke: #bdf0d2; stroke-dasharray: none; }
-.impb-buy.can:hover .impb-buy-bg { fill: rgba(56,165,104,.95); }
-.impb-buy.can .impb-buy-txt { fill: #fff; }
+.imp-buy { margin-top: auto; font-size: 14px; }
+/* 底栏升级按钮：有能买的升级时呼吸提醒 */
+#btn-improve.can-buy { animation: improve-pulse 1.6s ease-in-out infinite; }
+@keyframes improve-pulse {
+  0%, 100% { box-shadow: inset 0 1px 0 rgba(255,255,255,.65), 0 2px 5px rgba(0,0,0,.15); }
+  50% { box-shadow: inset 0 1px 0 rgba(255,255,255,.65), 0 0 14px 4px rgba(255,196,60,.75); }
+}
 
 /* 进步卡飞行动画（牌堆 ↔ 玩家面板） */
 /* 进步卡飞卡：两段式（牌堆/手处长出 → 飞向目标），带真实卡面 / 牌堆背美术。256:341≈0.75 */
@@ -939,8 +976,116 @@ body {
   background: var(--accent); color: #fff; box-shadow: 0 0 0 2px rgba(230,126,34,.35);
 }
 
+/* ---------- 中央舞台（Master Duel 式关键事件演出） ---------- */
+#spotlight {
+  position: fixed; inset: 0; z-index: 80;
+  display: none; align-items: center; justify-content: center;
+  cursor: pointer;
+}
+#spotlight.show, #spotlight.hide { display: flex; }
+#spotlight .sp-scrim {
+  position: absolute; inset: 0;
+  background: radial-gradient(ellipse 65% 60% at 50% 46%, rgba(8,14,24,.42), rgba(4,8,16,.78));
+  opacity: 0; transition: opacity .28s ease;
+}
+#spotlight .sp-scrim.heavy {
+  background: radial-gradient(ellipse 65% 60% at 50% 46%, rgba(30,8,4,.55), rgba(12,3,2,.85));
+}
+#spotlight.show .sp-scrim { opacity: 1; }
+#spotlight.hide .sp-scrim { opacity: 0; }
+#spotlight .sp-stage {
+  position: relative; display: flex; flex-direction: column; align-items: center;
+  gap: 14px; max-width: min(560px, 88vw); text-align: center;
+  opacity: 0; transform: scale(.86);
+}
+#spotlight.show .sp-stage { animation: sp-enter .45s cubic-bezier(.22,1.2,.36,1) forwards; }
+#spotlight.hide .sp-stage { animation: sp-exit .26s ease forwards; }
+@keyframes sp-enter {
+  0% { opacity: 0; transform: scale(.7) translateY(26px); }
+  100% { opacity: 1; transform: scale(1) translateY(0); }
+}
+@keyframes sp-exit {
+  0% { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1.06); }
+}
+#spotlight .sp-title {
+  color: #fff; font-size: 22px; font-weight: 700; font-family: var(--font-title);
+  letter-spacing: 2px; text-shadow: 0 2px 10px rgba(0,0,0,.6);
+  padding: 6px 26px; border-radius: 999px;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--sp-accent) 55%, #0000) 18%, color-mix(in srgb, var(--sp-accent) 55%, #0000) 82%, transparent);
+}
+#spotlight .sp-title.big { font-size: 34px; letter-spacing: 4px; background: none; }
+/* 大卡面：发光边 + 缓慢上浮，像 Master Duel 的卡片特写 */
+#spotlight .sp-cardbox { position: relative; }
+#spotlight .sp-cardimg {
+  height: min(46vh, 380px); border-radius: 12px; display: block;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--sp-accent) 85%, #fff), 0 0 44px 6px color-mix(in srgb, var(--sp-accent) 60%, transparent), 0 22px 60px rgba(0,0,0,.6);
+  animation: sp-card-float 2.6s ease-in-out infinite;
+}
+@keyframes sp-card-float {
+  0%, 100% { transform: translateY(0) rotate(-.6deg); }
+  50% { transform: translateY(-8px) rotate(.6deg); }
+}
+#spotlight .sp-info {
+  background: rgba(14,18,26,.88); border: 1px solid rgba(255,255,255,.18);
+  border-left: 4px solid var(--sp-accent);
+  border-radius: 12px; padding: 12px 22px; max-width: 520px;
+  box-shadow: 0 10px 30px rgba(0,0,0,.45);
+}
+#spotlight .sp-name { color: #fff; font-size: 24px; font-weight: 800; font-family: var(--font-title); margin-bottom: 4px; }
+#spotlight .sp-desc { color: #cfd6e2; font-size: 16px; line-height: 1.55; }
+#spotlight .sp-sub { color: #d8dee8; font-size: 17px; text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+#spotlight .sp-bannerimg {
+  height: min(30vh, 240px); object-fit: contain;
+  filter: drop-shadow(0 14px 34px rgba(0,0,0,.55)) drop-shadow(0 0 30px color-mix(in srgb, var(--sp-accent) 55%, transparent));
+}
+#spotlight .sp-bannerico { font-size: 92px; filter: drop-shadow(0 10px 26px rgba(0,0,0,.55)); }
+/* 野蛮人来袭：VS 对阵 + 结果定格 */
+#spotlight .sp-ship {
+  height: min(26vh, 200px); object-fit: contain;
+  filter: drop-shadow(0 14px 34px rgba(0,0,0,.6));
+  animation: sp-ship-rock 2.2s ease-in-out infinite;
+}
+@keyframes sp-ship-rock {
+  0%, 100% { transform: rotate(-2.5deg) translateY(0); }
+  50% { transform: rotate(2.5deg) translateY(-7px); }
+}
+#spotlight .sp-vs { display: flex; align-items: center; gap: 22px; font-size: 26px; font-weight: 800; color: #fff; }
+#spotlight .sp-vs b { font-size: 40px; font-family: var(--font-num); vertical-align: -2px; }
+#spotlight .sp-side { padding: 8px 24px; border-radius: 14px; text-shadow: 0 2px 6px rgba(0,0,0,.5); }
+#spotlight .sp-side.foe { background: linear-gradient(160deg, rgba(160,45,30,.92), rgba(105,25,15,.92)); }
+#spotlight .sp-side.ally { background: linear-gradient(160deg, rgba(40,110,70,.92), rgba(20,70,45,.92)); }
+#spotlight .sp-vs-x { font-family: var(--font-num); font-size: 30px; color: #ffd54f; text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+#spotlight .sp-verdict {
+  font-family: var(--font-title); font-size: 54px; font-weight: 900; letter-spacing: 8px;
+  opacity: 0; transform: scale(2.4) rotate(-6deg);
+  animation: sp-verdict .5s cubic-bezier(.3,1.4,.5,1) 1.05s forwards;
+  text-shadow: 0 4px 18px rgba(0,0,0,.65);
+}
+#spotlight .sp-verdict.win { color: #7fe0a8; }
+#spotlight .sp-verdict.lose { color: #ff8a70; }
+@keyframes sp-verdict {
+  0% { opacity: 0; transform: scale(2.4) rotate(-6deg); }
+  100% { opacity: 1; transform: scale(1) rotate(-3deg); }
+}
+
+/* ---------- 中央大骰子 ---------- */
+#dice-stage {
+  position: absolute; top: 16%; left: 50%; transform: translateX(-50%);
+  display: flex; gap: 18px; z-index: 21; pointer-events: none;
+  transition: opacity .45s ease;
+}
+#dice-stage.out { opacity: 0; }
+#dice-stage .die.big { width: 88px; height: 88px; font-size: 52px; }
+#dice-stage .die.big img { filter: drop-shadow(0 10px 18px rgba(0,0,0,.5)); }
+
 /* 窄屏适配 */
 @media (max-width: 900px) {
-  #side-panel { width: 210px; }
-  .res-card, .dev-card { width: 44px; height: 58px; font-size: 18px; }
+  #side-panel { width: 230px; }
+  .res-card, .dev-card { width: 48px; height: 63px; font-size: 18px; }
+  #status-bar { font-size: 15px; }
+  #dice-stage .die.big { width: 64px; height: 64px; }
+  #spotlight .sp-cardimg { height: 38vh; }
+  #improve-cols { flex-direction: column; align-items: stretch; }
+  .imp-col { max-width: none; }
 }

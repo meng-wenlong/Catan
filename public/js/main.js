@@ -4,10 +4,11 @@ import {
   showVertexSpots, showEdgeSpots, showRobberSpots, showHexSpots,
   zoomAt, resetZoom, highlightProducingHexes, hexPixelPosition, vertexPixelPosition,
   updateBarbarianTrack, updateProgressDecks, deckPixelPosition,
-  updateImproveBoard, attachCardInspect,
+  attachCardInspect,
 } from './render.js';
 import { initSfx, sfx } from './sfx.js';
 import { initSound } from './sound.js';
+import { spotlight, clearSpotlight } from './spotlight.js';
 
 initSfx();
 initSound();
@@ -626,9 +627,10 @@ socket.on('returnToLobby', () => {
   clearTimeout(holdTimer);
   for (const m of ['modal-winner', 'modal-discard', 'modal-steal', 'modal-trade',
     'modal-yop', 'modal-monopoly', 'modal-endgame', 'modal-aqueduct',
-    'modal-alchemist', 'modal-pick', 'modal-knightmenu']) {
+    'modal-alchemist', 'modal-pick', 'modal-knightmenu', 'modal-improve']) {
     $(m).classList.add('hidden');
   }
+  clearSpotlight();
   cancelProgAction();
   $('aqueduct-btns').innerHTML = '';
   show('screen-lobby');
@@ -676,7 +678,6 @@ function renderBarbBar() {
   if (S.mode !== 'ck' || S.phase === 'setup') {
     updateBarbarianTrack(null);
     updateProgressDecks(null);
-    updateImproveBoard(null);
     return;
   }
   const strength = Object.values(S.buildings).filter((b) => b.type === 'city').length;
@@ -690,37 +691,91 @@ function renderBarbBar() {
       return `${p.name}：城市 ${cities} · 防御 ${def}`;
     }).join('\n');
   updateBarbarianTrack(S.ck, strength, defense, detail);
-  updateProgressDecks(S.ck.decks);
-  // 观战者没有自己的升级数据（S.players[-1] 不存在），不渲染升级轨道
-  if (myIndex < 0) {
-    updateImproveBoard(null);
-    return;
-  }
+  // 牌堆下画自己的升级进度点；点牌堆打开升级面板（观战者只看牌堆数量）
+  const mine = myIndex < 0 ? null : Object.fromEntries(TRACKS.map((t) => [t, {
+    lvl: S.players[myIndex].improvements[t],
+  }]));
+  updateProgressDecks(S.ck.decks, () => openImproveModal(), mine);
+  renderImproveModal(); // 面板开着时跟随状态刷新
+}
+
+// ---------- 城市升级面板（收纳原棋盘左列的升级轨道） ----------
+// 每列一条升级轨道：等级点、解锁说明、大都会归属、购买按钮
+function improveTrackData(t) {
   const canAct = isMyTurn() && S.turn.state === 'main';
   const craneOn = canAct && S.ck.crane;
   // 官方规则：没有城市时不能购买城市升级（已有等级保留）
-  const hasCity = Object.values(S.buildings).some((b) => b.player === myIndex && b.type === 'city');
-  updateImproveBoard({
-    tracks: Object.fromEntries(TRACKS.map((t) => {
-      const lvl = S.players[myIndex].improvements[t];
-      const maxed = lvl >= 5;
-      const cost = maxed ? 0 : Math.max(0, lvl + 1 - (craneOn ? 1 : 0));
-      const have = S.you.hand[TRACK_META[t].com];
-      const metro = S.ck.metropolis[t];
-      return [t, {
-        lvl,
-        maxed,
-        cost,
-        have,
-        crane: craneOn && !maxed,
-        canBuy: canAct && !maxed && hasCity && have >= cost,
-        noCity: !hasCity,
-        metroName: metro ? S.players[metro.player].name : null,
-        metroMine: metro?.player === myIndex,
-      }];
-    })),
-  }, (t) => send({ type: 'buyImprovement', track: t }));
+  const hasCity = myIndex >= 0 && Object.values(S.buildings).some((b) => b.player === myIndex && b.type === 'city');
+  const lvl = myIndex < 0 ? 0 : S.players[myIndex].improvements[t];
+  const maxed = lvl >= 5;
+  const cost = maxed ? 0 : Math.max(0, lvl + 1 - (craneOn ? 1 : 0));
+  const have = myIndex < 0 ? 0 : S.you.hand[TRACK_META[t].com];
+  const metro = S.ck.metropolis[t];
+  return {
+    lvl,
+    maxed,
+    cost,
+    have,
+    crane: craneOn && !maxed,
+    canBuy: canAct && !maxed && hasCity && have >= cost,
+    noCity: !hasCity,
+    metroName: metro ? S.players[metro.player].name : null,
+    metroMine: metro?.player === myIndex,
+  };
 }
+
+function openImproveModal() {
+  if (!S || S.mode !== 'ck' || S.phase === 'setup') return;
+  renderImproveModal(true);
+  $('modal-improve').classList.remove('hidden');
+}
+
+function renderImproveModal(force = false) {
+  if (!force && $('modal-improve').classList.contains('hidden')) return;
+  if (!S || S.mode !== 'ck' || S.phase === 'setup') {
+    $('modal-improve').classList.add('hidden');
+    return;
+  }
+  const box = $('improve-cols');
+  box.innerHTML = '';
+  for (const t of TRACKS) {
+    const meta = TRACK_META[t];
+    const d = improveTrackData(t);
+    const col = document.createElement('div');
+    col.className = 'imp-col';
+    col.style.setProperty('--imp-color', meta.color);
+    // 等级点：5 格，点亮到当前等级
+    const pips = Array.from({ length: 5 }, (_, k) => {
+      const mark = k === 2 ? '★' : (k === 3 ? '🏛' : k + 1);
+      return `<span class="imp-pip${k < d.lvl ? ' on' : ''}">${mark}</span>`;
+    }).join('');
+    // 各玩家等级一览（信息集中，不用挨个看玩家卡）
+    const others = S.players.map((p, i) => `<span class="imp-plvl" style="--pc:${p.color}" title="${esc(p.name)}">${p.improvements[t]}</span>`).join('');
+    col.innerHTML = `
+      <div class="imp-head">
+        <img src="/assets/opt/progress-${t}.webp" alt="">
+        <div class="imp-title">${meta.name}<small>用${RES_META[meta.com].name}升级</small></div>
+      </div>
+      <div class="imp-pips">${pips}</div>
+      <div class="imp-perk">★ 3 级 · ${esc(meta.perk3)}</div>
+      <div class="imp-perk">🏛 4 级 · 率先达到获大都会（+2 分）${d.metroName ? ` — ${esc(d.metroName)}${d.metroMine ? '（你）' : ''}` : ''}</div>
+      <div class="imp-players">各家等级：${others}</div>`;
+    const btn = document.createElement('button');
+    btn.className = 'btn primary imp-buy';
+    if (d.maxed) {
+      btn.textContent = '已满级';
+      btn.disabled = true;
+    } else {
+      btn.innerHTML = `${d.crane ? '🏗️ ' : ''}升到 ${d.lvl + 1} 级（${d.cost} ${resIcon(meta.com)}，有 ${d.have}）`;
+      btn.disabled = !d.canBuy;
+      if (d.noCity && myIndex >= 0) btn.title = '需要至少拥有一座城市才能升级';
+    }
+    btn.onclick = () => send({ type: 'buyImprovement', track: t });
+    col.appendChild(btn);
+    box.appendChild(col);
+  }
+}
+$('btn-improve').onclick = () => openImproveModal();
 
 function renderStatus() {
   const cur = S.players[S.turn.player];
@@ -1175,9 +1230,13 @@ function renderButtons() {
   $('btn-buydev').disabled = !(main && hand.sheep >= 1 && hand.wheat >= 1 && hand.ore >= 1 && S.bank.devDeck > 0);
   $('btn-knight').classList.toggle('hidden', !ckMode);
   $('btn-wall').classList.toggle('hidden', !ckMode);
+  $('btn-improve').classList.toggle('hidden', !ckMode || S.phase === 'setup');
   if (ckMode) {
     $('btn-knight').disabled = !(main && hand.sheep >= 1 && hand.ore >= 1 && (S.you.hints.knightSpots || []).length > 0);
     $('btn-wall').disabled = !(main && hand.brick >= 2 && (S.you.hints.wallSpots || []).length > 0);
+    // 升级面板随时可看；有能买的升级时高亮提醒
+    $('btn-improve').disabled = false;
+    $('btn-improve').classList.toggle('can-buy', S.phase === 'play' && TRACKS.some((t) => improveTrackData(t).canBuy));
   }
   $('btn-trade').disabled = !main;
   $('btn-end').disabled = !main;
@@ -1418,7 +1477,29 @@ function appendLog(html, scroll, cat = 'chat') {
   div.innerHTML = html;
   $('log-list').appendChild(div);
   if (scroll) $('log-list').scrollTop = $('log-list').scrollHeight;
+  // 折叠时累计未读角标（聊天/表情才提醒，流水账不打扰）
+  if ($('log-panel').classList.contains('collapsed') && cat === 'chat') {
+    logUnread++;
+    const badge = $('log-unread');
+    badge.textContent = logUnread > 99 ? '99+' : logUnread;
+    badge.classList.remove('hidden');
+  }
 }
+
+// ---------- 战报/聊天抽屉：默认折叠，减少常驻信息（Master Duel 式收纳） ----------
+let logUnread = 0;
+function setLogCollapsed(collapsed) {
+  $('log-panel').classList.toggle('collapsed', collapsed);
+  $('log-panel').querySelector('.lh-arrow').textContent = collapsed ? '▸' : '▾';
+  localStorage.setItem('catan_log_open', collapsed ? '' : '1');
+  if (!collapsed) {
+    logUnread = 0;
+    $('log-unread').classList.add('hidden');
+    $('log-list').scrollTop = $('log-list').scrollHeight;
+  }
+}
+$('log-head').onclick = () => setLogCollapsed(!$('log-panel').classList.contains('collapsed'));
+setLogCollapsed(localStorage.getItem('catan_log_open') !== '1');
 
 $('chat-send').onclick = sendChat;
 $('chat-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') sendChat(); });
@@ -1794,17 +1875,27 @@ let diceAnimUntil = 0;
 let diceRollTimer = null;
 let lastDiceTotal = 0;       // 最近一次掷骰点数：产出飞卡动画据此反查产出地块
 
+let diceStageTimer = null;
 function animateDiceRoll(d1, d2, eventFace = null) {
   const total = d1 + d2;
   lastDiceTotal = total;
   diceAnimUntil = Date.now() + DICE_ROLL_MS;
   $('dice-box').classList.remove('hidden');
+  // 屏幕中央的大骰子（Master Duel 式：关键信息居中演出），角落小骰子同步翻滚
+  const stage = $('dice-stage');
+  stage.classList.remove('hidden', 'out');
+  clearTimeout(diceStageTimer);
   const dies = [$('die1'), $('die2')];
+  const bigDies = [$('bdie1'), $('bdie2')];
   const evDie = $('die3');
+  const bigEvDie = $('bdie3');
   const evFaces = Object.keys(EVENT_FACE);
   dies[0].classList.toggle('red-die', !!eventFace);
-  if (eventFace) evDie.classList.remove('hidden');
-  for (const d of (eventFace ? [...dies, evDie] : dies)) {
+  bigDies[0].classList.toggle('red-die', !!eventFace);
+  evDie.classList.toggle('hidden', !eventFace);
+  bigEvDie.classList.toggle('hidden', !eventFace);
+  const all = eventFace ? [...dies, ...bigDies, evDie, bigEvDie] : [...dies, ...bigDies];
+  for (const d of all) {
     d.classList.remove('rolling', 'settle');
     void d.offsetWidth;
     d.classList.add('rolling');
@@ -1814,24 +1905,35 @@ function animateDiceRoll(d1, d2, eventFace = null) {
   diceRollTimer = setInterval(() => {
     if (Date.now() - t0 < DICE_ROLL_MS) {
       // 翻滚中显示随机骰面
-      for (const d of dies) setDie(d, 1 + Math.floor(Math.random() * 6));
-      if (eventFace) setEventDie(evDie, evFaces[Math.floor(Math.random() * evFaces.length)]);
+      for (const list of [dies, bigDies]) {
+        for (const d of list) setDie(d, 1 + Math.floor(Math.random() * 6));
+      }
+      if (eventFace) {
+        const f = evFaces[Math.floor(Math.random() * evFaces.length)];
+        setEventDie(evDie, f);
+        setEventDie(bigEvDie, f);
+      }
       return;
     }
     clearInterval(diceRollTimer);
-    setDie(dies[0], d1);
-    setDie(dies[1], d2);
+    for (const [a, b] of [[dies, [d1, d2]], [bigDies, [d1, d2]]]) {
+      setDie(a[0], b[0]);
+      setDie(a[1], b[1]);
+    }
     if (eventFace) {
       setEventDie(evDie, eventFace);
-      evDie.classList.remove('rolling');
-      void evDie.offsetWidth;
-      evDie.classList.add('settle');
+      setEventDie(bigEvDie, eventFace);
     }
-    for (const d of dies) {
+    for (const d of all) {
       d.classList.remove('rolling');
       void d.offsetWidth;
       d.classList.add('settle');
     }
+    // 大骰子定格片刻后淡出
+    diceStageTimer = setTimeout(() => {
+      stage.classList.add('out');
+      diceStageTimer = setTimeout(() => stage.classList.add('hidden'), 500);
+    }, 1600);
     // 中央大数字 + 产出板块闪烁
     const overlay = $('roll-overlay');
     overlay.textContent = total === 7 ? '7 🦹' : total;
@@ -1879,6 +1981,18 @@ function playEvents() {
       case 'robber':
         sfx.robber();
         break;
+      // 基础版发展卡打出：中央大卡演出
+      case 'playDev':
+        spotlight({
+          kind: 'card',
+          title: `${S.players[ev.player].name} 打出发展卡`,
+          img: `/assets/opt/dev-${DEV_ASSET[ev.card] || 'knight'}.webp`,
+          name: DEV_META[ev.card]?.name || '',
+          desc: DEV_META[ev.card]?.desc || '',
+          accent: '#8a5fc0',
+          dur: 3600,
+        });
+        break;
       // ---- 城市与骑士 ----
       case 'ship': {
         const d = delay;
@@ -1886,30 +2000,37 @@ function playEvents() {
         delay += 500; // 同批的来袭结算（barbarian）让号角先响完
         break;
       }
-      case 'barbarian': {
-        const d = delay;
-        setTimeout(() => {
-          sfx.barbarian(ev.win);
-          showBarbarianBanner(ev);
-        }, d);
-        delay += 1200;
+      case 'barbarian':
+        // 中央全屏结算演出：兵力 VS 防御 → 击退/洗劫定格（队列串行，后续毁城公告接着播）
+        spotlight({
+          kind: 'barbarian',
+          win: ev.win,
+          strength: ev.strength,
+          defense: ev.defense,
+          dur: 5200,
+          onShow: () => sfx.barbarian(ev.win),
+        });
         break;
-      }
-      case 'pillage': {
-        const d = delay;
-        setTimeout(() => {
-          const pos = vertexPixelPosition(ev.vertex, $('board'));
-          if (pos) burstAt(pos.x, pos.y, '💥');
-          shakeBoard();
-          floatOverPlayer(ev.player, '💥 城市被毁！');
-        }, d);
-        delay += 400;
+      case 'pillage':
+        spotlight({
+          kind: 'banner',
+          icon: '💥',
+          title: `${S.players[ev.player].name} 的城市被摧毁`,
+          sub: '野蛮人洗劫：城市降为村庄',
+          accent: '#c0392b',
+          dur: 3000,
+          onShow: () => {
+            const pos = vertexPixelPosition(ev.vertex, $('board'));
+            if (pos) burstAt(pos.x, pos.y, '💥');
+            shakeBoard();
+          },
+        });
         break;
-      }
       case 'saboteur':
         for (const i of ev.players) floatOverPlayer(i, '💥 破坏者：弃一半手牌');
         break;
       case 'progress': {
+        // 抽牌（他人不可见内容）：保留小飞牌，不打断节奏
         const d = delay;
         const { player, deck } = ev;
         setTimeout(() => {
@@ -1918,50 +2039,54 @@ function playEvents() {
         delay += 250;
         break;
       }
-      case 'progressVP': {
-        const d = delay;
-        const { player, deck, card } = ev;
-        setTimeout(() => {
-          flyProgressCard(deck, player, false, card); // 分数卡已亮出，飞真实卡面
-          floatOverPlayer(player, '📜 +1 分');
-        }, d);
-        delay += 250;
+      case 'progressVP':
+        // 分数卡抽到即亮出：中央演出真实卡面
+        spotlight({
+          kind: 'card',
+          title: `${S.players[ev.player].name} 抽到分数卡（+1 分）`,
+          img: `/assets/opt/progress-${ev.card}.webp`,
+          name: PROG_META[ev.card]?.name || '',
+          desc: PROG_META[ev.card]?.desc || '',
+          accent: TRACK_META[ev.deck]?.color,
+          dur: 3400,
+        });
         break;
-      }
       case 'defender':
-        floatOverPlayer(ev.player, '🏅 卡坦守护者 +1 分');
+        spotlight({
+          kind: 'banner',
+          icon: '🏅',
+          title: `${S.players[ev.player].name} 成为卡坦守护者`,
+          sub: '防御野蛮人居功至伟 · +1 分',
+          accent: '#2e8b57',
+          dur: 3000,
+        });
         break;
       case 'metropolis':
-        floatOverPlayer(ev.player, '🏛️ 大都会');
+        spotlight({
+          kind: 'banner',
+          img: '/assets/opt/metropolis.webp',
+          title: `${S.players[ev.player].name} 建立${TRACK_META[ev.track]?.name || ''}大都会！`,
+          sub: '城市升格为大都会 · +2 分',
+          accent: TRACK_META[ev.track]?.color,
+          dur: 3400,
+        });
         break;
       case 'playProgress':
-        flyProgressCard(ev.deck, ev.player, true, ev.card); // 打出的卡（真实卡面）飞回牌堆底部
-        floatOverPlayer(ev.player, `🎴 ${PROG_META[ev.card]?.name || ''}`);
+        // 中央大卡演出（替代原先的小飞牌），给全桌留出反应时间
+        spotlight({
+          kind: 'card',
+          title: `${S.players[ev.player].name} 打出进步卡`,
+          img: `/assets/opt/progress-${ev.card}.webp`,
+          name: PROG_META[ev.card]?.name || '',
+          desc: PROG_META[ev.card]?.desc || '',
+          accent: TRACK_META[ev.deck]?.color,
+          dur: 3600,
+        });
         break;
       default:
         break;
     }
   }
-}
-
-// 野蛮人来袭的结果横幅（复用回合横幅样式）
-function showBarbarianBanner(ev) {
-  const banner = $('turn-banner');
-  const inner = banner.querySelector('.turn-banner-inner');
-  inner.textContent = ev.win
-    ? `🛡️ 野蛮人被击退！（防御 ${ev.defense} ≥ 兵力 ${ev.strength}）`
-    : `🔥 野蛮人洗劫卡坦！（防御 ${ev.defense} < 兵力 ${ev.strength}）`;
-  inner.classList.remove('mine');
-  inner.style.background = ev.win
-    ? 'linear-gradient(135deg, #2e8b57e6, #1f6e42b0)'
-    : 'linear-gradient(135deg, #8b2e2ee6, #6e1f1fb0)';
-  inner.style.color = '#fff';
-  inner.style.textShadow = '0 2px 6px rgba(0,0,0,.35)';
-  banner.classList.remove('show');
-  void banner.offsetWidth;
-  banner.classList.add('show');
-  clearTimeout(banner._timer);
-  banner._timer = setTimeout(() => banner.classList.remove('show'), 4600);
 }
 
 function showTurnBanner(to) {

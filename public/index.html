@@ -100,6 +100,11 @@
         </div>
       </div>
       <svg id="board" preserveAspectRatio="xMidYMid meet"></svg>
+      <div id="dice-stage" class="hidden">
+        <div class="die big" id="bdie1"></div>
+        <div class="die big" id="bdie2"></div>
+        <div class="die big die-event hidden" id="bdie3"></div>
+      </div>
       <div id="roll-overlay"></div>
       <div id="turn-banner"><div class="turn-banner-inner"></div></div>
       <div id="zoom-controls">
@@ -126,7 +131,12 @@
 
     <div id="side-panel">
       <div id="players-panel"></div>
-      <div id="log-panel">
+      <div id="log-panel" class="collapsed">
+        <div id="log-head">
+          <span class="lh-title">📜 战报 / 聊天</span>
+          <span id="log-unread" class="hidden"></span>
+          <span class="lh-arrow">▾</span>
+        </div>
         <div id="log-filter">
           <button data-lf="all" class="active">全部</button>
           <button data-lf="chat" title="聊天/表情">💬</button>
@@ -158,6 +168,7 @@
       <button id="btn-buydev" class="btn build" title="羊 麦 矿 各1">🎴 发展卡</button>
       <button id="btn-knight" class="btn build hidden" title="招募骑士：1羊 1矿（点击自己的骑士可激活/升级/行动）">⚔️ 骑士</button>
       <button id="btn-wall" class="btn build hidden" title="城墙：2砖，建在城市下，手牌上限 +2">🧱 城墙</button>
+      <button id="btn-improve" class="btn build hidden" title="城市升级：花商品提升贸易/政治/科学等级（点击棋盘左侧牌堆同效）">🏛️ 升级</button>
       <button id="btn-trade" class="btn">🔄 交易</button>
       <button id="btn-end" class="btn danger">✅ 结束回合</button>
       <button id="btn-endgame" class="btn subtle hidden" title="房主结束本局并回到大厅">🏁 结束本局</button>
@@ -248,6 +259,15 @@
       <div id="winner-scores"></div>
       <button id="btn-again" class="btn primary hidden">🔄 回到大厅再来一局</button>
       <p class="hint" id="winner-hint">等待房主结束本局…</p>
+    </div>
+  </div>
+
+  <!-- 城市升级面板（城市与骑士；点棋盘左侧牌堆或底栏「升级」打开） -->
+  <div id="modal-improve" class="modal hidden">
+    <div class="modal-box wide improve-box">
+      <h2>🏛️ 城市升级</h2>
+      <div id="improve-cols"></div>
+      <button class="modal-close btn small" data-close="modal-improve">关闭</button>
     </div>
   </div>
 

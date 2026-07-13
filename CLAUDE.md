@@ -25,4 +25,5 @@
 - 掷骰流程：`roll()` → 事件骰（3/6 船）→ 野蛮人前进/来袭结算 → `finishRoll()`（产出/弃牌/进步卡/引水渠）。来袭需玩家选择时（选被毁城市 `barbarianLoss`、防御并列选进步卡 `defenderPick`）掷骰结算暂停，选完续跑 `finishRoll`。
 - 新增回合状态：`aqueduct`（引水渠选资源）、`barbarianLoss`（选被毁城市）、`defenderPick`（防御并列第一各自选颜色抽进步卡）、`displace`（骑士待安置：被驱逐由主人安置 / 逃兵卡放置所获骑士，`reason` 区分）、`deserterPick`（逃兵卡受害者选交出的骑士）、`metropolis`（大都会选城）、`pickCards`/`pickProgress`（商业大亨/间谍选牌）、`wedding`（送礼方选牌）、`harbor`（商业港逐个交换）。这些选择类状态的数据都挂在 `this.turn` 上，提示经 `ckHints` 只发给该选择的玩家。
 - 骑士记录在 `this.knights`（vertexId → {player, level, active, builtTurn, promotedTurn, activatedTurn, actedTurn}）：激活当回合不能行动、行动后休整（active=false）、每回合限一次行动/一次升级、本回合招募不能升级、三级需政治 3；对手骑士会截断最长道路与修路。被驱逐的骑士由其主人沿自己路网重新安置，无处可放则移回补给区。
-- 进步卡从牌堆顶抽（`pop`）、用掉放回堆底（`unshift`）。ck 模式 `initBoard` 会把 viewBox 向左多扩 `CK_PANEL_W` 的海面，放三列常驻面板：上排三摞进步卡牌堆（`updateProgressDecks`），下方对应颜色的城市升级轨道（`updateImproveBoard`，5 个等级格 + 直接购买按钮，替代了原来的升级弹窗）。抽/打出进步卡时客户端播放飞牌动画（`flyProgressCard`，依赖事件里的 `deck` 字段）。
+- 进步卡从牌堆顶抽（`pop`）、用掉放回堆底（`unshift`）。ck 模式 `initBoard` 会把 viewBox 向左多扩 `CK_PANEL_W` 的海面，竖排三摞进步卡牌堆（`updateProgressDecks`，牌堆下画自己的升级进度点）；点牌堆或底栏「🏛️ 升级」打开城市升级弹窗（`renderImproveModal`，含各家等级一览与购买按钮）。抽进步卡时客户端播放飞牌动画（`flyProgressCard`，依赖事件里的 `deck` 字段）。
+- **中央舞台**（`public/js/spotlight.js`，Master Duel 式演出）：打出进步卡/发展卡（服务端 `playDev` 事件）、野蛮人来袭结算、毁城、大都会、守护者、分数卡等关键事件在屏幕中央全屏演出，队列串行、点击跳过；掷骰时 `#dice-stage` 大骰子在棋盘中央同步翻滚。右侧战报/聊天默认折叠（`#log-head` 展开，未读聊天有角标）。

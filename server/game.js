@@ -606,6 +606,8 @@ export class Game {
       default:
         this.err('无法打出该卡');
     }
+    // 各 case 校验都可能中途 err 抛出，只有走完才记事件（客户端中央演出用）
+    this.addEvent('playDev', { player: p, card: type });
   }
 
   // ---------- 交易 ----------
