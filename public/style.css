@@ -849,13 +849,27 @@ body {
   filter: drop-shadow(0 3px 5px rgba(0,0,0,.4));
 }
 .fly-res img { width: 30px; height: 30px; display: block; }
-/* 产出飞卡：小张资源卡从地块长出并飞向玩家（独立类，与进步卡 .fly-progcard 分开） */
+/* 产出飞卡：资源卡从地块长出、沿弧线飞向玩家（独立类，与进步卡 .fly-progcard 分开） */
 .fly-rescard {
   position: fixed; left: 0; top: 0; z-index: 65; pointer-events: none;
-  width: 42px; height: 56px; border-radius: 6px;
+  width: 50px; height: 66px; border-radius: 8px;
   background-size: cover; background-position: center;
-  border: 1.5px solid rgba(255,248,230,.9);
-  box-shadow: 0 4px 11px rgba(0,0,0,.45);
+  border: 2px solid rgba(255,248,230,.95);
+  box-shadow:
+    0 0 16px 3px rgba(255,214,110,.75),
+    0 8px 20px rgba(0,0,0,.45);
+}
+/* 落点金光四溅（--sx/--sy 由 JS 随机指定方向） */
+.spark {
+  position: fixed; z-index: 66; pointer-events: none;
+  width: 7px; height: 7px; border-radius: 50%;
+  background: radial-gradient(circle, #fff8dc 15%, #ffd54f 55%, rgba(255,180,40,0) 75%);
+  transform: translate(-50%, -50%);
+  animation: spark-fly .65s ease-out forwards;
+}
+@keyframes spark-fly {
+  0% { transform: translate(-50%, -50%) scale(.6); opacity: 1; }
+  100% { transform: translate(calc(var(--sx) - 50%), calc(var(--sy) - 50%)) scale(1.25); opacity: 0; }
 }
 
 /* 行内资源小图标：飘字、交易横幅、垄断按钮等处替代 emoji */

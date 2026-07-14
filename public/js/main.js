@@ -175,6 +175,8 @@ function exitSpectate(msg) {
   myRoomCode = null;
   lastSeq = 0;
   lastLogSeq = 0;
+  pendingSelf = {};
+  pendingCount = {};
   $('log-list').innerHTML = '';
   show('screen-home');
   if (msg) toast(msg);
@@ -605,8 +607,45 @@ socket.on('state', (state) => {
 });
 
 function applyState() {
+  registerPendingGains(); // 本批新产出先从显示数字里扣住，飞牌抵达时才逐张 +1
   renderAll();
   playEvents(); // 剩余事件（产出/偷牌飘字、回合横幅等；骰子已单独播放）
+}
+
+// ---------- 产出结算：数字变化与飞牌动画同步 ----------
+// displayed = 服务端实际值 - pending；每张飞牌落地 revealGain 一次，数字随之 +1
+let pendingSelf = {};   // res -> n：自己各资源卡与手牌总数的待结算量
+let pendingCount = {};  // playerIdx -> n：状态栏手牌数的待结算量（含自己）
+let pendingFlushTimer = null;
+
+function registerPendingGains() {
+  for (const ev of S.events) {
+    if (ev.seq <= lastSeq || ev.type !== 'gain') continue;
+    pendingCount[ev.player] = (pendingCount[ev.player] || 0) + ev.n;
+    if (ev.player === myIndex) pendingSelf[ev.res] = (pendingSelf[ev.res] || 0) + ev.n;
+  }
+}
+
+// 一张牌落地：解锁 1 点数字并重绘（重绘会触发对应卡片的 bump 动画）
+function revealGain(player, res) {
+  if (player === myIndex && pendingSelf[res] > 0) pendingSelf[res]--;
+  if (pendingCount[player] > 0) pendingCount[player]--;
+  if (!S) return;
+  renderHand();
+  renderPlayers();
+}
+
+// 兜底：动画被打断（切后台等）时强制结清，避免数字卡在旧值
+function flushPending() {
+  clearTimeout(pendingFlushTimer);
+  pendingFlushTimer = null;
+  if (!Object.keys(pendingSelf).length && !Object.keys(pendingCount).length) return;
+  pendingSelf = {};
+  pendingCount = {};
+  if (S) {
+    renderHand();
+    renderPlayers();
+  }
 }
 
 // 房主结束本局：清空对局相关状态，回到等待大厅（后续 lobby 事件会填充大厅）
@@ -625,6 +664,9 @@ socket.on('returnToLobby', () => {
   discardOpen = false;
   holdUntil = 0;
   clearTimeout(holdTimer);
+  pendingSelf = {};
+  pendingCount = {};
+  clearTimeout(pendingFlushTimer);
   for (const m of ['modal-winner', 'modal-discard', 'modal-steal', 'modal-trade',
     'modal-yop', 'modal-monopoly', 'modal-endgame', 'modal-aqueduct',
     'modal-alchemist', 'modal-pick', 'modal-knightmenu', 'modal-improve', 'modal-settings']) {
@@ -910,7 +952,7 @@ function renderPlayers() {
         <span class="p-vp"><b>${i === myIndex ? S.you.vpTotal : p.vp}</b><small>分</small></span>
       </div>
       <div class="p-stats">
-        <span title="手牌">🃏 ${p.handCount}</span>
+        <span title="手牌">🃏 ${p.handCount - (pendingCount[i] || 0)}</span>
         <span title="${ckMode ? '进步卡' : '发展卡'}">🎴 ${p.devCount}</span>
         ${ckStats}
       </div>
@@ -921,8 +963,10 @@ function renderPlayers() {
 
 function renderHand() {
   const wrap = $('hand-cards');
+  // 显示值 = 实际值 - 待结算产出（飞牌落地时逐张 +1）
+  const displayed = (r) => S.you.hand[r] - (pendingSelf[r] || 0);
   // 手牌数 / 弃牌上限（掷 7）
-  const total = cardList().reduce((s, r) => s + S.you.hand[r], 0);
+  const total = cardList().reduce((s, r) => s + displayed(r), 0);
   const limit = S.you.handLimit ?? 7;
   const hc = $('hand-count');
   if (hc) {
@@ -931,8 +975,10 @@ function renderHand() {
     hc.classList.toggle('over', total > limit);
   }
   wrap.innerHTML = '';
+  const shown = {};
   for (const r of cardList()) {
-    const n = S.you.hand[r];
+    const n = displayed(r);
+    shown[r] = n;
     const div = document.createElement('div');
     div.className = `res-card res-${r}`;
     // 资源与商品卡面都是插画（CSS 背景图）
@@ -946,7 +992,7 @@ function renderHand() {
     }));
     wrap.appendChild(div);
   }
-  prevHand = { ...S.you.hand };
+  prevHand = shown; // 记录的是显示值：每次 reveal 后重绘都会正确触发 bump
 }
 
 function renderDevCards() {
@@ -1903,8 +1949,10 @@ function renderMonopolyButtons() {
 }
 
 // ---------- 动画事件 ----------
-const DICE_ROLL_MS = 2400;   // 骰子翻滚时长
-const GAIN_STAGGER_MS = 900; // 每条产出飘字的间隔
+const DICE_ROLL_MS = 2400;    // 骰子翻滚时长
+const GAIN_STAGGER_MS = 1100; // 每条产出事件的间隔
+const FLY_MS = 2200;          // 单张产出飞牌全程时长
+const FLY_STAGGER = 340;      // 同一条产出内逐张起飞的间隔
 let diceAnimUntil = 0;
 let diceRollTimer = null;
 let lastDiceTotal = 0;       // 最近一次掷骰点数：产出飞卡动画据此反查产出地块
@@ -1993,6 +2041,7 @@ function playEvents() {
           // 从产出地块飞牌：自己飞进手牌，别人飞到其状态栏卡片；条件不满足时回落为飘字
           if (!flyResourceFromHex(res, n, player)) {
             floatOverPlayer(player, `+${n} ${resIcon(res)}`);
+            for (let k = 0; k < n; k++) revealGain(player, res); // 无动画则立即结清数字
           }
         }, d);
         delay += GAIN_STAGGER_MS;
@@ -2151,6 +2200,11 @@ function playEvents() {
         break;
     }
   }
+  // 兜底结清：所有飞牌理论上都落地之后，强制核对一次数字（动画被打断也不会卡旧值）
+  if (Object.keys(pendingSelf).length || Object.keys(pendingCount).length) {
+    clearTimeout(pendingFlushTimer);
+    pendingFlushTimer = setTimeout(flushPending, delay + FLY_MS + 6 * FLY_STAGGER + 1500);
+  }
 }
 
 function showTurnBanner(to) {
@@ -2201,25 +2255,54 @@ function flyResourceFromHex(res, n, player) {
   const rect = targetEl.getBoundingClientRect();
   const ex = rect.left + rect.width / 2;
   const ey = rect.top + rect.height / 2;
-  for (let i = 0; i < Math.min(n, 6); i++) {
+  const shown = Math.min(n, 6);
+  // 先算好全部起点，任一缺失则整体回落飘字（避免飞了一半发现算不出坐标）
+  const froms = [];
+  for (let i = 0; i < shown; i++) {
     const from = hexPixelPosition(hexes[i % hexes.length].id, $('board'));
     if (!from) return false;
+    froms.push(from);
+  }
+  for (let i = 0; i < shown; i++) {
+    const from = froms[i];
     const f = document.createElement('div');
     f.className = 'fly-rescard';
     f.style.backgroundImage = `url("/assets/opt/resource-${res}.webp")`;
     f.style.left = `${from.x}px`;
     f.style.top = `${from.y}px`;
     document.body.appendChild(f);
-    // 两段：① 从地里长出来（回弹放大 + 微升，停一下）② 飞向目标
+    // 抛物线轨迹：拱点在两端上方，采样贝塞尔中间点作关键帧
+    const dx = ex - from.x;
+    const dy = ey - from.y;
+    const arc = Math.min(150, Math.max(70, Math.hypot(dx, dy) * 0.22)); // 距离越远拱得越高
+    const bez = (t) => { // 二次贝塞尔（控制点取中点上方 arc）
+      const cx2 = dx / 2;
+      const cy2 = Math.min(0, dy) / 2 - arc;
+      return {
+        x: 2 * (1 - t) * t * cx2 + t * t * dx,
+        y: 2 * (1 - t) * t * cy2 + t * t * dy,
+      };
+    };
+    const at = (t, s, rot, extra = 0) => {
+      const pt = bez(t);
+      return `translate(calc(${pt.x}px - 50%), calc(${pt.y - extra}px - 50%)) scale(${s}) rotate(${rot}deg)`;
+    };
+    // 三段：① 从地里弹出并悬浮闪光 ② 沿弧线飞向目标 ③ 临近目标收拢
     const anim = f.animate([
-      { transform: 'translate(-50%, -50%) scale(0)', opacity: 0, easing: 'cubic-bezier(.34,1.56,.64,1)' },
-      { transform: 'translate(-50%, calc(-50% - 14px)) scale(1.15)', opacity: 1, offset: 0.3 },
-      { transform: 'translate(-50%, calc(-50% - 14px)) scale(1)', opacity: 1, offset: 0.46, easing: 'cubic-bezier(.5,0,.4,1)' },
-      { transform: `translate(calc(${ex - from.x}px - 50%), calc(${ey - from.y}px - 50%)) scale(.5)`, opacity: .9, offset: 1 },
-    ], { duration: 1500, delay: i * 240, fill: 'backwards' });
+      { transform: at(0, 0, -14, 0), opacity: 0, easing: 'cubic-bezier(.34,1.56,.64,1)' },
+      { transform: at(0, 1.3, 3, 22), opacity: 1, offset: 0.2 },
+      { transform: at(0, 1.1, -2, 16), opacity: 1, offset: 0.34, easing: 'cubic-bezier(.45,0,.5,1)' },
+      { transform: at(0.35, 1.0, 4, 0), opacity: 1, offset: 0.58 },
+      { transform: at(0.7, 0.85, 8, 0), opacity: 1, offset: 0.8, easing: 'cubic-bezier(.4,0,.9,.6)' },
+      { transform: at(1, 0.45, 12, 0), opacity: 0.85, offset: 1 },
+    ], { duration: FLY_MS, delay: i * FLY_STAGGER, fill: 'backwards' });
+    const isLast = i === shown - 1;
     anim.onfinish = () => {
       f.remove();
-      // 到达时顶一下目标（自己→手牌卡；别人→玩家卡片）。重渲染可能已重建，按需重查
+      // 落地才 +1：先解锁数字（renderHand/renderPlayers 重绘并 bump），再撒一圈金光
+      revealGain(player, res);
+      if (isLast) for (let k = shown; k < n; k++) revealGain(player, res); // 超出 6 张的部分随末张结清
+      sparkleAt(ex, ey);
       const c = player === myIndex
         ? document.querySelector(`#hand-cards .res-card.res-${res}`)
         : $(`player-card-${player}`);
@@ -2231,6 +2314,22 @@ function flyResourceFromHex(res, n, player) {
     };
   }
   return true;
+}
+
+// 落点金光四溅（轻量：几个小光点向四周飞散）
+function sparkleAt(x, y) {
+  for (let i = 0; i < 6; i++) {
+    const s = document.createElement('div');
+    s.className = 'spark';
+    const a = (Math.PI * 2 * i) / 6 + Math.random() * 0.8;
+    const d = 26 + Math.random() * 22;
+    s.style.left = `${x}px`;
+    s.style.top = `${y}px`;
+    s.style.setProperty('--sx', `${Math.cos(a) * d}px`);
+    s.style.setProperty('--sy', `${Math.sin(a) * d - 10}px`);
+    document.body.appendChild(s);
+    setTimeout(() => s.remove(), 700);
+  }
 }
 
 // 进步卡飞行动画：从棋盘上的牌堆飞向玩家面板（reverse 表示打出后飞回牌堆底）
