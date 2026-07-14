@@ -19,6 +19,14 @@
   font-weight: 800 900;
   font-display: swap;
 }
+/* 地块数字令牌保留原来的圆体 Baloo 2（仅 0-9 的 3KB 子集，自托管） */
+@font-face {
+  font-family: "Baloo 2";
+  src: url("/fonts/Baloo2-Bold-digits.woff2") format("woff2");
+  font-weight: 700;
+  font-display: swap;
+  unicode-range: U+30-39;
+}
 
 :root {
   --sea: #4098c0;
@@ -597,7 +605,7 @@ body {
 .token-ring { fill: none; stroke: rgba(120,90,40,.28); stroke-width: .012; pointer-events: none; }
 .token-num {
   font-size: .38px; font-weight: 700; text-anchor: middle; pointer-events: none;
-  font-family: var(--font-num);
+  font-family: "Baloo 2", var(--font-num); /* 地块数字保留圆体，不随全站换未来荧黑 */
 }
 .token-num.red { fill: #c0392b; }
 .token-dots { fill: #333; }
