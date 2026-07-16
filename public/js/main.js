@@ -2219,21 +2219,24 @@ function playEvents() {
 function showTurnBanner(to) {
   const p = S.players[to];
   const mine = to === myIndex;
-  const banner = $('turn-banner');
-  const inner = banner.querySelector('.turn-banner-inner');
-  inner.textContent = mine ? '🎲 轮到你了！' : `轮到 ${p.name} 的回合`;
-  inner.classList.toggle('mine', mine);
-  // 横幅底色使用新玩家的颜色；浅色（如白色玩家）自动改用深色文字
-  inner.style.background = `linear-gradient(135deg, ${p.color}e6, ${p.color}b0)`;
-  const [r, g, b] = [1, 3, 5].map((i) => parseInt(p.color.slice(i, i + 2), 16));
-  const light = 0.299 * r + 0.587 * g + 0.114 * b > 186;
-  inner.style.color = light ? '#334' : '#fff';
-  inner.style.textShadow = light ? 'none' : '0 2px 6px rgba(0,0,0,.35)';
-  banner.classList.remove('show');
-  void banner.offsetWidth;
-  banner.classList.add('show');
-  clearTimeout(banner._timer);
-  banner._timer = setTimeout(() => banner.classList.remove('show'), 4600);
+  // 轮到自己时中央大掷骰按钮（含「你的回合」字样）就是回合提醒，横幅会与其重叠，不再显示
+  if (!mine) {
+    const banner = $('turn-banner');
+    const inner = banner.querySelector('.turn-banner-inner');
+    inner.textContent = `轮到 ${p.name} 的回合`;
+    inner.classList.remove('mine');
+    // 横幅底色使用新玩家的颜色；浅色（如白色玩家）自动改用深色文字
+    inner.style.background = `linear-gradient(135deg, ${p.color}e6, ${p.color}b0)`;
+    const [r, g, b] = [1, 3, 5].map((i) => parseInt(p.color.slice(i, i + 2), 16));
+    const light = 0.299 * r + 0.587 * g + 0.114 * b > 186;
+    inner.style.color = light ? '#334' : '#fff';
+    inner.style.textShadow = light ? 'none' : '0 2px 6px rgba(0,0,0,.35)';
+    banner.classList.remove('show');
+    void banner.offsetWidth;
+    banner.classList.add('show');
+    clearTimeout(banner._timer);
+    banner._timer = setTimeout(() => banner.classList.remove('show'), 4600);
+  }
 
   // 新玩家卡片闪烁 + 骰子传递飘字
   const card = $(`player-card-${to}`);

@@ -323,9 +323,9 @@ body {
   100% { opacity: 0; transform: translateX(90px); }
 }
 
-/* 中央大掷骰按钮：自己回合的掷骰阶段弹出（位置低于回合横幅避免重叠） */
+/* 中央大掷骰按钮：自己回合的掷骰阶段弹出，兼任回合提醒（轮到自己时不再放横幅） */
 #roll-big-wrap {
-  position: absolute; top: 55%; left: 50%; transform: translate(-50%, -50%);
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
   z-index: 21; pointer-events: none;
 }
 #roll-big {
