@@ -19,6 +19,10 @@ export function getSfxVolume() {
   return sfxVol;
 }
 
+// 整体响度系数：各音效的 gain 参数按舒适比例配好，这里统一放大到目标响度
+// （多声部叠加的峰值约 0.5，×1.6 后仍 <1 不削波；嫌吵/嫌轻优先调这里）
+const SFX_BOOST = 1.6;
+
 function ac() {
   if (!ctx) {
     const AC = window.AudioContext || window.webkitAudioContext;
@@ -102,7 +106,7 @@ function noise(opts) {
   const c = ac();
   if (!c) return;
   const full = { freq: 1500, freq2: 0, q: 1.2, dur: 0.06, gain: 0.1, when: 0, ...opts };
-  full.gain *= sfxVol;
+  full.gain *= sfxVol * SFX_BOOST;
   unlock(c);
   if (c.state === 'running') {
     scheduleNoise(c, full);
@@ -118,7 +122,7 @@ function tone(opts) {
   const c = ac();
   if (!c) return;
   const full = { freq: 600, freq2: 0, type: 'sine', dur: 0.08, gain: 0.1, when: 0, ...opts };
-  full.gain *= sfxVol;
+  full.gain *= sfxVol * SFX_BOOST;
   unlock(c);
   if (c.state === 'running') {
     schedule(c, full);
