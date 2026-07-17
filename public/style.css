@@ -853,6 +853,12 @@ body {
 .trade-tabs { display: flex; gap: 6px; margin-bottom: 14px; justify-content: center; }
 
 .btn-column { display: flex; flex-direction: column; gap: 8px; }
+/* 选牌弹窗的富卡片选项：卡面缩略图 + 名称 + 效果说明（间谍偷进步卡等） */
+.pick-rich { display: flex; align-items: center; gap: 14px; text-align: left; padding: 10px 14px; }
+.pick-rich .pr-img { width: 64px; border-radius: 6px; flex-shrink: 0; box-shadow: 0 3px 8px rgba(0,0,0,.3); }
+.pick-rich .pr-txt { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.pick-rich .pr-txt b { font-size: 17px; }
+.pick-rich .pr-txt small { font-size: 13.5px; color: #7a6a4f; line-height: 1.35; white-space: normal; }
 
 /* ---------- 交易提议框：屏幕中央（Master Duel 式关键交互居中） ---------- */
 #trade-banner {

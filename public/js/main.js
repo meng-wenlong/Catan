@@ -621,6 +621,8 @@ function applyState() {
 // displayed = 服务端实际值 - pending；每张飞牌落地 revealGain 一次，数字随之 +1
 let pendingSelf = {};   // res -> n：自己各资源卡与手牌总数的待结算量
 let pendingCount = {};  // playerIdx -> n：状态栏手牌数的待结算量（含自己）
+let pendingProgSelf = 0; // 自己底栏进步卡的待结算张数（新抽的卡藏到飞牌落地）
+let pendingProg = {};    // playerIdx -> n：状态栏 🎴 数的待结算量
 let pendingFlushTimer = null;
 
 let lastPendingSeq = 0; // 登记游标独立于 lastSeq：状态到达即登记，playEvents 稍后才推进 lastSeq
@@ -637,9 +639,17 @@ function registerPendingGains(oldHand) {
         pendingSelf[ev.res] = (pendingSelf[ev.res] || 0) + ev.n;
         myGains[ev.res] = (myGains[ev.res] || 0) + ev.n;
       }
-    } else if (ev.type === 'steal' && !ev.progress) { // 进步卡偷取不经手牌，数字无需扣住
-      pendingCount[ev.to] = (pendingCount[ev.to] || 0) + 1;
-      if (ev.to === myIndex) mySteals++;
+    } else if (ev.type === 'steal') {
+      if (ev.progress) { // 偷的是进步卡：扣 🎴 数，不经手牌
+        pendingProg[ev.to] = (pendingProg[ev.to] || 0) + 1;
+        if (ev.to === myIndex) pendingProgSelf++;
+      } else {
+        pendingCount[ev.to] = (pendingCount[ev.to] || 0) + 1;
+        if (ev.to === myIndex) mySteals++;
+      }
+    } else if (ev.type === 'progress') { // 抽进步卡：藏到发放飞牌落地再出现
+      pendingProg[ev.player] = (pendingProg[ev.player] || 0) + 1;
+      if (ev.player === myIndex) pendingProgSelf++;
     }
   }
   // 自己偷到的牌事件里不写明是哪张（公开事件不剧透）：用新旧手牌差推断，扣住到卡背落地再 +1
@@ -661,6 +671,15 @@ function revealSteal(to) {
   revealGain(to, r);
 }
 
+// 进步卡飞牌落地：新卡此刻才出现在底栏 / 🎴 计数里
+function revealProgress(player) {
+  if (player === myIndex && pendingProgSelf > 0) pendingProgSelf--;
+  if (pendingProg[player] > 0) pendingProg[player]--;
+  if (!S) return;
+  renderDevCards();
+  renderPlayers();
+}
+
 // 一张牌落地：解锁 1 点数字并重绘（重绘会触发对应卡片的 bump 动画）
 function revealGain(player, res) {
   if (player === myIndex && pendingSelf[res] > 0) pendingSelf[res]--;
@@ -679,12 +698,16 @@ function flushPending() {
     pendingFlushTimer = setTimeout(flushPending, holdUntil - Date.now() + 2000);
     return;
   }
-  if (!Object.keys(pendingSelf).length && !Object.keys(pendingCount).length) return;
+  if (!Object.keys(pendingSelf).length && !Object.keys(pendingCount).length
+    && !pendingProgSelf && !Object.keys(pendingProg).length) return;
   pendingSelf = {};
   pendingCount = {};
+  pendingProgSelf = 0;
+  pendingProg = {};
   if (S) {
     renderHand();
     renderPlayers();
+    renderDevCards();
   }
 }
 
@@ -707,6 +730,8 @@ socket.on('returnToLobby', () => {
   clearTimeout(holdTimer);
   pendingSelf = {};
   pendingCount = {};
+  pendingProgSelf = 0;
+  pendingProg = {};
   clearTimeout(pendingFlushTimer);
   animSteps.length = 0; // 未播完的动画步骤全部作废（须在 clearSpotlight 之前：跳过回调会推进时间线）
   lastFlightEnd = 0;
@@ -997,7 +1022,7 @@ function renderPlayers() {
       </div>
       <div class="p-stats">
         <span title="手牌">🃏 ${p.handCount - (pendingCount[i] || 0)}</span>
-        <span title="${ckMode ? '进步卡' : '发展卡'}">🎴 ${p.devCount}</span>
+        <span title="${ckMode ? '进步卡' : '发展卡'}">🎴 ${p.devCount - (pendingProg[i] || 0)}</span>
         ${ckStats}
       </div>
       ${badges.length ? `<div class="p-badges">${badges.join('')}</div>` : ''}`;
@@ -1090,7 +1115,9 @@ function playDevCard(type) {
 // ---------- 进步卡（城市与骑士） ----------
 function renderProgressCards(wrap) {
   const groups = {};
-  for (const c of S.you.progressCards) {
+  // 待结算的新卡（在数组末尾）藏到发放飞牌落地：revealProgress 逐张放出
+  const shownCards = pendingProgSelf > 0 ? S.you.progressCards.slice(0, -pendingProgSelf) : S.you.progressCards;
+  for (const c of shownCards) {
     const key = c.type;
     if (!groups[key]) groups[key] = { deck: c.deck, n: 0 };
     groups[key].n++;
@@ -1258,8 +1285,16 @@ function openPickModal(title, options, { forced = false } = {}) {
   box.innerHTML = '';
   for (const o of options) {
     const b = document.createElement('button');
-    b.className = 'btn primary';
-    b.innerHTML = o.label;
+    if (o.img || o.desc) {
+      // 富卡片选项：卡面缩略图 + 名称 + 效果说明（如间谍偷进步卡），悬停可放大看整张卡
+      b.className = 'btn pick-rich';
+      b.innerHTML = `${o.img ? `<img class="pr-img" src="${o.img}" alt="">` : ''}`
+        + `<span class="pr-txt"><b>${o.label}</b>${o.desc ? `<small>${o.desc}</small>` : ''}</span>`;
+      if (o.img) attachCardInspect(b, () => ({ img: o.img, name: o.label, sub: o.desc }));
+    } else {
+      b.className = 'btn primary';
+      b.innerHTML = o.label;
+    }
     b.onclick = () => {
       $('modal-pick').classList.add('hidden');
       o.onPick();
@@ -1715,6 +1750,8 @@ function statePickSpec() {
       title: `间谍：偷取 ${S.players[S.ck.pick.from].name} 的一张进步卡`,
       options: H.pickList.map((t) => ({
         label: PROG_META[t].name,
+        img: `/assets/opt/progress-${t}.webp`,
+        desc: PROG_META[t].desc,
         onPick: () => send({ type: 'pickProgress', card: t }),
       })),
     };
@@ -2138,8 +2175,8 @@ function playEvents() {
         animStep((done) => {
           sfx.steal();
           floatOverPlayer(ev.from, '−1 🃏');
-          // 数字被扣住到卡背落地才 +1（进步卡偷取不经手牌，无需结算）
-          const onArrive = ev.progress ? null : () => revealSteal(ev.to);
+          // 数字被扣住到卡背落地才 +1（进步卡偷取结算 🎴 数与底栏新卡）
+          const onArrive = ev.progress ? () => revealProgress(ev.to) : () => revealSteal(ev.to);
           // 卡背从受害者飞向偷牌者；条件不满足（元素缺失等）回落为飘字并立即结清
           if (!flyStealCard(ev.from, ev.to, onArrive)) {
             floatOverPlayer(ev.to, '🕵️ +1');
@@ -2316,14 +2353,19 @@ function playEvents() {
     for (const ev of progressEvents) {
       const { player, deck } = ev;
       animStep((done) => {
-        if (!flyProgressCard(deck, player)) floatOverPlayer(player, '🎴 +1');
+        // 新卡藏到飞牌落地才出现（revealProgress）；无动画则立即结清
+        if (!flyProgressCard(deck, player, false, null, () => revealProgress(player))) {
+          floatOverPlayer(player, '🎴 +1');
+          revealProgress(player);
+        }
         setTimeout(done, 450);
       });
     }
   }
   // 兜底结清：排在时间线末尾，所有飞牌理论落地后强制核对一次数字（动画被打断也不会卡旧值）
   animStep((done) => {
-    if (Object.keys(pendingSelf).length || Object.keys(pendingCount).length) {
+    if (Object.keys(pendingSelf).length || Object.keys(pendingCount).length
+      || pendingProgSelf || Object.keys(pendingProg).length) {
       clearTimeout(pendingFlushTimer);
       pendingFlushTimer = setTimeout(flushPending, Math.max(0, lastFlightEnd - Date.now()) + FLY_MS + 2000);
     }
@@ -2566,7 +2608,7 @@ function sparkleAt(x, y) {
 
 // 进步卡飞行动画：从棋盘上的牌堆飞向玩家面板（reverse 表示打出后飞回牌堆底）
 // cardId 传入具体卡 id（打出/分数卡，已公开）时飞真实卡面；否则飞牌堆背（色底+徽记，不剧透抽到什么）
-function flyProgressCard(deck, playerIdx, reverse = false, cardId = null) {
+function flyProgressCard(deck, playerIdx, reverse = false, cardId = null, onArrive = null) {
   const meta = TRACK_META[deck];
   const deckPos = deckPixelPosition(deck, $('board'));
   const panel = $(`player-card-${playerIdx}`);
@@ -2597,7 +2639,10 @@ function flyProgressCard(deck, playerIdx, reverse = false, cardId = null) {
     { transform: 'translate(-50%, calc(-50% - 12px)) scale(1) rotate(0deg)', opacity: 1, offset: 0.46, easing: 'cubic-bezier(.5,0,.4,1)' },
     { transform: `translate(calc(${dx}px - 50%), calc(${dy}px - 50%)) scale(.5) rotate(8deg)`, opacity: .9, offset: 1 },
   ], { duration: 1300, fill: 'backwards' });
-  anim.onfinish = () => f.remove();
+  anim.onfinish = () => {
+    f.remove();
+    onArrive?.(); // 落地才结算：新卡此刻出现在底栏 / 🎴 计数 +1
+  };
   return true;
 }
 
