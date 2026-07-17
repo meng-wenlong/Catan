@@ -680,6 +680,8 @@ socket.on('returnToLobby', () => {
   pendingSelf = {};
   pendingCount = {};
   clearTimeout(pendingFlushTimer);
+  animSteps.length = 0; // 未播完的动画步骤全部作废（须在 clearSpotlight 之前：跳过回调会推进时间线）
+  lastFlightEnd = 0;
   for (const m of ['modal-winner', 'modal-discard', 'modal-steal', 'modal-trade',
     'modal-yop', 'modal-monopoly', 'modal-endgame', 'modal-aqueduct',
     'modal-alchemist', 'modal-pick', 'modal-knightmenu', 'modal-improve', 'modal-settings']) {
@@ -2044,9 +2046,34 @@ function animateDiceRoll(d1, d2, eventFace = null) {
   }, 170);
 }
 
+// ---------- 动画时间线：按事件顺序串行播放 ----------
+// 服务端 events 序列即规则的实际执行顺序（掷骰 → 野蛮人来袭 → 毁城 → 产出 → 进步卡…），
+// 播放也必须按这个顺序：中央演出（spotlight）阻塞后续步骤直到播完（点击跳过则提前放行），
+// 相邻的产出飞牌仍按 GAIN_STAGGER_MS 错开重叠，但不会抢到演出前面。
+const animSteps = [];
+let animRunning = false;
+let lastFlightEnd = 0; // 最后一张资源飞牌的落地时刻（绝对时间戳）：进步卡发放安排在这之后
+function animStep(fn) { // fn(done)：步骤完成时调用 done() 推进下一步
+  animSteps.push(fn);
+  if (!animRunning) runAnimSteps();
+}
+function runAnimSteps() {
+  const fn = animSteps.shift();
+  if (!fn) { animRunning = false; return; }
+  animRunning = true;
+  let called = false;
+  fn(() => {
+    if (called) return;
+    called = true;
+    runAnimSteps();
+  });
+}
+// 中央演出作为一个步骤：spotlight 播完/被点击跳过才放行时间线
+function stepSpotlight(item) {
+  animStep((done) => spotlight({ ...item, onDone: done }));
+}
+
 function playEvents() {
-  let delay = 0;       // 同一批事件按顺序错开播放（骰子动画已在收到状态时单独播放）
-  let lastGainEnd = 0; // 最后一张资源飞牌的落地时刻：进步卡发放安排在这之后
   const progressEvents = []; // 抽进步卡单独攒起来，等资源全部落地后作为第二阶段播放
   for (const ev of S.events) {
     if (ev.seq <= lastSeq) continue;
@@ -2057,42 +2084,51 @@ function playEvents() {
     }
     switch (ev.type) {
       case 'gain': {
-        const d = delay;
         const { player, res, n } = ev;
-        lastGainEnd = Math.max(lastGainEnd, d + FLY_MS + (Math.min(n, 6) - 1) * FLY_STAGGER);
-        setTimeout(() => {
+        animStep((done) => {
           // 从产出地块飞牌：自己飞进手牌，别人飞到其状态栏卡片；条件不满足时回落为飘字
-          if (!flyResourceFromHex(res, n, player)) {
+          if (flyResourceFromHex(res, n, player)) {
+            lastFlightEnd = Math.max(lastFlightEnd, Date.now() + FLY_MS + (Math.min(n, 6) - 1) * FLY_STAGGER);
+          } else {
             floatOverPlayer(player, `+${n} ${resIcon(res)}`);
             for (let k = 0; k < n; k++) revealGain(player, res); // 无动画则立即结清数字
           }
-        }, d);
-        delay += GAIN_STAGGER_MS;
+          setTimeout(done, GAIN_STAGGER_MS); // 下一条产出错开起飞；飞行本身可与后续步骤重叠
+        });
         break;
       }
       case 'build':
-        sfx.build(ev.kind);
+        animStep((done) => { sfx.build(ev.kind); done(); });
         break;
       case 'knightMove':
-        sfx.build('knight');
+        animStep((done) => { sfx.build('knight'); done(); });
         break;
       case 'improve':
-        sfx.improve();
+        animStep((done) => { sfx.improve(); done(); });
         break;
       case 'steal':
-        sfx.steal();
-        floatOverPlayer(ev.to, '🕵️ +1');
-        floatOverPlayer(ev.from, '−1 🃏');
+        animStep((done) => {
+          sfx.steal();
+          floatOverPlayer(ev.to, '🕵️ +1');
+          floatOverPlayer(ev.from, '−1 🃏');
+          done();
+        });
         break;
       case 'monopoly':
-        sfx.coin();
-        floatOverPlayer(ev.player, `💰 +${ev.n} ${resIcon(ev.res)}`);
+        animStep((done) => {
+          sfx.coin();
+          floatOverPlayer(ev.player, `💰 +${ev.n} ${resIcon(ev.res)}`);
+          done();
+        });
         break;
       case 'trade': {
         // 中央成交演出：全桌看清谁和谁换了什么（give/get 由服务端随事件下发）
         if (!ev.give) { // 旧版服务端无内容字段时退回小飘字
-          floatOverPlayer(ev.a, '🔄');
-          floatOverPlayer(ev.b, '🔄');
+          animStep((done) => {
+            floatOverPlayer(ev.a, '🔄');
+            floatOverPlayer(ev.b, '🔄');
+            done();
+          });
           break;
         }
         const A = S.players[ev.a];
@@ -2100,7 +2136,7 @@ function playEvents() {
         const goods = (m) => cardList().filter((r) => m[r] > 0)
           .map((r) => `<span class="sp-goodline">${resIcon(r)}×${m[r]}</span>`).join('')
           || '<span class="sp-goodline dim">什么都没有</span>';
-        spotlight({
+        stepSpotlight({
           kind: 'banner',
           icon: '🤝',
           title: '交易达成',
@@ -2124,14 +2160,14 @@ function playEvents() {
         break;
       }
       case 'turnEnd':
-        showTurnBanner(ev.to);
+        animStep((done) => { showTurnBanner(ev.to); done(); });
         break;
       case 'robber':
-        sfx.robber();
+        animStep((done) => { sfx.robber(); done(); });
         break;
       // 基础版发展卡打出：中央大卡演出
       case 'playDev':
-        spotlight({
+        stepSpotlight({
           kind: 'card',
           title: `${S.players[ev.player].name} 打出发展卡`,
           img: `/assets/opt/dev-${DEV_ASSET[ev.card] || 'knight'}.webp`,
@@ -2143,15 +2179,15 @@ function playEvents() {
         });
         break;
       // ---- 城市与骑士 ----
-      case 'ship': {
-        const d = delay;
-        setTimeout(() => sfx.ship(), d);
-        delay += 500; // 同批的来袭结算（barbarian）让号角先响完
+      case 'ship':
+        animStep((done) => {
+          sfx.ship();
+          setTimeout(done, 500); // 同批的来袭结算（barbarian）让号角先响完
+        });
         break;
-      }
       case 'barbarian':
         // 中央全屏结算演出：兵力 VS 防御 → 击退/洗劫定格（队列串行，后续毁城公告接着播）
-        spotlight({
+        stepSpotlight({
           kind: 'barbarian',
           win: ev.win,
           strength: ev.strength,
@@ -2161,7 +2197,7 @@ function playEvents() {
         });
         break;
       case 'pillage':
-        spotlight({
+        stepSpotlight({
           kind: 'banner',
           icon: '💥',
           title: `${S.players[ev.player].name} 的城市被摧毁`,
@@ -2176,11 +2212,14 @@ function playEvents() {
         });
         break;
       case 'saboteur':
-        for (const i of ev.players) floatOverPlayer(i, '💥 破坏者：弃一半手牌');
+        animStep((done) => {
+          for (const i of ev.players) floatOverPlayer(i, '💥 破坏者：弃一半手牌');
+          done();
+        });
         break;
       case 'progressVP':
         // 分数卡抽到即亮出：中央演出真实卡面
-        spotlight({
+        stepSpotlight({
           kind: 'card',
           title: `${S.players[ev.player].name} 抽到分数卡（+1 分）`,
           img: `/assets/opt/progress-${ev.card}.webp`,
@@ -2192,7 +2231,7 @@ function playEvents() {
         });
         break;
       case 'defender':
-        spotlight({
+        stepSpotlight({
           kind: 'banner',
           icon: '🏅',
           title: `${S.players[ev.player].name} 成为卡坦守护者`,
@@ -2203,7 +2242,7 @@ function playEvents() {
         });
         break;
       case 'metropolis':
-        spotlight({
+        stepSpotlight({
           kind: 'banner',
           img: '/assets/opt/metropolis.webp',
           title: `${S.players[ev.player].name} 建立${TRACK_META[ev.track]?.name || ''}大都会！`,
@@ -2215,7 +2254,7 @@ function playEvents() {
         break;
       case 'playProgress':
         // 中央大卡演出（替代原先的小飞牌），给全桌留出反应时间
-        spotlight({
+        stepSpotlight({
           kind: 'card',
           title: `${S.players[ev.player].name} 打出进步卡`,
           img: `/assets/opt/progress-${ev.card}.webp`,
@@ -2231,20 +2270,24 @@ function playEvents() {
     }
   }
   // 第二阶段：抽进步卡的飞牌等所有资源飞牌落地后再逐张播放（先发资源，再发进步卡）
-  let pDelay = Math.max(delay, lastGainEnd ? lastGainEnd + 350 : 0);
-  for (const ev of progressEvents) {
-    const d = pDelay;
-    const { player, deck } = ev;
-    setTimeout(() => {
-      if (!flyProgressCard(deck, player)) floatOverPlayer(player, '🎴 +1');
-    }, d);
-    pDelay += 450;
+  if (progressEvents.length) {
+    animStep((done) => setTimeout(done, Math.max(0, lastFlightEnd + 350 - Date.now())));
+    for (const ev of progressEvents) {
+      const { player, deck } = ev;
+      animStep((done) => {
+        if (!flyProgressCard(deck, player)) floatOverPlayer(player, '🎴 +1');
+        setTimeout(done, 450);
+      });
+    }
   }
-  // 兜底结清：所有飞牌理论上都落地之后，强制核对一次数字（动画被打断也不会卡旧值）
-  if (Object.keys(pendingSelf).length || Object.keys(pendingCount).length) {
-    clearTimeout(pendingFlushTimer);
-    pendingFlushTimer = setTimeout(flushPending, Math.max(delay, pDelay) + FLY_MS + 6 * FLY_STAGGER + 1500);
-  }
+  // 兜底结清：排在时间线末尾，所有飞牌理论落地后强制核对一次数字（动画被打断也不会卡旧值）
+  animStep((done) => {
+    if (Object.keys(pendingSelf).length || Object.keys(pendingCount).length) {
+      clearTimeout(pendingFlushTimer);
+      pendingFlushTimer = setTimeout(flushPending, Math.max(0, lastFlightEnd - Date.now()) + FLY_MS + 2000);
+    }
+    done();
+  });
 }
 
 function showTurnBanner(to) {

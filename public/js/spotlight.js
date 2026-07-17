@@ -16,9 +16,10 @@ function ensureStage() {
 }
 
 // item：
-//  { kind:'card', img, title, name, desc, accent, dur, onShow }   打牌/抽分数卡（大卡面居中）
-//  { kind:'banner', icon|img, title, sub, accent, dur, onShow }   大都会/守护者等公告
-//  { kind:'barbarian', win, strength, defense, dur, onShow }      野蛮人来袭结算
+//  { kind:'card', img, title, name, desc, accent, dur, onShow, onDone }   打牌/抽分数卡（大卡面居中）
+//  { kind:'banner', icon|img, title, sub, accent, dur, onShow, onDone }   大都会/守护者等公告
+//  { kind:'barbarian', win, strength, defense, dur, onShow, onDone }      野蛮人来袭结算
+// onDone：本幕结束（含点击跳过）时回调一次，动画时间线靠它串行推进后续步骤
 export function spotlight(item) {
   queue.push(item);
   if (!playing) next();
@@ -101,6 +102,7 @@ function show(item) {
     skipFn = null;
     st.classList.remove('show');
     st.classList.add('hide');
+    item.onDone?.(); // 淡出即算结束：后续步骤与 280ms 淡出重叠衔接
     setTimeout(() => {
       st.className = '';
       st.innerHTML = '';
