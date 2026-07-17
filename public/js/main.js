@@ -1964,6 +1964,7 @@ function animateDiceRoll(d1, d2, eventFace = null) {
   const total = d1 + d2;
   lastDiceTotal = total;
   diceAnimUntil = Date.now() + DICE_ROLL_MS;
+  sfx.dice(DICE_ROLL_MS / 1000);
   $('dice-box').classList.remove('hidden');
   // 屏幕中央的大骰子（Master Duel 式：关键信息居中演出），角落小骰子同步翻滚
   const stage = $('dice-stage');
@@ -2056,11 +2057,22 @@ function playEvents() {
         delay += GAIN_STAGGER_MS;
         break;
       }
+      case 'build':
+        sfx.build(ev.kind);
+        break;
+      case 'knightMove':
+        sfx.build('knight');
+        break;
+      case 'improve':
+        sfx.improve();
+        break;
       case 'steal':
+        sfx.steal();
         floatOverPlayer(ev.to, '🕵️ +1');
         floatOverPlayer(ev.from, '−1 🃏');
         break;
       case 'monopoly':
+        sfx.coin();
         floatOverPlayer(ev.player, `💰 +${ev.n} ${resIcon(ev.res)}`);
         break;
       case 'trade': {
@@ -2094,6 +2106,7 @@ function playEvents() {
           </div>`,
           accent: '#3a8fb5',
           dur: 4800,
+          onShow: () => sfx.coin(),
         });
         break;
       }
@@ -2113,6 +2126,7 @@ function playEvents() {
           desc: DEV_META[ev.card]?.desc || '',
           accent: '#8a5fc0',
           dur: 3600,
+          onShow: () => sfx.card(),
         });
         break;
       // ---- 城市与骑士 ----
@@ -2161,6 +2175,7 @@ function playEvents() {
           desc: PROG_META[ev.card]?.desc || '',
           accent: TRACK_META[ev.deck]?.color,
           dur: 3400,
+          onShow: () => sfx.fanfare(),
         });
         break;
       case 'defender':
@@ -2171,6 +2186,7 @@ function playEvents() {
           sub: '防御野蛮人居功至伟 · +1 分',
           accent: '#2e8b57',
           dur: 3000,
+          onShow: () => sfx.fanfare(),
         });
         break;
       case 'metropolis':
@@ -2181,6 +2197,7 @@ function playEvents() {
           sub: '城市升格为大都会 · +2 分',
           accent: TRACK_META[ev.track]?.color,
           dur: 3400,
+          onShow: () => sfx.fanfare(),
         });
         break;
       case 'playProgress':
@@ -2193,6 +2210,7 @@ function playEvents() {
           desc: PROG_META[ev.card]?.desc || '',
           accent: TRACK_META[ev.deck]?.color,
           dur: 3600,
+          onShow: () => sfx.card(),
         });
         break;
       default:
@@ -2321,6 +2339,7 @@ function flyResourceFromHex(res, n, player) {
     anim.onfinish = () => {
       f.remove();
       // 落地才 +1：先解锁数字（renderHand/renderPlayers 重绘并 bump），再撒一圈金光
+      sfx.gainTick(i);
       revealGain(player, res);
       if (isLast) for (let k = shown; k < n; k++) revealGain(player, res); // 超出 6 张的部分随末张结清
       sparkleAt(ex, ey);
