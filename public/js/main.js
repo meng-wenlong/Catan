@@ -625,6 +625,21 @@ let pendingCount = {};  // playerIdx -> n：状态栏手牌数的待结算量（
 let pendingProgSelf = 0; // 自己底栏进步卡的待结算张数（新抽的卡藏到飞牌落地）
 let pendingProg = {};    // playerIdx -> n：状态栏 🎴 数的待结算量
 let pendingFlushTimer = null;
+let pendingWatchPolls = 0; // 看门狗连续「还在忙」的轮数，防止卡死的动画把数字永远扣住
+
+// 在途飞牌计数：看门狗只在天上没有牌时才敢强制结清
+let flightsActive = 0;
+let inFlightSelf = {}; // res -> n：正飞向自己手牌的资源张数（偷牌结算避开这些名额）
+function flightStarted(res = null) {
+  flightsActive++;
+  if (res) inFlightSelf[res] = (inFlightSelf[res] || 0) + 1;
+}
+function flightEnded(res = null) {
+  flightsActive = Math.max(0, flightsActive - 1);
+  if (res && inFlightSelf[res] > 0) inFlightSelf[res]--;
+}
+const hasPending = () => Object.keys(pendingSelf).length > 0 || Object.keys(pendingCount).length > 0
+  || pendingProgSelf > 0 || Object.keys(pendingProg).length > 0;
 
 let lastPendingSeq = 0; // 登记游标独立于 lastSeq：状态到达即登记，playEvents 稍后才推进 lastSeq
 function registerPendingGains(oldHand) {
@@ -664,11 +679,18 @@ function registerPendingGains(oldHand) {
       }
     }
   }
+  if (hasPending()) armPendingWatchdog();
 }
 
-// 偷牌落地：结清一张待结算（自己偷到的即手牌差推断出的那张，触发对应资源卡 bump +1）
+// 偷牌落地：结清一张待结算（自己偷到的即手牌差推断出的那张，触发对应资源卡 bump +1）。
+// 优先挑没有在途产出飞牌的资源：避免抢走空中那张的名额、让它提前 +1
 function revealSteal(to) {
-  const r = to === myIndex ? cardList().find((x) => pendingSelf[x] > 0) : null;
+  let r = null;
+  if (to === myIndex) {
+    const types = cardList();
+    r = types.find((x) => (pendingSelf[x] || 0) > (inFlightSelf[x] || 0))
+      || types.find((x) => pendingSelf[x] > 0);
+  }
   revealGain(to, r);
 }
 
@@ -690,26 +712,39 @@ function revealGain(player, res) {
   renderPlayers();
 }
 
-// 兜底：动画被打断（切后台等）时强制结清，避免数字卡在旧值
+// 兜底看门狗：动画被打断（切后台等）时强制结清，避免数字卡在旧值。
+// 与定时炸弹的区别：只在「时间线空闲 + 天上没有飞牌 + 非掷骰冻结期」才动手，
+// 否则轮询等待——后续批次的演出把飞牌推迟多久都不会被提前结清（轮数有上限防卡死）。
 function flushPending() {
   clearTimeout(pendingFlushTimer);
   pendingFlushTimer = null;
-  // 冻结窗口内不结清：此时 pending 里含刚登记、还没起飞的新产出，顺延到结算之后
-  if (Date.now() < holdUntil) {
-    pendingFlushTimer = setTimeout(flushPending, holdUntil - Date.now() + 2000);
+  if (!hasPending()) {
+    pendingWatchPolls = 0;
     return;
   }
-  if (!Object.keys(pendingSelf).length && !Object.keys(pendingCount).length
-    && !pendingProgSelf && !Object.keys(pendingProg).length) return;
+  const busy = animRunning || flightsActive > 0 || Date.now() < holdUntil;
+  if (busy && pendingWatchPolls < 12) {
+    pendingWatchPolls++;
+    pendingFlushTimer = setTimeout(flushPending, 1500);
+    return;
+  }
+  pendingWatchPolls = 0;
   pendingSelf = {};
   pendingCount = {};
   pendingProgSelf = 0;
   pendingProg = {};
+  inFlightSelf = {};
   if (S) {
     renderHand();
     renderPlayers();
     renderDevCards();
   }
+}
+// pending 有增量时武装看门狗（重复武装只是顺延首查时刻）
+function armPendingWatchdog() {
+  pendingWatchPolls = 0;
+  clearTimeout(pendingFlushTimer);
+  pendingFlushTimer = setTimeout(flushPending, 6000);
 }
 
 // 房主结束本局：清空对局相关状态，回到等待大厅（后续 lobby 事件会填充大厅）
@@ -741,6 +776,14 @@ socket.on('returnToLobby', () => {
   clearTimeout(pendingFlushTimer);
   animSteps.length = 0; // 未播完的动画步骤全部作废（须在 clearSpotlight 之前：跳过回调会推进时间线）
   lastFlightEnd = 0;
+  // 还在空中的飞牌直接清场（连同其动画，避免 onfinish 迟到再结算已重置的对局）
+  for (const el of document.querySelectorAll('.fly-rescard, .fly-stealcard, .fly-progcard, .fly-discard')) {
+    for (const a of el.getAnimations()) a.cancel();
+    el.remove();
+  }
+  flightsActive = 0;
+  inFlightSelf = {};
+  pendingWatchPolls = 0;
   for (const m of ['modal-winner', 'modal-discard', 'modal-steal', 'modal-trade',
     'modal-yop', 'modal-monopoly', 'modal-endgame', 'modal-aqueduct',
     'modal-alchemist', 'modal-pick', 'modal-knightmenu', 'modal-improve', 'modal-settings']) {
@@ -2301,9 +2344,11 @@ function playEvents() {
     switch (ev.type) {
       case 'gain': {
         const { player, res, n } = ev;
+        // 入队时捕获本批点数：后续批次的掷骰会立即覆盖 lastDiceTotal，晚运行的步骤不能再读它
+        const rollTotal = lastDiceTotal;
         animStep((done) => {
           // 从产出地块飞牌：自己飞进手牌，别人飞到其状态栏卡片；条件不满足时回落为飘字
-          if (flyResourceFromHex(res, n, player)) {
+          if (flyResourceFromHex(res, n, player, rollTotal)) {
             lastFlightEnd = Math.max(lastFlightEnd, Date.now() + FLY_MS + (Math.min(n, 6) - 1) * FLY_STAGGER);
           } else {
             floatOverPlayer(player, `+${n} ${resIcon(res)}`);
@@ -2513,15 +2558,8 @@ function playEvents() {
       });
     }
   }
-  // 兜底结清：排在时间线末尾，所有飞牌理论落地后强制核对一次数字（动画被打断也不会卡旧值）
-  animStep((done) => {
-    if (Object.keys(pendingSelf).length || Object.keys(pendingCount).length
-      || pendingProgSelf || Object.keys(pendingProg).length) {
-      clearTimeout(pendingFlushTimer);
-      pendingFlushTimer = setTimeout(flushPending, Math.max(0, lastFlightEnd - Date.now()) + FLY_MS + 2000);
-    }
-    done();
-  });
+  // 兜底结清由看门狗负责（registerPendingGains 登记 pending 时武装）：
+  // 它只在时间线空闲且天上没有飞牌时才动手，后续批次排队多久都不会被提前结清
 }
 
 function showTurnBanner(to) {
@@ -2561,8 +2599,8 @@ const RES_TERRAIN = {
   wood: 'forest', brick: 'hills', sheep: 'pasture', wheat: 'fields', ore: 'mountains',
   paper: 'forest', cloth: 'pasture', coin: 'mountains', // CK：城市在对应地形产出商品，同样从该地块飞出
 };
-function flyResourceFromHex(res, n, player) {
-  if (!S || !lastDiceTotal) return false;
+function flyResourceFromHex(res, n, player, rollTotal = lastDiceTotal) {
+  if (!S || !rollTotal) return false;
   // 该玩家的建筑相邻的地块集合（商品只有城市产出，只算城市旁）
   const isCommodity = res === 'paper' || res === 'cloth' || res === 'coin';
   const mine = new Set();
@@ -2572,7 +2610,7 @@ function flyResourceFromHex(res, n, player) {
     for (const hid of S.board.vertices[vid].hexes) mine.add(hid);
   }
   const hexes = S.board.hexes.filter(
-    (h) => h.number === lastDiceTotal && h.terrain === RES_TERRAIN[res] && h.id !== S.robber
+    (h) => h.number === rollTotal && h.terrain === RES_TERRAIN[res] && h.id !== S.robber
       && mine.has(h.id),
   );
   if (!hexes.length) return false;
@@ -2625,9 +2663,11 @@ function flyResourceFromHex(res, n, player) {
       { transform: at(0.7, 0.85, 8, 0), opacity: 1, offset: 0.8, easing: 'cubic-bezier(.4,0,.9,.6)' },
       { transform: at(1, 0.45, 12, 0), opacity: 0.85, offset: 1 },
     ], { duration: FLY_MS, delay: i * FLY_STAGGER, fill: 'backwards' });
+    flightStarted(player === myIndex ? res : null);
     const isLast = i === shown - 1;
     anim.onfinish = () => {
       f.remove();
+      flightEnded(player === myIndex ? res : null);
       // 落地才 +1：先解锁数字（renderHand/renderPlayers 重绘并 bump），再撒一圈金光
       sfx.gainTick(i);
       revealGain(player, res);
@@ -2730,8 +2770,10 @@ function flyStealCard(fromIdx, toIdx, onArrive = null) {
     { transform: at(0.45, 0.95, -4), opacity: 1, offset: 0.62 },
     { transform: at(1, 0.5, 6), opacity: 0.9, offset: 1 },
   ], { duration: STEAL_MS });
+  flightStarted();
   anim.onfinish = () => {
     f.remove();
+    flightEnded();
     onArrive?.(); // 落地才结清数字：对应资源卡随重绘 bump +1
     sparkleAt(to.x, to.y);
     toEl.classList.remove('bump');
@@ -2790,8 +2832,10 @@ function flyProgressCard(deck, playerIdx, reverse = false, cardId = null, onArri
     { transform: 'translate(-50%, calc(-50% - 12px)) scale(1) rotate(0deg)', opacity: 1, offset: 0.46, easing: 'cubic-bezier(.5,0,.4,1)' },
     { transform: `translate(calc(${dx}px - 50%), calc(${dy}px - 50%)) scale(.5) rotate(8deg)`, opacity: .9, offset: 1 },
   ], { duration: 1300, fill: 'backwards' });
+  flightStarted();
   anim.onfinish = () => {
     f.remove();
+    flightEnded();
     onArrive?.(); // 落地才结算：新卡此刻出现在底栏 / 🎴 计数 +1
   };
   return true;
