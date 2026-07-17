@@ -41,7 +41,6 @@ export class Game {
       connected: true,
     }));
     this.bank = Object.fromEntries(RESOURCES.map((r) => [r, BANK_PER_RESOURCE]));
-    this.rollStats = {}; // total -> 次数：本局各点数出现频率（log 框顶部的统计图）
     this.devDeck = shuffle(DEV_DECK, rng);
     this.phase = 'setup';
     const n = this.players.length;
@@ -95,8 +94,13 @@ export class Game {
   // 日志带自增 seq：客户端按 seq 增量渲染（发送窗口只有最近 60 条，不能按下标对齐）
   // opts.to：仅这些玩家下标可见（私密 log，如偷牌具体牌）；opts.cat：分类（用于 log 过滤）
   addLog(msg, opts = {}) {
+    // 全量保留：状态里只带最近 60 条，更早的由客户端滚动到顶时经 logBefore 增量拉取
     this.log.push({ seq: ++this.logSeq, text: msg, to: opts.to || null, cat: opts.cat || 'game' });
-    if (this.log.length > 120) this.log.shift();
+  }
+
+  // 拉取 seq < before 的最近 80 条（含发给 p 的私密条目；观战者 p = -1 只给公开的）
+  logBefore(before, p) {
+    return this.log.filter((e) => e.seq < before && (!e.to || (p >= 0 && e.to.includes(p)))).slice(-80);
   }
 
   // 板块的人类可读位置「第X行第Y列」（r 为行，行内按 q 排序为列）
@@ -246,6 +250,7 @@ export class Game {
       this.turn.state = 'preroll';
       this.turn.player = this.setup.order[0];
       this.addLog(`初始放置完成！轮到 ${this.players[this.turn.player].name} 掷骰子。`);
+      this.addLog(`第 1 回合 · ${this.players[this.turn.player].name}`, { cat: 'turn' });
     } else {
       this.addLog(`轮到 ${this.players[this.currentSetupPlayer()].name} 放置。`);
     }
@@ -267,7 +272,6 @@ export class Game {
       eventFace = (forced && forced.eventDie) ? forced.eventDie : (f < 3 ? 'ship' : IMPROVE_TRACKS[f - 3]);
       this.turn.eventDie = eventFace;
     }
-    this.rollStats[total] = (this.rollStats[total] || 0) + 1;
     this.addEvent('dice', { player: p, dice: [d1, d2], eventDie: eventFace });
     this.addLog(`${this.players[p].name} 掷出了 ${total}（${d1}+${d2}）`, { cat: 'dice' });
 
@@ -727,7 +731,8 @@ export class Game {
     this.turn.crane = false;  // 起重机未用则作废
     this.turn.state = 'preroll';
     this.addEvent('turnEnd', { from: p, to: this.turn.player });
-    this.addLog(`轮到 ${this.players[this.turn.player].name} 的回合`);
+    // cat:'turn' 在客户端渲染为回合分隔线，给战报流水提供骨架
+    this.addLog(`第 ${this.turn.count} 回合 · ${this.players[this.turn.player].name}`, { cat: 'turn' });
     this.checkWin();
   }
 
@@ -833,7 +838,6 @@ export class Game {
       buildings: this.buildings,
       roads: this.roads,
       bank: { ...this.bank, devDeck: this.devDeck.length },
-      rollStats: this.rollStats,
       turn: {
         player: this.turn.player,
         count: this.turn.count,
@@ -930,7 +934,7 @@ export class Game {
       hints,
       vpTotal: this.victoryPoints(p, true),
       handLimit: this.ck ? 7 + 2 * this.wallCountOf(p) : 7, // 掷 7 弃牌线（含城墙 +2）
-      privLog: this.log.filter((e) => e.to && e.to.includes(p)), // 只发给我的私密 log
+      privLog: this.log.filter((e) => e.to && e.to.includes(p)).slice(-60), // 只发给我的私密 log（窗口同公开 log，更早的走 logBefore）
       // 调试模式：附带所有玩家（含 NPC）的手牌，便于验证偷牌/间谍等效果
       devPlayers: this.dev ? this.players.map((pl) => ({
         name: pl.name,

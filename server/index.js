@@ -462,6 +462,14 @@ io.on('connection', (socket) => {
     }
   });
 
+  // 战报框滚动到顶：增量拉取更早的日志
+  socket.on('logBefore', ({ before } = {}) => {
+    const room = myRoom;
+    if (!room || !room.game) return;
+    const p = room.players.findIndex((pl) => pl.token === myToken);
+    socket.emit('logChunk', { entries: room.game.logBefore(Number(before) || 0, p) });
+  });
+
   socket.on('chat', ({ text }) => {
     const room = myRoom;
     if (!room) return;

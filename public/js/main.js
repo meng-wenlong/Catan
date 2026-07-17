@@ -543,7 +543,8 @@ socket.on('gameError', ({ msg }) => {
 });
 
 socket.on('chat', ({ name, text }) => {
-  appendLog(`<span class="chat-msg">💬 ${esc(name)}：${esc(text)}</span>`, true);
+  const pi = S ? S.players.findIndex((pl) => pl.name === name) : -1;
+  appendLog(`<span class="chat-msg">💬 ${esc(name)}：${esc(text)}</span>`, true, 'chat', pi >= 0 ? [pi] : []);
 });
 
 // 断线重连
@@ -721,6 +722,11 @@ socket.on('returnToLobby', () => {
   lastSeq = 0;
   lastPendingSeq = 0;
   lastLogSeq = 0;
+  firstLogSeq = 0;
+  logHistoryDone = false;
+  logLoading = false;
+  logPlayersKey = ''; // 下一局重建玩家名染色与过滤色点
+  logPlayerFilter = null;
   $('log-list').innerHTML = '';
   S = null;
   prevHand = null;
@@ -779,7 +785,6 @@ function renderAll() {
   renderButtons();
   renderHotspots();
   renderLog();
-  updateRollStats();
   renderModals();
   renderDevPanel();
   renderTradeBanner();
@@ -1595,37 +1600,126 @@ $('btn-again').onclick = () => socket.emit('endGame');
 // ---------- 日志 ----------
 // 按服务端的日志 seq 增量渲染（发送的是最近 60 条的滑动窗口，不能按数组下标对齐）
 let lastLogSeq = 0;
-let logFilter = 'all'; // log 过滤：all / chat / dice / progress / game
+let firstLogSeq = 0;    // 已渲染的最早 seq：滚动到顶时以此为界拉取更早的历史
+let logHistoryDone = false;
+let logLoading = false;
+let logFilter = 'all';       // 类别过滤：all / chat / dice / progress / game
+let logPlayerFilter = null;  // 玩家过滤：null = 全部，否则玩家下标
+
+// 日志文本装饰：玩家名染色 + 资源词配图标；返回 { html, players:提到的玩家下标 }
+let logNameRegex = null;
+let logNameMap = new Map(); // 转义后的玩家名 -> { idx, color }
+let logPlayersKey = '';
+const escRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const LOG_RES_ICON = {
+  木材: 'wood', 砖块: 'brick', 羊毛: 'sheep', 小麦: 'wheat', 矿石: 'ore',
+  布匹: 'cloth', 铸币: 'coin', 纸张: 'paper',
+};
+const LOG_RES_RE = /木材|砖块|羊毛|小麦|矿石|布匹|铸币|纸张/g;
+function ensureLogPlayerUI() {
+  const key = S.players.map((p) => p.name + p.color).join('|');
+  if (key === logPlayersKey) return;
+  logPlayersKey = key;
+  logNameMap = new Map(S.players.map((p, i) => [esc(p.name), { idx: i, color: p.color }]));
+  // 长名优先匹配，避免「Wen」抢走「Wenlong」的前缀
+  const names = [...logNameMap.keys()].sort((a, b) => b.length - a.length).map(escRe);
+  logNameRegex = names.length ? new RegExp(`(${names.join('|')})`, 'g') : null;
+  // 玩家过滤色点（类别按钮之后）
+  let pf = $('log-pf');
+  if (!pf) {
+    pf = document.createElement('span');
+    pf.id = 'log-pf';
+    $('log-filter').appendChild(pf);
+  }
+  pf.innerHTML = '';
+  S.players.forEach((p, i) => {
+    const b = document.createElement('button');
+    b.className = 'log-pf-dot';
+    b.dataset.lp = i;
+    b.title = `只看 ${p.name}`;
+    b.style.setProperty('--dot', p.color);
+    pf.appendChild(b);
+  });
+  logPlayerFilter = null;
+}
+function decorateLogText(escText) {
+  const players = new Set();
+  let html = escText;
+  if (logNameRegex) {
+    html = html.replace(logNameRegex, (m) => {
+      const info = logNameMap.get(m);
+      if (!info) return m;
+      players.add(info.idx);
+      // 与羊皮纸底色混入少量深色，浅色玩家（白/黄）也能读清
+      return `<b class="log-pn" style="color:color-mix(in srgb, ${info.color} 72%, #3a2f1c)">${m}</b>`;
+    });
+  }
+  // 资源词配小图标：只处理标签外的文本段，避免打断已生成的染色标签
+  html = html.split(/(<[^>]+>)/).map((seg) => (seg.startsWith('<') ? seg
+    : seg.replace(LOG_RES_RE, (w) => `<img class="log-ico" src="/assets/opt/icon-${LOG_RES_ICON[w]}.webp" alt="">${w}`))).join('');
+  return { html, players: [...players] };
+}
+
 function renderLog() {
+  ensureLogPlayerUI();
   // 公开 log + 只发给我的私密 log（偷牌具体牌等），按 seq 合并
   const entries = [...(S.log || []), ...((S.you && S.you.privLog) || [])].sort((a, b) => a.seq - b.seq);
   let appended = false;
   for (const entry of entries) {
     if (entry.seq <= lastLogSeq) continue;
     lastLogSeq = entry.seq;
-    appendLog(esc(entry.text), false, entry.cat || 'game');
+    if (!firstLogSeq) firstLogSeq = entry.seq;
+    const { html, players } = decorateLogText(esc(entry.text));
+    appendLog(html, false, entry.cat || 'game', players);
     appended = true;
   }
   if (appended) $('log-list').scrollTop = $('log-list').scrollHeight;
 }
 
+// 类别 / 玩家过滤：回合分隔线不参与过滤，任何视图下都保留骨架
+function entryVisibility(div) {
+  const cat = div.dataset.cat;
+  let hide = false;
+  if (cat !== 'turn') {
+    if (logFilter !== 'all' && cat !== logFilter) hide = true;
+    if (logPlayerFilter !== null
+      && !(div.dataset.players || '').split(',').includes(String(logPlayerFilter))) hide = true;
+  }
+  div.classList.toggle('log-hidden', hide);
+}
+function refilterLog() {
+  for (const div of $('log-list').children) entryVisibility(div);
+}
 $('log-filter').addEventListener('click', (e) => {
+  const pb = e.target.closest('[data-lp]');
+  if (pb) { // 玩家色点：再点一次取消
+    const idx = Number(pb.dataset.lp);
+    logPlayerFilter = logPlayerFilter === idx ? null : idx;
+    for (const d of document.querySelectorAll('#log-pf .log-pf-dot')) {
+      d.classList.toggle('active', Number(d.dataset.lp) === logPlayerFilter);
+    }
+    refilterLog();
+    return;
+  }
   const b = e.target.closest('[data-lf]');
   if (!b) return;
   logFilter = b.dataset.lf;
-  for (const x of $('log-filter').children) x.classList.toggle('active', x.dataset.lf === logFilter);
-  for (const div of $('log-list').children) {
-    div.classList.toggle('log-hidden', logFilter !== 'all' && div.dataset.cat !== logFilter);
-  }
+  for (const x of $('log-filter').querySelectorAll('[data-lf]')) x.classList.toggle('active', x.dataset.lf === logFilter);
+  refilterLog();
 });
 
-function appendLog(html, scroll, cat = 'chat') {
+function makeLogEntry(html, cat, players = []) {
   const div = document.createElement('div');
-  div.className = 'log-entry';
+  div.className = cat === 'turn' ? 'log-entry log-sep' : 'log-entry';
   div.dataset.cat = cat;
-  if (logFilter !== 'all' && logFilter !== cat) div.classList.add('log-hidden');
+  div.dataset.players = players.join(',');
   div.innerHTML = html;
-  $('log-list').appendChild(div);
+  entryVisibility(div);
+  return div;
+}
+
+function appendLog(html, scroll, cat = 'chat', players = []) {
+  $('log-list').appendChild(makeLogEntry(html, cat, players));
   if (scroll) $('log-list').scrollTop = $('log-list').scrollHeight;
   // 折叠时累计未读角标（聊天/表情才提醒，流水账不打扰）
   if ($('log-panel').classList.contains('collapsed') && cat === 'chat') {
@@ -1635,6 +1729,31 @@ function appendLog(html, scroll, cat = 'chat') {
     badge.classList.remove('hidden');
   }
 }
+
+// 滚动到顶：向服务端拉取更早的日志，前插并保持视口位置不跳
+$('log-list').addEventListener('scroll', () => {
+  if ($('log-list').scrollTop > 30 || logHistoryDone || logLoading || firstLogSeq <= 1) return;
+  logLoading = true;
+  socket.emit('logBefore', { before: firstLogSeq });
+});
+socket.on('logChunk', ({ entries }) => {
+  logLoading = false;
+  const fresh = (entries || []).filter((e) => e.seq < firstLogSeq).sort((a, b) => a.seq - b.seq);
+  if (!fresh.length) {
+    logHistoryDone = true;
+    return;
+  }
+  const list = $('log-list');
+  const prevH = list.scrollHeight;
+  const frag = document.createDocumentFragment();
+  for (const en of fresh) {
+    const { html, players } = decorateLogText(esc(en.text));
+    frag.appendChild(makeLogEntry(html, en.cat || 'game', players));
+  }
+  firstLogSeq = fresh[0].seq;
+  list.insertBefore(frag, list.firstChild);
+  list.scrollTop += list.scrollHeight - prevH; // 补偿高度差，视口停在原处
+});
 
 // ---------- 战报/聊天抽屉：默认折叠，减少常驻信息（Master Duel 式收纳） ----------
 let logUnread = 0;
@@ -1650,23 +1769,6 @@ function setLogCollapsed(collapsed) {
 }
 $('log-head').onclick = () => setLogCollapsed(!$('log-panel').classList.contains('collapsed'));
 setLogCollapsed(localStorage.getItem('catan_log_open') !== '1');
-
-// ---------- 掷骰点数频率统计（log 框顶部迷你柱状图，数据由服务端 rollStats 下发） ----------
-function updateRollStats() {
-  const box = $('roll-stats');
-  const stats = S?.rollStats || {};
-  const max = Math.max(1, ...Object.values(stats));
-  let html = '';
-  for (let n = 2; n <= 12; n++) {
-    const c = stats[n] || 0;
-    const h = Math.max(2, Math.round((c / max) * 42));
-    html += `<div class="rs-col${n === 6 || n === 8 ? ' hot' : ''}">`
-      + `<span class="rs-count">${c || ''}</span>`
-      + `<div class="rs-bar" style="height:${h}px"></div>`
-      + `<span class="rs-num">${n}</span></div>`;
-  }
-  box.innerHTML = html;
-}
 
 // ---------- 战报框拖拽调高：顶边手柄上下拖动，高度持久化 ----------
 {
@@ -1727,7 +1829,8 @@ document.addEventListener('click', (e) => {
 });
 
 socket.on('emote', ({ index, name, emoji }) => {
-  appendLog(`<span class="chat-msg">${emoji} ${esc(name)}</span>`, true);
+  const pi = S ? S.players.findIndex((pl) => pl.name === name) : -1;
+  appendLog(`<span class="chat-msg">${emoji} ${esc(name)}</span>`, true, 'chat', pi >= 0 ? [pi] : []);
   emoteBurst(index, emoji);
 });
 
