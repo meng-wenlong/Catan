@@ -227,6 +227,11 @@ export const sfx = {
     tone({ freq: 1046, type: 'sine', dur: 0.12, gain: 0.13 });
     tone({ freq: 1568, type: 'sine', dur: 0.18, gain: 0.12, when: 0.11 });
   },
+  // 弃牌：纸牌「唰啦」散落（两声下行扫频错开）
+  discard() {
+    noise({ freq: 2600, freq2: 900, q: 1, dur: 0.22, gain: 0.14 });
+    noise({ freq: 1800, freq2: 700, q: 1.2, dur: 0.2, gain: 0.1, when: 0.12 });
+  },
   // 偷牌：贼溜溜的下-上滑音
   steal() {
     tone({ freq: 520, freq2: 330, type: 'sine', dur: 0.09, gain: 0.1 });

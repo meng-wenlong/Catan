@@ -403,7 +403,11 @@ export class Game {
       this.bank[r] += sel[r] || 0;
     }
     delete this.turn.pendingDiscards[p];
-    this.addLog(`${this.players[p].name} 弃掉了 ${need} 张牌`);
+    // 弃牌信息公开：日志列出明细，事件驱动客户端弃牌动画
+    const dropped = types.filter((r) => (sel[r] || 0) > 0);
+    const detail = dropped.map((r) => `${this.cardName(r)}×${sel[r]}`).join('、');
+    this.addLog(`${this.players[p].name} 弃掉了 ${need} 张牌（${detail}）`);
+    this.addEvent('discard', { player: p, cards: Object.fromEntries(dropped.map((r) => [r, sel[r]])) });
     if (Object.keys(this.turn.pendingDiscards).length === 0) {
       // discardThen：掷 7 后进强盗流程；破坏者卡/首次来袭前则直接回到 main
       if (this.turn.discardThen === 'main') {

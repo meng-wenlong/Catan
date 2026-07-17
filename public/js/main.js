@@ -2109,9 +2109,10 @@ function playEvents() {
       case 'steal':
         animStep((done) => {
           sfx.steal();
-          floatOverPlayer(ev.to, '🕵️ +1');
           floatOverPlayer(ev.from, '−1 🃏');
-          done();
+          // 卡背从受害者飞向偷牌者；条件不满足（元素缺失等）回落为飘字
+          if (!flyStealCard(ev.from, ev.to)) floatOverPlayer(ev.to, '🕵️ +1');
+          setTimeout(done, 600); // 飞行后半程可与后续步骤重叠
         });
         break;
       case 'monopoly':
@@ -2119,6 +2120,13 @@ function playEvents() {
           sfx.coin();
           floatOverPlayer(ev.player, `💰 +${ev.n} ${resIcon(ev.res)}`);
           done();
+        });
+        break;
+      case 'discard':
+        animStep((done) => {
+          sfx.discard();
+          if (!flyDiscardCards(ev.player, ev.cards)) floatOverPlayer(ev.player, '🗑️ 弃牌');
+          setTimeout(done, 400); // 抛散后半程可与后续步骤（如强盗移动）重叠
         });
         break;
       case 'trade': {
@@ -2409,6 +2417,100 @@ function flyResourceFromHex(res, n, player) {
       }
     };
   }
+  return true;
+}
+
+// ---------- 弃牌动画 ----------
+// 弃牌信息公开：真实卡面从玩家处（自己=手牌区，别人=状态栏卡片）向四周抛散坠落淡出
+function flyDiscardCards(playerIdx, cards) {
+  const el = stealAnchorEl(playerIdx);
+  if (!el) return false;
+  const r = el.getBoundingClientRect();
+  if (!r.width) return false;
+  const cx = r.left + r.width / 2;
+  const cy = r.top + r.height / 2;
+  const list = [];
+  for (const [res, n] of Object.entries(cards)) for (let k = 0; k < n; k++) list.push(res);
+  const shown = list.slice(0, 8); // 最多抛 8 张，再多视觉上已无增益
+  shown.forEach((res, i) => {
+    const f = document.createElement('div');
+    f.className = 'fly-discard';
+    f.style.backgroundImage = `url("/assets/opt/resource-${res}.webp")`;
+    f.style.left = `${cx}px`;
+    f.style.top = `${cy}px`;
+    document.body.appendChild(f);
+    // 每张随机方向：先弹起再翻转坠落
+    const dx = (Math.random() - 0.5) * 190;
+    const rise = 42 + Math.random() * 32;
+    const fall = 170 + Math.random() * 70;
+    const rot = (Math.random() - 0.5) * 150;
+    const anim = f.animate([
+      { transform: 'translate(-50%, -50%) scale(.4) rotate(0deg)', opacity: 0, easing: 'cubic-bezier(.34,1.56,.64,1)' },
+      { transform: `translate(calc(${dx * 0.35}px - 50%), calc(${-rise}px - 50%)) scale(1.05) rotate(${rot * 0.35}deg)`, opacity: 1, offset: 0.3, easing: 'cubic-bezier(.45,0,.85,.6)' },
+      { transform: `translate(calc(${dx}px - 50%), calc(${fall}px - 50%)) scale(.85) rotate(${rot}deg)`, opacity: 0, offset: 1 },
+    ], { duration: 950, delay: i * 110, fill: 'backwards' });
+    anim.onfinish = () => f.remove();
+  });
+  if (list.length > shown.length) floatOverPlayer(playerIdx, `🗑️ −${list.length}`);
+  return true;
+}
+
+// ---------- 偷牌动画 ----------
+// 一张卡背从受害者处被「拔出来」（挣扎抖动），沿弧线飞给偷牌者；全程只见卡背不剧透。
+// 锚点：当事人是自己时用底部手牌区，别人用其状态栏卡片。
+const STEAL_MS = 1300;
+function stealAnchorEl(idx) {
+  return idx === myIndex ? $('hand-cards') : $(`player-card-${idx}`);
+}
+function flyStealCard(fromIdx, toIdx) {
+  const fromEl = stealAnchorEl(fromIdx);
+  const toEl = stealAnchorEl(toIdx);
+  if (!fromEl || !toEl) return false;
+  const fr = fromEl.getBoundingClientRect();
+  const tr = toEl.getBoundingClientRect();
+  if (!fr.width || !tr.width) return false;
+  const from = { x: fr.left + fr.width / 2, y: fr.top + fr.height / 2 };
+  const to = { x: tr.left + tr.width / 2, y: tr.top + tr.height / 2 };
+  // 受害者卡片抖一下：牌被人抽走了
+  fromEl.classList.remove('stolen-shake');
+  void fromEl.offsetWidth;
+  fromEl.classList.add('stolen-shake');
+  const f = document.createElement('div');
+  f.className = 'fly-stealcard';
+  f.style.left = `${from.x}px`;
+  f.style.top = `${from.y}px`;
+  document.body.appendChild(f);
+  // 弧线轨迹与产出飞牌同款：二次贝塞尔采样做关键帧
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const arc = Math.min(130, Math.max(60, Math.hypot(dx, dy) * 0.2));
+  const bez = (t) => {
+    const cx2 = dx / 2;
+    const cy2 = Math.min(0, dy) / 2 - arc;
+    return {
+      x: 2 * (1 - t) * t * cx2 + t * t * dx,
+      y: 2 * (1 - t) * t * cy2 + t * t * dy,
+    };
+  };
+  const at = (t, s, rot) => {
+    const pt = bez(t);
+    return `translate(calc(${pt.x}px - 50%), calc(${pt.y}px - 50%)) scale(${s}) rotate(${rot}deg)`;
+  };
+  // 三段：① 拔出并左右挣扎 ② 沿弧线飞向偷牌者 ③ 临近收拢没入
+  const anim = f.animate([
+    { transform: at(0, 0.3, 0), opacity: 0, easing: 'cubic-bezier(.34,1.56,.64,1)' },
+    { transform: at(0, 1.12, -9), opacity: 1, offset: 0.16 },
+    { transform: at(0, 1.02, 7), opacity: 1, offset: 0.3, easing: 'cubic-bezier(.5,0,.6,1)' },
+    { transform: at(0.45, 0.95, -4), opacity: 1, offset: 0.62 },
+    { transform: at(1, 0.5, 6), opacity: 0.9, offset: 1 },
+  ], { duration: STEAL_MS });
+  anim.onfinish = () => {
+    f.remove();
+    sparkleAt(to.x, to.y);
+    toEl.classList.remove('bump');
+    void toEl.offsetWidth;
+    toEl.classList.add('bump');
+  };
   return true;
 }
 

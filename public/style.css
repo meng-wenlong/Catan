@@ -552,6 +552,7 @@ body {
 }
 .res-card.bump { animation: card-bump .9s ease; }
 .player-card.bump { animation: card-bump .9s ease; } /* 别人收获资源飞到状态栏时 pop 一下 */
+#hand-cards.bump { animation: card-bump .9s ease; }  /* 偷到的牌飞进自己手牌区 */
 @keyframes card-bump {
   0% { transform: scale(1); }
   40% { transform: scale(1.18) translateY(-8px); }
@@ -905,6 +906,35 @@ body {
     0 0 16px 3px rgba(255,214,110,.75),
     0 8px 20px rgba(0,0,0,.45);
 }
+/* 弃牌飞卡：真实卡面从玩家处抛散坠落（弃牌信息公开）；无光晕、略降饱和，与产出/偷牌区分 */
+.fly-discard {
+  position: fixed; left: 0; top: 0; z-index: 65; pointer-events: none;
+  width: 50px; height: 66px; border-radius: 8px;
+  background-size: cover; background-position: center;
+  border: 2px solid rgba(228,222,206,.9);
+  box-shadow: 0 8px 18px rgba(0,0,0,.4);
+  filter: saturate(.8);
+}
+
+/* 偷牌飞卡：卡背从受害者飞向偷牌者（全程卡背，不剧透偷到哪张）；幽紫光晕区别于产出的金光 */
+.fly-stealcard {
+  position: fixed; left: 0; top: 0; z-index: 65; pointer-events: none;
+  width: 50px; height: 66px; border-radius: 8px;
+  background: url("/assets/opt/dev-card.webp") center/cover;
+  border: 2px solid rgba(240,232,255,.9);
+  box-shadow:
+    0 0 16px 3px rgba(150,110,230,.6),
+    0 8px 20px rgba(0,0,0,.45);
+}
+/* 被偷者卡片抖一下：牌被人抽走了 */
+.stolen-shake { animation: stolen-shake .55s ease; }
+@keyframes stolen-shake {
+  0%, 100% { transform: translateX(0); }
+  22% { transform: translateX(-6px) rotate(-1deg); }
+  50% { transform: translateX(5px) rotate(.7deg); }
+  78% { transform: translateX(-3px); }
+}
+
 /* 落点金光四溅（--sx/--sy 由 JS 随机指定方向） */
 .spark {
   position: fixed; z-index: 66; pointer-events: none;
