@@ -8,6 +8,7 @@
 - `npm test` — 单元测试（node:test）
 - `node test/e2e-smoke.js` — 基础版端到端冒烟测试，需要服务器已在 3000 端口运行
 - `node test/e2e-ck.js` — 城市与骑士端到端冒烟测试（同上）
+- `node test/e2e-56.js` — 5-6 人扩展端到端冒烟测试（同上，5 客户端）
 - `node test/fuzz-ck.js` — 城市与骑士随机对局模糊测试（直接驱动 Game 类，无需服务器）
 
 ## 架构要点
@@ -17,6 +18,7 @@
 - **断线重连**：玩家身份靠 `token`（UUID），客户端存 sessionStorage（优先）+ localStorage；URL 加 `?new` 强制新会话（同机多开测试用）。
 - **动画**：状态里带 `events` 序列（自增 seq），客户端只播放未见过的事件；棋子出现用 CSS 动画类（`piece-pop` 等）。
 - **规则实现注意**：本回合买的发展卡不能用（`boughtTurn` 判断）；每回合限一张发展卡；骑士可在掷骰前打；银行资源不足且多人应得时该资源全员不发；最长道路被截断且并列时奖励空置。
+- **5-6 人扩展**（人数 ≥5 自动启用，`game.big`，基础版与 ck 都支持）：大地图（`board.js` 行布局 3-4-5-6-5-4-3 共 30 格陆地、11 港、双沙漠、28 数字圈）；银行/牌库扩容（资源每种 24、商品每种 18、发展卡 34）；**特别建设阶段**——`endTurn` 后其余玩家按顺时针依次开建设窗口（`specialBuild` 状态，`turn.sb = {queue, idx, from}`），建造类动作经 `requireBuild` 放行（自己回合 main 或轮到自己的建设窗口），窗口内可建造/买发展卡/买城市升级/激活与升级骑士，禁交易、打牌、骑士行动；开窗与推进都会跳过无建设能力的玩家（`canSpecialBuild`），`sbPass` 手动结束窗口、`sbAutoAdvance`（index.js 每个动作后与掉线时调用）自动推进；只有回合玩家能获胜（`checkWin` 只看 `turn.player`），建设窗口内买升级触发大都会时选择者记在 `metroChoice.player`。
 
 ## 城市与骑士（`mode: 'ck'`）
 

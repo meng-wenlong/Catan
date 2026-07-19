@@ -1,5 +1,8 @@
-// 棋盘生成：19 块陆地六边形（尖顶朝上），顶点/边去重，港口沿海岸放置。
-import { TERRAIN_POOL, NUMBER_SPIRAL, HARBOR_POOL } from './constants.js';
+// 棋盘生成：19 块陆地六边形（尖顶朝上；5-6 人为 30 块加长六边形），顶点/边去重，港口沿海岸放置。
+import {
+  TERRAIN_POOL, NUMBER_SPIRAL, HARBOR_POOL,
+  TERRAIN_POOL_56, NUMBER_SPIRAL_56, HARBOR_POOL_56,
+} from './constants.js';
 
 const SQRT3 = Math.sqrt(3);
 
@@ -53,24 +56,64 @@ function spiralHexCoords(rng) {
   return coords;
 }
 
-export function generateBoard(rng = Math.random) {
+// 5-6 人加长六边形：7 行 3-4-5-6-5-4-3 共 30 格（[r, qMin, qMax]）
+const BIG_ROWS = [
+  [-3, 0, 2], [-2, -1, 2], [-1, -2, 2], [0, -3, 2],
+  [1, -3, 1], [2, -3, 0], [3, -3, -1],
+];
+
+// 大地图的外→内螺旋：逐层剥壳，把每层边界串成环（每层起点随机旋转）
+function bigSpiralCoords(rng) {
+  const all = [];
+  for (const [r, q1, q2] of BIG_ROWS) for (let q = q1; q <= q2; q++) all.push([q, r]);
+  const dirs = [
+    [1, 0], [0, 1], [-1, 1], [-1, 0], [0, -1], [1, -1],
+  ];
+  const key = (q, r) => `${q},${r}`;
+  const left = new Set(all.map(([q, r]) => key(q, r)));
+  const out = [];
+  while (left.size > 0) {
+    const boundary = all.filter(([q, r]) => left.has(key(q, r))
+      && dirs.some(([dq, dr]) => !left.has(key(q + dq, r + dr))));
+    const visited = new Set();
+    const ring = [];
+    let cur = boundary[0];
+    while (cur) {
+      ring.push(cur);
+      visited.add(key(cur[0], cur[1]));
+      const [cq, cr] = cur;
+      cur = boundary.find(([q, r]) => !visited.has(key(q, r))
+        && dirs.some(([dq, dr]) => cq + dq === q && cr + dr === r));
+    }
+    for (const c of boundary) if (!visited.has(key(c[0], c[1]))) ring.push(c);
+    const off = Math.floor(rng() * ring.length);
+    for (const c of ring.slice(off).concat(ring.slice(0, off))) {
+      out.push(c);
+      left.delete(key(c[0], c[1]));
+    }
+  }
+  return out;
+}
+
+export function generateBoard(rng = Math.random, big = false) {
   for (let attempt = 0; attempt < 200; attempt++) {
-    const board = tryGenerate(rng);
+    const board = tryGenerate(rng, big);
     if (board) return board;
   }
   throw new Error('board generation failed');
 }
 
-function tryGenerate(rng) {
-  const coords = spiralHexCoords(rng);
-  const terrains = shuffle(TERRAIN_POOL, rng);
+function tryGenerate(rng, big) {
+  const coords = big ? bigSpiralCoords(rng) : spiralHexCoords(rng);
+  const terrains = shuffle(big ? TERRAIN_POOL_56 : TERRAIN_POOL, rng);
+  const numberSpiral = big ? NUMBER_SPIRAL_56 : NUMBER_SPIRAL;
 
   // 沿螺旋放数字，沙漠跳过
   const hexes = [];
   let ni = 0;
   coords.forEach(([q, r], i) => {
     const terrain = terrains[i];
-    const number = terrain === 'desert' ? null : NUMBER_SPIRAL[ni++];
+    const number = terrain === 'desert' ? null : numberSpiral[ni++];
     const { x, y } = hexCenter(q, r);
     hexes.push({ id: i, q, r, x, y, terrain, number });
   });
@@ -122,12 +165,13 @@ function tryGenerate(rng) {
   // 海岸边环：只属于一块陆地的边，按顺序连成环后放置港口
   const coastal = edges.filter((e) => e.hexes.length === 1);
   const ring = orderCoastalRing(coastal, vertices);
-  const gaps = [3, 4, 3, 3, 4, 3, 3, 4, 3];
-  const types = shuffle(HARBOR_POOL, rng);
+  // 港口间距沿海岸环分布：基础版海岸 30 边放 9 港，大地图 38 边放 11 港
+  const gaps = big ? [3, 4, 3, 4, 3, 4, 3, 4, 3, 4, 3] : [3, 4, 3, 3, 4, 3, 3, 4, 3];
+  const types = shuffle(big ? HARBOR_POOL_56 : HARBOR_POOL, rng);
   const startOffset = Math.floor(rng() * ring.length);
   const harbors = [];
   let idx = startOffset;
-  for (let i = 0; i < 9; i++) {
+  for (let i = 0; i < types.length; i++) {
     const e = ring[idx % ring.length];
     const hex = hexes[e.hexes[0]];
     const mx = (vertices[e.v1].x + vertices[e.v2].x) / 2;

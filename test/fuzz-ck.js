@@ -17,7 +17,10 @@ const ALL = [...RES, 'cloth', 'coin', 'paper'];
 for (let seed = 1; seed <= 30; seed++) {
   const rng = seeded(seed);
   const rnd = (n) => Math.floor(rng() * n);
-  const g = new Game([{ name: 'A' }, { name: 'B' }, { name: 'C' }], seeded(seed + 999), 0, 'ck');
+  // 3-6 人轮换：覆盖 5-6 人扩展（大地图 + 特别建设阶段）
+  const np = 3 + (seed % 4);
+  const infos = ['A', 'B', 'C', 'D', 'E', 'F'].slice(0, np).map((name) => ({ name }));
+  const g = new Game(infos, seeded(seed + 999), 0, 'ck');
   // 初始放置
   while (g.phase === 'setup') {
     const p = g.currentSetupPlayer();
@@ -72,8 +75,27 @@ for (let seed = 1; seed <= 30; seed++) {
         const mine = Object.keys(g.knights).filter((v) => g.knights[v].player === t);
         g.deserterPick(t, Number(mine[rnd(mine.length)]));
       } else if (st === 'metropolis') {
-        const o = g.turn.metroChoice.options;
-        g.chooseMetropolis(p, o[rnd(o.length)]);
+        const c = g.turn.metroChoice;
+        g.chooseMetropolis(c.player, c.options[rnd(c.options.length)]);
+      } else if (st === 'specialBuild') {
+        const b = g.turn.sb.queue[g.turn.sb.idx];
+        // 随机尝试一次建设动作（失败无妨），然后结束建设窗口
+        try {
+          const roll = rnd(4);
+          if (roll === 0) {
+            const es = g.validRoadEdges(b);
+            if (es.length) g.buildRoad(b, es[rnd(es.length)]);
+          } else if (roll === 1) {
+            const spots = g.validKnightSpots(b);
+            if (spots.length) g.buildKnight(b, spots[rnd(spots.length)]);
+          } else if (roll === 2) {
+            const mine = Object.keys(g.knights).filter((v) => g.knights[v].player === b && !g.knights[v].active);
+            if (mine.length) g.activateKnight(b, Number(mine[0]));
+          } else {
+            g.buyImprovement(b, ['trade', 'politics', 'science'][rnd(3)]);
+          }
+        } catch (e) { if (!e.isGameError) throw e; }
+        if (g.turn.state === 'specialBuild' && g.turn.sb.queue[g.turn.sb.idx] === b) g.sbPass(b);
       } else if (st === 'pickCards') {
         g.pickCard(p, ALL.find((r) => g.players[g.turn.pick.from].hand[r] > 0));
       } else if (st === 'pickProgress') {
@@ -166,11 +188,11 @@ for (let seed = 1; seed <= 30; seed++) {
                     && g.board.vertices[v].adjE.some((e) => g.roads[e] === p));
                   if (ks.length) g.playProgress(p, 'intrigue', { vertex: Number(ks[0]) });
                 } else if (targeted.type === 'deserter') {
-                  const ts = [0, 1, 2].filter((i) => i !== p
+                  const ts = g.players.map((_, i) => i).filter((i) => i !== p
                     && Object.values(g.knights).some((k) => k.player === i));
                   if (ts.length) g.playProgress(p, 'deserter', { target: ts[rnd(ts.length)] });
                 } else {
-                  g.playProgress(p, targeted.type, { target: (p + 1 + rnd(2)) % 3 });
+                  g.playProgress(p, targeted.type, { target: (p + 1 + rnd(g.players.length - 1)) % g.players.length });
                 }
               }
             }
@@ -184,7 +206,7 @@ for (let seed = 1; seed <= 30; seed++) {
       }
       // 序列化不应抛错
       g.publicState();
-      g.privateState(0); g.privateState(1); g.privateState(2);
+      for (let i = 0; i < g.players.length; i++) g.privateState(i);
     }
   } catch (e) {
     if (!e.isGameError) {
@@ -193,6 +215,6 @@ for (let seed = 1; seed <= 30; seed++) {
     }
   }
   const w = g.winner === null ? '未分胜负' : `${g.players[g.winner].name} 胜（${g.victoryPoints(g.winner, true)}分）`;
-  console.log(`seed ${seed}: ${steps} 步，野蛮人来袭 ${g.barbarians.attacks} 次，${w}`);
+  console.log(`seed ${seed}（${np} 人）: ${steps} 步，野蛮人来袭 ${g.barbarians.attacks} 次，${w}`);
 }
 console.log('模糊测试通过 ✅');

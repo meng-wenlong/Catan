@@ -24,6 +24,7 @@ export const WALL_COST = { brick: 2 };
 export const CK_WIN_VP = 13;
 export const BARBARIAN_TRACK = 7;   // 船走 7 格登陆
 export const COM_BANK = 12;         // 每种商品的银行存量
+export const COM_BANK_56 = 18;      // 5-6 人：每种商品 +6
 export const KNIGHT_PER_LEVEL = 2;  // 每级骑士棋子数
 export const MAX_WALLS = 3;
 export const MAX_PROGRESS_HAND = 4;
@@ -92,7 +93,7 @@ export const ckMethods = {
     this.progressDecks = Object.fromEntries(
       Object.entries(PROGRESS_DECKS).map(([k, deck]) => [k, shuffle(deck, this.rng)]),
     );
-    for (const c of COMMODITIES) this.bank[c] = COM_BANK;
+    for (const c of COMMODITIES) this.bank[c] = this.big ? COM_BANK_56 : COM_BANK;
     for (const pl of this.players) {
       pl.improvements = { trade: 0, politics: 0, science: 0 };
       pl.progressCards = []; // {type, deck}
@@ -164,9 +165,8 @@ export const ckMethods = {
   },
 
   buildKnight(p, v) {
-    this.requireTurn(p);
     this.requireCK();
-    this.requireState('main');
+    this.requireBuild(p);
     if (!this.canAfford(p, KNIGHT_COST)) this.err('资源不足（需要 1羊毛 1矿石）');
     if (this.knightCountAtLevel(p, 1) >= KNIGHT_PER_LEVEL) this.err('一级骑士棋子已用完');
     if (!this.validKnightSpots(p).includes(v)) this.err('该位置不能放置骑士');
@@ -196,9 +196,8 @@ export const ckMethods = {
   },
 
   upgradeKnight(p, v) {
-    this.requireTurn(p);
     this.requireCK();
-    this.requireState('main');
+    this.requireBuild(p);
     const why = this.canPromoteKnight(p, v);
     if (why) this.err(why);
     if (!this.canAfford(p, KNIGHT_COST)) this.err('资源不足（需要 1羊毛 1矿石）');
@@ -211,9 +210,8 @@ export const ckMethods = {
   },
 
   activateKnight(p, v) {
-    this.requireTurn(p);
     this.requireCK();
-    this.requireState('main');
+    this.requireBuild(p);
     const k = this.knights[v];
     if (!k || k.player !== p) this.err('只能激活自己的骑士');
     if (k.active) this.err('该骑士已激活');
@@ -343,9 +341,8 @@ export const ckMethods = {
 
   // ---------- 城墙 ----------
   buildWall(p, v) {
-    this.requireTurn(p);
     this.requireCK();
-    this.requireState('main');
+    this.requireBuild(p);
     if (!this.canAfford(p, WALL_COST)) this.err('资源不足（城墙需要 2砖块）');
     if (this.wallCountOf(p) >= MAX_WALLS) this.err(`每人最多 ${MAX_WALLS} 座城墙`);
     const b = this.buildings[v];
@@ -359,9 +356,8 @@ export const ckMethods = {
 
   // ---------- 城市升级（贸易/政治/科学） ----------
   buyImprovement(p, track) {
-    this.requireTurn(p);
     this.requireCK();
-    this.requireState('main');
+    this.requireBuild(p);
     if (!IMPROVE_TRACKS.includes(track)) this.err('无效的升级路线');
     const pl = this.players[p];
     const lvl = pl.improvements[track];
@@ -370,12 +366,14 @@ export const ckMethods = {
       this.err('需要至少拥有一座城市');
     }
     const com = TRACK_COM[track];
+    // 起重机折扣属于回合玩家：特别建设阶段的建设者不享受
+    const crane = this.turn.state === 'main' && this.turn.crane;
     let cost = lvl + 1;
-    if (this.turn.crane) cost = Math.max(0, cost - 1);
+    if (crane) cost = Math.max(0, cost - 1);
     if (pl.hand[com] < cost) this.err(`需要 ${cost} 张${CARD_NAME[com]}`);
     pl.hand[com] -= cost;
     this.bank[com] += cost;
-    if (this.turn.crane) this.turn.crane = false;
+    if (crane) this.turn.crane = false;
     const newLvl = lvl + 1;
     pl.improvements[track] = newLvl;
     this.addEvent('improve', { player: p, track, level: newLvl });
@@ -386,6 +384,23 @@ export const ckMethods = {
     }
     if (newLvl >= 4) this.checkMetropolis(track, p, newLvl);
     this.checkWin();
+  },
+
+  // 特别建设阶段：ck 独有的可建设项（骑士/城墙/城市升级/激活/骑士升级）
+  canSpecialBuildCK(p) {
+    const pl = this.players[p];
+    const h = pl.hand;
+    if (h.sheep >= 1 && h.ore >= 1 && this.knightCountAtLevel(p, 1) < KNIGHT_PER_LEVEL
+      && this.validKnightSpots(p).length > 0) return true;
+    if (h.brick >= 2 && this.wallCountOf(p) < MAX_WALLS
+      && this.ownCityVertices(p).some((v) => this.walls[v] === undefined)) return true;
+    const hasCity = Object.values(this.buildings).some((b) => b.player === p && b.type === 'city');
+    if (hasCity && IMPROVE_TRACKS.some((t) => pl.improvements[t] < 5
+      && h[TRACK_COM[t]] >= pl.improvements[t] + 1)) return true;
+    if (h.wheat >= 1 && Object.values(this.knights).some((k) => k.player === p && !k.active)) return true;
+    if (h.sheep >= 1 && h.ore >= 1 && Object.keys(this.knights)
+      .some((v) => this.knights[v].player === p && !this.canPromoteKnight(p, Number(v)))) return true;
+    return false;
   },
 
   checkMetropolis(track, p, newLvl) {
@@ -405,7 +420,7 @@ export const ckMethods = {
       this.placeMetropolis(track, p, options[0]);
       return;
     }
-    this.turn.metroChoice = { track, options };
+    this.turn.metroChoice = { track, options, player: p };
     this.turn.state = 'metropolis';
     this.addLog(`${this.players[p].name} 请选择建立${TRACK_NAME[track]}大都会的城市`);
   },
@@ -419,13 +434,14 @@ export const ckMethods = {
   },
 
   chooseMetropolis(p, v) {
-    this.requireTurn(p);
     this.requireCK();
     this.requireState('metropolis');
     const c = this.turn.metroChoice;
+    if (!c || c.player !== p) this.err('你不需要选择');
     if (!c.options.includes(v)) this.err('无效的城市');
     this.turn.metroChoice = null;
-    this.turn.state = 'main';
+    // 特别建设阶段的建设者买升级触发大都会：选完回到建设窗口
+    this.turn.state = this.turn.sb ? 'specialBuild' : 'main';
     this.placeMetropolis(c.track, p, v);
     this.checkWin();
   },
@@ -1116,38 +1132,47 @@ export const ckMethods = {
       hints.harborTake = true;
       return;
     }
+    // 大都会选城：选择者可能是特别建设阶段的建设者，不再按回合玩家发提示
+    if (this.turn.state === 'metropolis') {
+      if (this.turn.metroChoice?.player === p) hints.metroSpots = this.turn.metroChoice.options;
+      return;
+    }
     if (this.turn.player === p) {
-      if (this.turn.state === 'metropolis') { hints.metroSpots = this.turn.metroChoice.options; return; }
       if (this.turn.state === 'pickCards') { hints.pickHand = { ...this.players[this.turn.pick.from].hand }; return; }
       if (this.turn.state === 'pickProgress') { hints.pickList = this.players[this.turn.pick.from].progressCards.map((c) => c.type); return; }
       if (this.turn.state === 'harbor' && this.turn.harbor.stage === 'give') { hints.harborGive = true; return; }
     }
-    if (this.turn.player !== p || this.turn.state !== 'main') return;
+    // 特别建设阶段的建设者拿建造类提示（骑士行动/进步卡目标类提示不发）
+    const sb = this.sbBuilder() === p;
+    if (!sb && (this.turn.player !== p || this.turn.state !== 'main')) return;
     hints.knightSpots = this.validKnightSpots(p);
     hints.wallSpots = this.wallCountOf(p) >= MAX_WALLS ? []
       : this.ownCityVertices(p).filter((v) => this.walls[v] === undefined);
-    hints.merchantHexes = this.board.hexes
-      .filter((h) => TERRAIN_RESOURCE[h.terrain] && this.board.vertices
-        .some((v) => v.hexes.includes(h.id) && this.buildings[v.id]?.player === p))
-      .map((h) => h.id);
-    hints.intrigueKnights = Object.entries(this.knights)
-      .filter(([v, k]) => k.player !== p
-        && this.board.vertices[v].adjE.some((e) => this.roads[e] === p))
-      .map(([v]) => Number(v));
-    hints.openRoads = Object.keys(this.roads).map(Number).filter((eid) => {
-      const owner = this.roads[eid];
-      const e = this.board.edges[eid];
-      const freeEnd = (v) => {
-        if (this.buildings[v]?.player === owner) return false;
-        if (this.knights[v]?.player === owner) return false;
-        return !this.board.vertices[v].adjE.some((e2) => e2 !== eid && this.roads[e2] === owner);
-      };
-      return freeEnd(e.v1) || freeEnd(e.v2);
-    });
+    if (!sb) {
+      hints.merchantHexes = this.board.hexes
+        .filter((h) => TERRAIN_RESOURCE[h.terrain] && this.board.vertices
+          .some((v) => v.hexes.includes(h.id) && this.buildings[v.id]?.player === p))
+        .map((h) => h.id);
+      hints.intrigueKnights = Object.entries(this.knights)
+        .filter(([v, k]) => k.player !== p
+          && this.board.vertices[v].adjE.some((e) => this.roads[e] === p))
+        .map(([v]) => Number(v));
+      hints.openRoads = Object.keys(this.roads).map(Number).filter((eid) => {
+        const owner = this.roads[eid];
+        const e = this.board.edges[eid];
+        const freeEnd = (v) => {
+          if (this.buildings[v]?.player === owner) return false;
+          if (this.knights[v]?.player === owner) return false;
+          return !this.board.vertices[v].adjE.some((e2) => e2 !== eid && this.roads[e2] === owner);
+        };
+        return freeEnd(e.v1) || freeEnd(e.v2);
+      });
+    }
     hints.myKnights = {};
     for (const [v, k] of Object.entries(this.knights)) {
       if (k.player !== p) continue;
-      const canAct = !this.knightCanAct(p, Number(v));
+      // 特别建设阶段只能激活/升级，不能行动
+      const canAct = !sb && !this.knightCanAct(p, Number(v));
       const targets = canAct ? this.knightMoveTargets(p, Number(v)) : { moves: [], displaces: [] };
       hints.myKnights[v] = {
         activate: !k.active,

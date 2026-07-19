@@ -116,7 +116,7 @@ function openRoomsList() {
   const list = [];
   for (const room of rooms.values()) {
     if (room.game || room.picking) continue;
-    if (room.players.length >= 4) continue;
+    if (room.players.length >= 6) continue;
     if (!room.players.some((p) => p.socketId)) continue;
     const host = room.players.find((p) => p.token === room.hostToken) || room.players[0];
     list.push({ code: room.code, hostName: host ? host.name : '房间', count: room.players.length });
@@ -223,7 +223,7 @@ io.on('connection', (socket) => {
 
     if (room.game) return fail('游戏已开始，无法加入');
     if (room.picking) return fail('房间正在选择颜色，无法加入');
-    if (room.players.length >= 4) return fail('房间已满（最多 4 人）');
+    if (room.players.length >= 6) return fail('房间已满（最多 6 人）');
     name = String(name || '').trim().slice(0, 12);
     if (!name) return fail('请输入昵称');
     if (room.players.some((p) => p.name === name)) return fail('昵称已被使用');
@@ -265,7 +265,7 @@ io.on('connection', (socket) => {
     if (room.hostToken !== myToken) return fail('只有房主可以开始游戏');
     if (room.game) return fail('游戏已开始');
     if (room.picking) return fail('已在选择颜色阶段');
-    if (room.players.length < 2) return fail('至少需要 2 名玩家（标准为 3-4 人）');
+    if (room.players.length < 2) return fail('至少需要 2 名玩家（3-4 人标准，5-6 人自动启用扩展）');
     room.picking = {
       // 上一局选过的颜色作为默认（重开一局时不用重选）
       colors: room.players.map((p) => (Number.isInteger(p.colorIdx) ? p.colorIdx : null)),
@@ -424,6 +424,7 @@ io.on('connection', (socket) => {
         case 'respondTrade': g.respondTrade(p, !!data.accept); break;
         case 'acceptTradeWith': g.acceptTradeWith(p, data.target); break;
         case 'endTurn': g.endTurn(p); break;
+        case 'sbPass': g.sbPass(p); break;
         // ---- 城市与骑士 ----
         case 'buildKnight': g.buildKnight(p, data.vertex); break;
         case 'upgradeKnight': g.upgradeKnight(p, data.vertex); break;
@@ -453,6 +454,8 @@ io.on('connection', (socket) => {
         case 'devGiveNPC': g.devGiveNPC(data.target, data.card, data.n || 1); break;
         default: return fail('未知操作');
       }
+      // 特别建设阶段：动作结算后当前建设者已无事可做时自动推进
+      g.sbAutoAdvance();
       broadcastGame(room);
     } catch (e) {
       if (e.isGameError) fail(e.message);
@@ -520,6 +523,8 @@ io.on('connection', (socket) => {
     room.players[idx].socketId = null;
     if (room.game) {
       room.game.players[idx].connected = false;
+      // 特别建设阶段的当前建设者掉线：自动跳过，避免卡住所有人
+      room.game.sbAutoAdvance();
       broadcastGame(room);
     } else if (room.hostToken === myToken && room.players.length === 1) {
       rooms.delete(room.code); // 空的未开始房间直接清理

@@ -1,7 +1,7 @@
 // 卡坦岛核心规则（服务端权威）：基础版 + 「城市与骑士」扩展（mode: 'base' | 'ck'）
 import {
-  RESOURCES, TERRAIN_RESOURCE, COSTS, DEV_DECK, PIECE_LIMITS,
-  BANK_PER_RESOURCE, WIN_VP, PLAYER_COLORS, COLOR_NAMES,
+  RESOURCES, TERRAIN_RESOURCE, COSTS, DEV_DECK, DEV_DECK_56, PIECE_LIMITS,
+  BANK_PER_RESOURCE, BANK_PER_RESOURCE_56, WIN_VP, PLAYER_COLORS, COLOR_NAMES,
 } from './constants.js';
 import { generateBoard, shuffle } from './board.js';
 import { longestRoadLength } from './longestRoad.js';
@@ -26,7 +26,8 @@ export class Game {
     this.mode = mode === 'ck' ? 'ck' : 'base';
     this.ck = this.mode === 'ck';
     this.dev = !!opts.dev; // 调试模式：仅经专用入口开启，正常局恒为 false
-    this.board = generateBoard(rng);
+    this.big = playerInfos.length >= 5; // 5-6 人扩展：大地图 + 银行/牌库扩容 + 特别建设阶段
+    this.board = generateBoard(rng, this.big);
     this.robber = this.board.robber;
     this.buildings = {}; // vertexId -> {player, type}
     this.roads = {};     // edgeId -> playerIdx
@@ -40,8 +41,10 @@ export class Game {
       pieces: { ...PIECE_LIMITS },
       connected: true,
     }));
-    this.bank = Object.fromEntries(RESOURCES.map((r) => [r, BANK_PER_RESOURCE]));
-    this.devDeck = shuffle(DEV_DECK, rng);
+    this.bank = Object.fromEntries(
+      RESOURCES.map((r) => [r, this.big ? BANK_PER_RESOURCE_56 : BANK_PER_RESOURCE]),
+    );
+    this.devDeck = shuffle(this.big ? DEV_DECK_56 : DEV_DECK, rng);
     this.phase = 'setup';
     const n = this.players.length;
     const order = Array.from({ length: n }, (_, k) => (first + k) % n);
@@ -55,6 +58,7 @@ export class Game {
       player: 0, count: 1, rolled: false, dice: null,
       devPlayed: false, state: 'setup', freeRoads: 0,
       pendingDiscards: {}, stealTargets: [], discardThen: 'robber',
+      sb: null, // 特别建设阶段（5-6 人）{queue, idx, from}
       // 以下仅 ck 模式使用
       eventDie: null, fleet: null, crane: false,
       pendingAqueduct: [], pendingCityLoss: {}, postRollTotal: 0,
@@ -130,6 +134,23 @@ export class Game {
 
   requireState(...states) {
     if (!states.includes(this.turn.state)) this.err('当前不能进行此操作');
+  }
+
+  // 特别建设阶段当前建设者（不在该阶段时返回 -1）
+  sbBuilder() {
+    return this.turn.state === 'specialBuild' && this.turn.sb
+      ? this.turn.sb.queue[this.turn.sb.idx] : -1;
+  }
+
+  // 建造类动作的权限：自己回合的 main 阶段，或特别建设阶段轮到自己的窗口
+  requireBuild(p) {
+    if (this.phase === 'ended') this.err('游戏已结束');
+    if (this.turn.state === 'specialBuild') {
+      if (this.sbBuilder() !== p) this.err('还没轮到你建设');
+      return;
+    }
+    this.requireTurn(p);
+    this.requireState('main');
   }
 
   canAfford(p, cost) {
@@ -488,9 +509,11 @@ export class Game {
 
   // ---------- 建造 ----------
   buildRoad(p, e) {
-    this.requireTurn(p);
-    if (this.turn.state === 'roadbuilding') return this.placeFreeRoad(p, e);
-    this.requireState('main');
+    if (this.turn.state === 'roadbuilding') {
+      this.requireTurn(p);
+      return this.placeFreeRoad(p, e);
+    }
+    this.requireBuild(p);
     if (!this.canAfford(p, COSTS.road)) this.err('资源不足（需要 1木材 1砖块）');
     if (this.players[p].pieces.road <= 0) this.err('道路棋子已用完');
     if (!this.validRoadEdges(p).includes(e)) this.err('该位置不能修路');
@@ -520,8 +543,7 @@ export class Game {
   }
 
   buildSettlement(p, v) {
-    this.requireTurn(p);
-    this.requireState('main');
+    this.requireBuild(p);
     if (!this.canAfford(p, COSTS.settlement)) this.err('资源不足（需要 木材 砖块 羊毛 小麦 各1）');
     if (this.players[p].pieces.settlement <= 0) this.err('村庄棋子已用完');
     if (!this.validSettlementVertices(p, false).includes(v)) this.err('该位置不能建村庄');
@@ -535,8 +557,7 @@ export class Game {
   }
 
   buildCity(p, v) {
-    this.requireTurn(p);
-    this.requireState('main');
+    this.requireBuild(p);
     if (!this.canAfford(p, COSTS.city)) this.err('资源不足（需要 2小麦 3矿石）');
     if (this.players[p].pieces.city <= 0) this.err('城市棋子已用完');
     const b = this.buildings[v];
@@ -553,8 +574,7 @@ export class Game {
   // ---------- 发展卡 ----------
   buyDev(p) {
     if (this.ck) this.err('城市与骑士模式没有发展卡');
-    this.requireTurn(p);
-    this.requireState('main');
+    this.requireBuild(p);
     if (this.devDeck.length === 0) this.err('发展卡已抽完');
     if (!this.canAfford(p, COSTS.dev)) this.err('资源不足（需要 羊毛 小麦 矿石 各1）');
     this.pay(p, COSTS.dev);
@@ -744,8 +764,69 @@ export class Game {
 
   finishEndTurn(p) {
     this.trade = null;
+    if (this.startSpecialBuild(p)) return;
+    this.completeTurnEnd(p);
+  }
+
+  // ---------- 特别建设阶段（5-6 人） ----------
+  // 回合结束后其余玩家按顺时针依次获得建设窗口：只能建造/购买，
+  // 不能交易、打牌、骑士行动；开窗与推进时都会跳过无法建设的玩家。
+  startSpecialBuild(p) {
+    if (!this.big || this.dev) return false;
+    const n = this.players.length;
+    const queue = [];
+    for (let k = 1; k < n; k++) queue.push((p + k) % n);
+    const eligible = queue.filter((i) => this.players[i].connected && this.canSpecialBuild(i));
+    if (eligible.length === 0) return false;
+    this.turn.sb = { queue: eligible, idx: 0, from: p };
+    this.turn.state = 'specialBuild';
+    this.addLog(`🔨 特别建设阶段：${eligible.map((i) => this.players[i].name).join('、')} 可依次建设`);
+    return true;
+  }
+
+  // 该玩家当前是否有任何付得起的建设选项（决定要不要给他开建设窗口）
+  canSpecialBuild(p) {
+    const pl = this.players[p];
+    const h = pl.hand;
+    if (h.wood >= 1 && h.brick >= 1 && pl.pieces.road > 0
+      && this.validRoadEdges(p).length > 0) return true;
+    if (h.wood >= 1 && h.brick >= 1 && h.sheep >= 1 && h.wheat >= 1
+      && pl.pieces.settlement > 0 && this.validSettlementVertices(p, false).length > 0) return true;
+    if (h.wheat >= 2 && h.ore >= 3 && pl.pieces.city > 0
+      && this.validCityVertices(p).length > 0) return true;
+    if (!this.ck) {
+      return h.sheep >= 1 && h.wheat >= 1 && h.ore >= 1 && this.devDeck.length > 0;
+    }
+    return this.canSpecialBuildCK(p);
+  }
+
+  sbPass(p) {
+    this.requireState('specialBuild');
+    if (this.sbBuilder() !== p) this.err('还没轮到你建设');
+    this.sbAdvance();
+  }
+
+  // 推进到下一个还能建设的玩家；全部完成后真正结束回合
+  sbAdvance() {
+    const sb = this.turn.sb;
+    do { sb.idx++; } while (sb.idx < sb.queue.length
+      && !(this.players[sb.queue[sb.idx]].connected && this.canSpecialBuild(sb.queue[sb.idx])));
+    if (sb.idx >= sb.queue.length) {
+      this.turn.sb = null;
+      this.completeTurnEnd(sb.from);
+    }
+  }
+
+  // 动作结算或掉线后调用：当前建设者已无事可做时自动推进
+  sbAutoAdvance() {
+    if (this.turn.state !== 'specialBuild') return;
+    const cur = this.sbBuilder();
+    if (!this.players[cur].connected || !this.canSpecialBuild(cur)) this.sbAdvance();
+  }
+
+  completeTurnEnd(p) {
     // 调试模式：跳过所有 NPC，直接回到玩家 0（NPC 仅作卡牌目标，不占回合）
-    this.turn.player = this.dev ? 0 : (this.turn.player + 1) % this.players.length;
+    this.turn.player = this.dev ? 0 : (p + 1) % this.players.length;
     this.turn.count++;
     this.turn.rolled = false;
     this.turn.dice = null;
@@ -870,6 +951,7 @@ export class Game {
         freeRoads: this.turn.freeRoads,
         pendingDiscards: { ...this.turn.pendingDiscards },
         stealTargets: this.turn.stealTargets,
+        sb: this.turn.sb ? { queue: this.turn.sb.queue, idx: this.turn.sb.idx } : null,
       },
       ck: this.ck ? {
         barbarians: { ...this.barbarians, track: BARBARIAN_TRACK },
@@ -889,6 +971,7 @@ export class Game {
           : null,
         deserter: this.turn.deserter ? { ...this.turn.deserter } : null,
         metroTrack: this.turn.metroChoice?.track ?? null,
+        metroPlayer: this.turn.metroChoice?.player ?? null,
         pick: this.turn.pick ? { type: this.turn.pick.type, from: this.turn.pick.from, count: this.turn.pick.count } : null,
         pendingGive: Object.fromEntries(Object.entries(this.turn.pendingGive)),
         harbor: this.turn.harbor
@@ -942,6 +1025,11 @@ export class Game {
         hints.settlements = this.validSettlementVertices(p, false);
         hints.cities = this.validCityVertices(p);
       }
+    } else if (this.phase === 'play' && this.sbBuilder() === p) {
+      // 特别建设阶段：当前建设者获得与 main 相同的建造位置提示
+      hints.roads = this.validRoadEdges(p);
+      hints.settlements = this.validSettlementVertices(p, false);
+      hints.cities = this.validCityVertices(p);
     }
     if (this.ck && this.phase === 'play') this.ckHints(p, hints);
     return {

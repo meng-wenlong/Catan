@@ -494,7 +494,7 @@ function fillRooms(wrap, ul, list) {
     right.className = 'room-right';
     const meta = document.createElement('span');
     meta.className = 'room-meta';
-    meta.textContent = `${r.count}/4 人`;
+    meta.textContent = `${r.count}/6 人`;
     const btn = document.createElement('button');
     btn.className = 'btn small primary';
     btn.textContent = '加入';
@@ -803,6 +803,9 @@ socket.on('returnToLobby', () => {
 
 const colors = () => S.players.map((p) => p.color);
 const isMyTurn = () => S.phase === 'play' && S.turn.player === myIndex;
+// 特别建设阶段（5-6 人）：当前建设窗口是否轮到我
+const mySpecialBuild = () => S.phase === 'play' && S.turn.state === 'specialBuild'
+  && S.turn.sb && S.turn.sb.queue[S.turn.sb.idx] === myIndex;
 const isMySetup = () => S.phase === 'setup' && S.setup.current === myIndex;
 const amHost = () => !!S && S.hostIndex === myIndex;
 
@@ -867,8 +870,9 @@ function renderBarbBar() {
 // ---------- 城市升级面板（收纳原棋盘左列的升级轨道） ----------
 // 每列一条升级轨道：等级点、解锁说明、大都会归属、购买按钮
 function improveTrackData(t) {
-  const canAct = isMyTurn() && S.turn.state === 'main';
-  const craneOn = canAct && S.ck.crane;
+  const canAct = (isMyTurn() && S.turn.state === 'main') || mySpecialBuild();
+  // 起重机折扣只属于回合玩家本人的 main 阶段
+  const craneOn = isMyTurn() && S.turn.state === 'main' && S.ck.crane;
   // 官方规则：没有城市时不能购买城市升级（已有等级保留）
   const hasCity = myIndex >= 0 && Object.values(S.buildings).some((b) => b.player === myIndex && b.type === 'city');
   const lvl = myIndex < 0 ? 0 : S.players[myIndex].improvements[t];
@@ -988,7 +992,13 @@ function renderStatus() {
         ? '🏳️ 逃兵！请点击你要交出的骑士'
         : `等待 ${S.players[d.target].name} 选择叛逃的骑士…`;
     } else if (st === 'metropolis') {
-      text = isMyTurn() ? '🏛️ 请点击一座城市建立大都会' : `${cur.name} 正在选择大都会城市…`;
+      const chooser = S.players[S.ck.metroPlayer] || cur;
+      text = S.ck.metroPlayer === myIndex ? '🏛️ 请点击一座城市建立大都会' : `${chooser.name} 正在选择大都会城市…`;
+    } else if (st === 'specialBuild') {
+      const builder = S.players[S.turn.sb.queue[S.turn.sb.idx]];
+      text = mySpecialBuild()
+        ? '🔨 特别建设阶段：你可以建造/购买（不能交易和打牌）'
+        : `🔨 特别建设阶段：等待 ${builder.name} 建设…`;
     } else if (st === 'pickCards') {
       text = isMyTurn()
         ? `🃏 商业大亨：请从对方手牌中拿 ${S.ck.pick.count} 张`
@@ -1404,7 +1414,9 @@ $('alchemist-confirm').onclick = () => {
 
 function renderButtons() {
   const my = isMyTurn();
-  const main = my && S.turn.state === 'main';
+  const sbMine = mySpecialBuild();
+  // 建造类按钮在自己回合 main 或特别建设窗口都可用；交易只限自己回合
+  const main = (my && S.turn.state === 'main') || sbMine;
   const hand = S.you.hand;
   const ckMode = S.mode === 'ck';
   // 中央大掷骰按钮：只在自己回合的掷骰阶段弹出
@@ -1424,8 +1436,9 @@ function renderButtons() {
     $('btn-improve').disabled = false;
     $('btn-improve').classList.toggle('can-buy', S.phase === 'play' && TRACKS.some((t) => improveTrackData(t).canBuy));
   }
-  $('btn-trade').disabled = !main;
+  $('btn-trade').disabled = !(my && S.turn.state === 'main');
   $('btn-end').disabled = !main;
+  $('btn-end').textContent = sbMine ? '⏭️ 结束建设' : '✅ 结束回合';
 
   for (const [id, kind] of [['btn-road', 'road'], ['btn-settlement', 'settlement'], ['btn-city', 'city'], ['btn-knight', 'knight'], ['btn-wall', 'wall']]) {
     $(id).classList.toggle('armed', armed === kind);
@@ -1637,7 +1650,7 @@ $('zoom-reset').onclick = () => resetZoom();
 
 $('roll-big').onclick = () => { $('roll-big-wrap').classList.add('hidden'); send({ type: 'roll' }); };
 $('btn-buydev').onclick = () => send({ type: 'buyDev' });
-$('btn-end').onclick = () => { armed = null; send({ type: 'endTurn' }); };
+$('btn-end').onclick = () => { armed = null; send({ type: mySpecialBuild() ? 'sbPass' : 'endTurn' }); };
 
 // 设置弹窗：声音音量 + 结束本局
 $('btn-settings').onclick = () => $('modal-settings').classList.remove('hidden');
