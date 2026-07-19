@@ -7,7 +7,7 @@ import { generateBoard, shuffle } from './board.js';
 import { longestRoadLength } from './longestRoad.js';
 import {
   ckMethods, COMMODITIES, CITY_YIELD, CARD_NAME, TRACK_NAME,
-  CK_WIN_VP, BARBARIAN_TRACK, IMPROVE_TRACKS,
+  CK_WIN_VP, BARBARIAN_TRACK, IMPROVE_TRACKS, MAX_PROGRESS_HAND,
 } from './ck.js';
 
 const RES_NAME = { wood: '木材', brick: '砖块', sheep: '羊毛', wheat: '小麦', ore: '矿石' };
@@ -59,6 +59,7 @@ export class Game {
       eventDie: null, fleet: null, crane: false,
       pendingAqueduct: [], pendingCityLoss: {}, postRollTotal: 0,
       pendingDefenderPick: [], // 防御并列第一：各自选颜色抽进步卡
+      pendingProgressDiscard: [], progressDiscardThen: 'main', // 回合外进步卡超上限弃牌
       displace: null,    // 骑士待安置 {owner, knight, options, reason?: 'deserter'}
       deserter: null,    // 逃兵卡等受害者选骑士 {from, target}
       metroChoice: null, // 大都会选城 {track, options, stolenFrom}
@@ -309,33 +310,39 @@ export class Game {
       this.turn.pendingDiscards = pending;
       // 城市与骑士：野蛮人首次来袭前强盗不动（弃牌照常）
       this.turn.discardThen = this.ck && this.barbarians.attacks === 0 ? 'main' : 'robber';
+      let next = 'main';
       if (Object.keys(pending).length > 0) {
-        this.turn.state = 'discard';
+        next = 'discard';
         const names = Object.keys(pending).map((i) => this.players[i].name).join('、');
         this.addLog(`掷出 7！${names} 需要弃掉一半手牌。`);
       } else if (this.turn.discardThen === 'robber') {
-        this.turn.state = 'robber';
+        next = 'robber';
         this.addLog('掷出 7！请移动强盗。');
       } else {
-        this.turn.state = 'main';
         this.addLog('掷出 7！野蛮人首次来袭前，强盗仍留在沙漠。');
       }
+      // 回合外抽进步卡超上限的玩家先弃到上限，再进入弃手牌/强盗流程
+      if (this.ck && this.enterProgressDiscard(next)) return;
+      this.turn.state = next;
       return;
     }
 
     this.distribute(total);
     if (this.ck) {
       this.distributeProgress();
+      let next = 'main';
       if (this.turn.pendingAqueduct.length > 0) {
-        this.turn.state = 'aqueduct';
+        next = 'aqueduct';
         const names = this.turn.pendingAqueduct.map((i) => this.players[i].name).join('、');
         this.addLog(`引水渠：${names} 可任选 1 张资源。`);
-        return;
       }
+      if (this.enterProgressDiscard(next)) return;
+      this.turn.state = next;
+      // ck：掷骰期间也可能得分（守护者 / 亮出的分数进步卡）
+      if (next === 'main') this.checkWin();
+      return;
     }
     this.turn.state = 'main';
-    // ck：掷骰期间也可能得分（守护者 / 亮出的分数进步卡）
-    if (this.ck) this.checkWin();
   }
 
   distribute(total) {
@@ -724,6 +731,18 @@ export class Game {
   endTurn(p) {
     this.requireTurn(p);
     this.requireState('main');
+    // 自己回合内进步卡可暂超上限，结束回合前必须弃到上限
+    if (this.ck && this.players[p].progressCards.length > MAX_PROGRESS_HAND) {
+      this.turn.pendingProgressDiscard = [p];
+      this.turn.progressDiscardThen = 'endTurn';
+      this.turn.state = 'progressDiscard';
+      this.addLog(`${this.players[p].name} 的进步卡超过 ${MAX_PROGRESS_HAND} 张，需弃回牌堆底后结束回合。`);
+      return;
+    }
+    this.finishEndTurn(p);
+  }
+
+  finishEndTurn(p) {
     this.trade = null;
     // 调试模式：跳过所有 NPC，直接回到玩家 0（NPC 仅作卡牌目标，不占回合）
     this.turn.player = this.dev ? 0 : (this.turn.player + 1) % this.players.length;
@@ -864,6 +883,7 @@ export class Game {
         pendingCityLoss: Object.keys(this.turn.pendingCityLoss).map(Number),
         pendingAqueduct: this.turn.pendingAqueduct,
         pendingDefenderPick: this.turn.pendingDefenderPick,
+        pendingProgressDiscard: this.turn.pendingProgressDiscard,
         displace: this.turn.displace
           ? { owner: this.turn.displace.owner, level: this.turn.displace.knight.level, reason: this.turn.displace.reason || null }
           : null,

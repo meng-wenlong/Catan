@@ -1008,6 +1008,11 @@ function renderStatus() {
       text = S.ck.pendingDefenderPick.includes(myIndex)
         ? '🛡️ 防御并列第一！请选一种颜色的进步卡'
         : `防御成功！等待 ${names} 选择进步卡…`;
+    } else if (st === 'progressDiscard') {
+      const names = S.ck.pendingProgressDiscard.map((i) => S.players[i].name).join('、');
+      text = S.ck.pendingProgressDiscard.includes(myIndex)
+        ? '📜 进步卡超过 4 张：请选牌放回牌堆底'
+        : `等待 ${names} 弃回多余的进步卡…`;
     } else if (st === 'harbor') {
       const h = S.ck.harbor;
       if (h.stage === 'give') {
@@ -1960,6 +1965,18 @@ function statePickSpec() {
       title: `婚礼：选 ${H.weddingGive} 张牌送给 ${S.players[S.turn.player].name}`,
       options: cardList().filter((r) => S.you.hand[r] > 0)
         .map((r) => opt(r, S.you.hand[r], { type: 'weddingGive', card: r })),
+    };
+  }
+  if (st === 'progressDiscard' && (S.ck.pendingProgressDiscard || []).includes(myIndex)) {
+    const extra = S.you.progressCards.length - 4;
+    return {
+      title: `进步卡超过 4 张：选 ${extra} 张放回牌堆底`,
+      options: S.you.progressCards.map((c) => ({
+        label: PROG_META[c.type].name,
+        img: `/assets/opt/progress-${c.type}.webp`,
+        desc: PROG_META[c.type].desc,
+        onPick: () => send({ type: 'progressDiscard', card: c.type }),
+      })),
     };
   }
   if (st === 'defenderPick' && H.defenderPick) {

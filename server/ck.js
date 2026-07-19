@@ -573,14 +573,48 @@ export const ckMethods = {
       this.addLog(`📜 ${pl.name} 抽到「${PROGRESS_NAME[type]}」，立即亮出（+1 分）！`, { cat: 'progress' });
       return;
     }
-    if (pl.progressCards.length >= MAX_PROGRESS_HAND) {
-      deck.unshift(type);
-      this.addLog(`${pl.name} 的进步卡已满（${MAX_PROGRESS_HAND} 张），本次放回牌堆`);
-      return;
-    }
+    // 超过上限（4 张）也照发：回合外超限走 progressDiscard 立即弃到上限，
+    // 自己回合内可暂超，结束回合时弃（endTurn 检查）
     pl.progressCards.push({ type, deck: deckName });
     this.addEvent('progress', { player: p, deck: deckName });
     this.addLog(`${pl.name} 抽到一张${TRACK_NAME[deckName]}进步卡`, { cat: 'progress' });
+  },
+
+  // 回合外进步卡超上限：立即选牌弃回牌堆底到上限。then 为弃完后要进入的回合状态
+  //（'endTurn' 表示继续走结束回合）。返回 true 表示已进入弃牌状态，调用方应暂停流程。
+  enterProgressDiscard(then) {
+    const over = this.players
+      .map((_, i) => i)
+      .filter((i) => i !== this.turn.player
+        && this.players[i].progressCards.length > MAX_PROGRESS_HAND);
+    if (over.length === 0) return false;
+    this.turn.pendingProgressDiscard = over;
+    this.turn.progressDiscardThen = then;
+    this.turn.state = 'progressDiscard';
+    const names = over.map((i) => this.players[i].name).join('、');
+    this.addLog(`${names} 的进步卡超过 ${MAX_PROGRESS_HAND} 张，需选牌放回牌堆底。`);
+    return true;
+  },
+
+  progressDiscardCard(p, type) {
+    this.requireCK();
+    this.requireState('progressDiscard');
+    if (!this.turn.pendingProgressDiscard.includes(p)) this.err('你不需要弃进步卡');
+    const cards = this.players[p].progressCards;
+    const idx = cards.findIndex((c) => c.type === type);
+    if (idx < 0) this.err('无效的进步卡');
+    const [card] = cards.splice(idx, 1);
+    this.progressDecks[card.deck].unshift(card.type);
+    // 弃掉的具体牌不公开，只报牌堆颜色（与实体牌背一致）
+    this.addLog(`${this.players[p].name} 将一张${TRACK_NAME[card.deck]}进步卡放回牌堆底`);
+    if (cards.length <= MAX_PROGRESS_HAND) {
+      this.turn.pendingProgressDiscard = this.turn.pendingProgressDiscard.filter((i) => i !== p);
+    }
+    if (this.turn.pendingProgressDiscard.length > 0) return;
+    const then = this.turn.progressDiscardThen;
+    if (then === 'endTurn') { this.finishEndTurn(this.turn.player); return; }
+    this.turn.state = then;
+    if (then === 'main') this.checkWin();
   },
 
   aqueductPick(p, res) {
@@ -907,7 +941,6 @@ export const ckMethods = {
         if (!Number.isInteger(t) || t === p || !this.players[t]) this.err('请选择一名对手');
         const cards = this.players[t].progressCards;
         if (cards.length === 0) this.err('对方没有进步卡');
-        if (pl.progressCards.length >= MAX_PROGRESS_HAND) this.err(`你的进步卡已满（${MAX_PROGRESS_HAND} 张）`);
         spend();
         this.turn.pick = { type: 'spy', from: t, count: 1 };
         this.turn.state = 'pickProgress';

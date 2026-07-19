@@ -439,6 +439,7 @@ io.on('connection', (socket) => {
         case 'chooseMetropolis': g.chooseMetropolis(p, data.vertex); break;
         case 'pickCard': g.pickCard(p, data.card); break;
         case 'pickProgress': g.pickProgressCard(p, data.card); break;
+        case 'progressDiscard': g.progressDiscardCard(p, data.card); break;
         case 'weddingGive': g.weddingGive(p, data.card); break;
         case 'harborGive': g.harborGive(p, data.res); break;
         case 'harborTake': g.harborTake(p, data.com); break;

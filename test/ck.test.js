@@ -265,17 +265,45 @@ test('ck：掷出 7 时事件骰照常发进步卡（无产出、不触发引水
   assert.notEqual(g.turn.state, 'aqueduct'); // 掷 7 不触发引水渠
 });
 
-test('ck：进步卡手牌上限 4 张', () => {
+test('ck：回合外抽到第 5 张进步卡需立即弃到 4 张', () => {
   const g = newCK(3);
   doSetup(g);
-  g.players[0].progressCards = [
+  g.turn.player = 0;
+  g.turn.state = 'preroll';
+  g.players[1].improvements.politics = 5; // 红骰 1-6 都能拿
+  g.players[1].progressCards = [
     { type: 'warlord', deck: 'politics' }, { type: 'spy', deck: 'politics' },
     { type: 'crane', deck: 'science' }, { type: 'smith', deck: 'science' },
   ];
-  const before = g.progressDecks.trade.length;
-  g.drawProgress(0, 'trade');
+  g.progressDecks.politics.push('deserter'); // 固定堆顶，避免抽到分数卡
+  g.roll(0, { d1: 2, d2: 4, eventDie: 'politics' });
+  assert.equal(g.turn.state, 'progressDiscard');
+  assert.deepEqual(g.turn.pendingProgressDiscard, [1]);
+  assert.equal(g.players[1].progressCards.length, 5);
+  const before = g.progressDecks.politics.length;
+  g.progressDiscardCard(1, 'warlord');
+  assert.equal(g.players[1].progressCards.length, 4);
+  assert.equal(g.progressDecks.politics.length, before + 1);
+  assert.equal(g.progressDecks.politics[0], 'warlord'); // 放回牌堆底
+  assert.equal(g.turn.state, 'main'); // 弃完继续掷骰结算
+});
+
+test('ck：自己回合内进步卡可暂超 4 张，结束回合时弃到 4 张', () => {
+  const g = newCK(3);
+  doSetup(g);
+  forceMain(g);
+  g.players[0].progressCards = [
+    { type: 'warlord', deck: 'politics' }, { type: 'spy', deck: 'politics' },
+    { type: 'crane', deck: 'science' }, { type: 'smith', deck: 'science' },
+    { type: 'deserter', deck: 'politics' },
+  ];
+  g.endTurn(0);
+  assert.equal(g.turn.state, 'progressDiscard'); // 不能直接结束
+  assert.deepEqual(g.turn.pendingProgressDiscard, [0]);
+  g.progressDiscardCard(0, 'spy');
   assert.equal(g.players[0].progressCards.length, 4);
-  assert.equal(g.progressDecks.trade.length, before); // 放回牌堆
+  assert.equal(g.turn.player, 1); // 弃完自动完成结束回合
+  assert.equal(g.turn.state, 'preroll');
 });
 
 test('ck：军阀免费激活所有骑士', () => {
