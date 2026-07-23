@@ -215,8 +215,8 @@ function buildDefs() {
   el('stop', { offset: '100%', 'stop-color': '#ebd9ab' }, tok);
   // 云影：软边椭圆用径向渐变淡出（不能用 blur filter，Safari 对 SVG 子元素不支持）
   const cloud = el('radialGradient', { id: 'cloud-soft' }, defs);
-  el('stop', { offset: '0%', 'stop-color': 'rgba(25,45,65,.14)' }, cloud);
-  el('stop', { offset: '70%', 'stop-color': 'rgba(25,45,65,.09)' }, cloud);
+  el('stop', { offset: '0%', 'stop-color': 'rgba(25,45,65,.18)' }, cloud);
+  el('stop', { offset: '70%', 'stop-color': 'rgba(25,45,65,.12)' }, cloud);
   el('stop', { offset: '100%', 'stop-color': 'rgba(25,45,65,0)' }, cloud);
 }
 
@@ -292,18 +292,18 @@ export function initBoard(svgElement, boardData, ck = false) {
   }
 
   // ---------- 海面氛围：远处浪花 + 漂移云影 + 海鸥 ----------
-  // 远海浪花：确定性散布在视野边缘的海带上（避开岛屿一圈）
+  // 远海浪花：确定性散布在视野边缘的海带上（避开岛屿一圈），比岛边浪花更大
   for (let i = 0; i < 10; i++) {
     const wx = minX + w * ((i * 0.37 + 0.13) % 1);
     const wy = minY + h * ((i * 0.53 + 0.07) % 1);
     if (Math.hypot(wx - cx, (wy - cy) / 0.9) < hexR + 1.2) continue;
-    const wave = el('path', { d: `M ${wx - 0.16} ${wy} q .08 -.09 .16 0 q .08 .09 .16 0`, class: 'sea-wave far' }, layers.ambient);
+    const wave = el('path', { d: `M ${wx - 0.3} ${wy} q .15 -.17 .3 0 q .15 .17 .3 0`, class: 'sea-wave far' }, layers.ambient);
     wave.style.animationDelay = `${(i % 7) * 1.1}s`;
   }
   // 云影：三团软边椭圆缓慢横穿（画在岛屿层之下，只映在海面上；负延迟让开局就有一团在途中）
   [0.2, 0.52, 0.82].forEach((f, i) => {
     const g = el('g', { class: 'cloud-shadow' }, layers.ambient);
-    el('ellipse', { cx: 0, cy: 0, rx: 1.5 + i * 0.6, ry: 0.5 + i * 0.22, fill: 'url(#cloud-soft)' }, g);
+    el('ellipse', { cx: 0, cy: 0, rx: 2.1 + i * 0.8, ry: 0.7 + i * 0.3, fill: 'url(#cloud-soft)' }, g);
     const y = minY + h * f;
     const dur = 70 + i * 26;
     g.style.setProperty('--x0', `${(minX - 2.5).toFixed(2)}px`);
@@ -316,10 +316,10 @@ export function initBoard(svgElement, boardData, ck = false) {
   // 海鸥：两小队「︿」形掠过天空（sky 层在棋子之上），队内轻微上下振翅
   for (let i = 0; i < 2; i++) {
     const flock = el('g', { class: 'gull-flock' }, layers.sky);
-    const offs = [[0, 0], [0.24, 0.1], [-0.21, 0.15]];
+    const offs = [[0, 0], [0.44, 0.18], [-0.38, 0.27]];
     offs.slice(0, 2 + i).forEach(([dx, dy], j) => {
       const p = el('path', {
-        d: `M ${dx - 0.09} ${dy} Q ${dx - 0.045} ${dy - 0.07} ${dx} ${dy} Q ${dx + 0.045} ${dy - 0.07} ${dx + 0.09} ${dy}`,
+        d: `M ${dx - 0.17} ${dy} Q ${dx - 0.085} ${dy - 0.13} ${dx} ${dy} Q ${dx + 0.085} ${dy - 0.13} ${dx + 0.17} ${dy}`,
         class: 'gull',
       }, flock);
       p.style.animationDelay = `${j * 0.4}s`;
