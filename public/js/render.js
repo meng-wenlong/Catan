@@ -14,6 +14,9 @@ let vpG = null; // 包住全部内容的视口组：平移缩放改它的 transf
 const layers = {};
 const roadEls = new Map();
 const buildingEls = new Map(); // vertexId -> {el, type}
+const tokenEls = new Map();    // hexId -> 数字令牌组（发明家交换时做飞行动画）
+const knightEls = new Map();   // vertexId -> {pos, inner, player, level, active, pendingTint}（持久化，移动走 transform 过渡）
+let knightClickCb = null;      // 当前的骑士点击回调（元素持久化，回调每次渲染更新）
 let robberEl = null;
 let isle = null;     // 岛屿几何 {cx, cy, hexR}，野蛮人航道定位用
 let barbEls = null;  // 野蛮人航道的持久元素（船用 transform 过渡动画，不能每次重建）
@@ -234,6 +237,8 @@ export function initBoard(svgElement, boardData, ck = false) {
   svg.innerHTML = '';
   roadEls.clear();
   buildingEls.clear();
+  tokenEls.clear();
+  knightEls.clear();
 
   const xs = board.vertices.map((v) => v.x);
   const ys = board.vertices.map((v) => v.y);
@@ -252,7 +257,7 @@ export function initBoard(svgElement, boardData, ck = false) {
   buildDefs();
   vpG = el('g', { id: 'viewport' }, svg);
   applyVB();
-  for (const name of ['island', 'barb', 'decks', 'hexes', 'harbors', 'roads', 'walls', 'buildings', 'knights', 'marks', 'robber', 'hotspots']) {
+  for (const name of ['island', 'barb', 'decks', 'hexes', 'tokens', 'harbors', 'roads', 'walls', 'buildings', 'knights', 'marks', 'robber', 'hotspots']) {
     layers[name] = el('g', { id: `layer-${name}` }, vpG);
   }
   barbEls = null;
@@ -294,25 +299,7 @@ export function initBoard(svgElement, boardData, ck = false) {
     // 产出闪光罩：Safari 不支持对 SVG 子元素做 CSS filter 动画，改为叠白色罩闪 opacity
     el('polygon', { points: pts, class: 'hex-shine', 'data-hex': hex.id }, g);
 
-    if (hex.number) {
-      // 偏移一点的暗色圆充当阴影（不能用 filter 投影，Safari 不支持）
-      el('circle', { cx: hex.x + 0.02, cy: hex.y + 0.035, r: 0.3, fill: 'rgba(70,45,10,.26)' }, g);
-      el('circle', { cx: hex.x, cy: hex.y, r: 0.3, class: 'token-circle' }, g);
-      el('circle', { cx: hex.x, cy: hex.y, r: 0.255, class: 'token-ring' }, g);
-      const red = hex.number === 6 || hex.number === 8;
-      const num = el('text', {
-        x: hex.x, y: hex.y + 0.08, class: `token-num${red ? ' red' : ''}`,
-      }, g);
-      num.textContent = hex.number;
-      const dots = 6 - Math.abs(7 - hex.number);
-      for (let i = 0; i < dots; i++) {
-        el('circle', {
-          cx: hex.x + (i - (dots - 1) / 2) * 0.075,
-          cy: hex.y + 0.17, r: 0.025,
-          class: `token-dots${red ? ' red' : ''}`,
-        }, g);
-      }
-    }
+    if (hex.number) drawNumberToken(hex);
 
     // 透明点击热区（强盗目标高亮描边也画在这层，保证盖在板块图之上）
     el('polygon', { points: pts, class: 'hex', 'data-hex': hex.id }, g);
@@ -351,6 +338,60 @@ export function initBoard(svgElement, boardData, ck = false) {
     class: 'hex-img',
   }, robberEl);
   attachInspect(robberEl, { kind: 'robber' });
+}
+
+// 数字令牌画在独立图层（pointer-events: none，点击穿透到地块热区）：
+// 发明家交换数字时两枚令牌可以整组飞行，而无需重建棋盘
+function drawNumberToken(hex) {
+  const tg = el('g', { class: 'num-token', 'data-hex': hex.id }, layers.tokens);
+  // 偏移一点的暗色圆充当阴影（不能用 filter 投影，Safari 不支持）
+  el('circle', { cx: hex.x + 0.02, cy: hex.y + 0.035, r: 0.3, fill: 'rgba(70,45,10,.26)' }, tg);
+  el('circle', { cx: hex.x, cy: hex.y, r: 0.3, class: 'token-circle' }, tg);
+  el('circle', { cx: hex.x, cy: hex.y, r: 0.255, class: 'token-ring' }, tg);
+  const red = hex.number === 6 || hex.number === 8;
+  const num = el('text', {
+    x: hex.x, y: hex.y + 0.08, class: `token-num${red ? ' red' : ''}`,
+  }, tg);
+  num.textContent = hex.number;
+  const dots = 6 - Math.abs(7 - hex.number);
+  for (let i = 0; i < dots; i++) {
+    el('circle', {
+      cx: hex.x + (i - (dots - 1) / 2) * 0.075,
+      cy: hex.y + 0.17, r: 0.025,
+      class: `token-dots${red ? ' red' : ''}`,
+    }, tg);
+  }
+  tokenEls.set(hex.id, tg);
+  return tg;
+}
+
+// 发明家：两枚数字令牌沿直线互飞对调（提到最顶层，飞跃棋子与港口），
+// 落地后原位重绘并弹一下；同时同步本地 board 数据（产出高亮/放大镜都读它）
+export function swapNumberTokens(h1, h2, onDone) {
+  const a = board?.hexes[h1];
+  const b = board?.hexes[h2];
+  if (!a || !b) { onDone?.(); return; }
+  const ta = tokenEls.get(h1);
+  const tb = tokenEls.get(h2);
+  const finish = () => {
+    const n = a.number; a.number = b.number; b.number = n;
+    for (const [hid, tg] of [[h1, ta], [h2, tb]]) { tg?.remove(); tokenEls.delete(hid); }
+    for (const hex of [a, b]) {
+      const tg = drawNumberToken(hex);
+      tg.classList.add('token-pop');
+      setTimeout(() => tg.classList.remove('token-pop'), 700);
+    }
+    onDone?.();
+  };
+  if (!ta || !tb) { finish(); return; }
+  vpG.appendChild(ta);
+  vpG.appendChild(tb);
+  ta.classList.add('token-fly');
+  tb.classList.add('token-fly');
+  void svg.getBoundingClientRect(); // 先落位再赋 transform，保证过渡触发
+  ta.style.transform = `translate(${b.x - a.x}px, ${b.y - a.y}px)`;
+  tb.style.transform = `translate(${a.x - b.x}px, ${a.y - b.y}px)`;
+  setTimeout(finish, 900);
 }
 
 function hexCornerString(hex, r = 1, dy = 0) {
@@ -717,10 +758,9 @@ function rerenderTinted() {
 
 // 高亮选中的骑士（铁匠等多选进步卡用）
 export function highlightKnights(vertexIds) {
-  if (!layers.knights) return;
   const set = new Set((vertexIds || []).map(Number));
-  for (const g of layers.knights.children) {
-    g.classList.toggle('knight-selected', set.has(Number(g.getAttribute('data-vid'))));
+  for (const [vid, rec] of knightEls) {
+    rec.inner.classList.toggle('knight-selected', set.has(Number(vid)));
   }
 }
 
@@ -763,6 +803,28 @@ for (const name of ['settlement', 'city', 'metropolis', 'knight1', 'knight2', 'k
 }
 for (const w of ['city-wall', 'metropolis-wall']) { new Image().src = `/assets/opt/piece-${w}.webp`; }
 
+// 重绘骑士内容（内层，坐标相对外层定位组原点）：等级/染色变化或白模就绪时调用
+function drawKnightContent(rec, k, color) {
+  rec.inner.replaceChildren();
+  el('ellipse', { cx: 0, cy: 0.13, rx: 0.24, ry: 0.09, class: 'knight-glow' }, rec.inner); // 铁匠选中时变绿
+  const tinted = tintedPiece(`/assets/opt/piece-knight${k.level}-white.webp`, color);
+  if (tinted) {
+    el('image', { href: tinted, x: -0.27, y: -0.58, width: 0.54, height: 0.74, class: 'knight-img' }, rec.inner);
+    rec.pendingTint = false;
+  } else {
+    el('circle', { cx: 0, cy: -0.06, r: 0.2, fill: color }, rec.inner); // 染色未就绪的兜底
+    rec.pendingTint = true;
+  }
+}
+
+// 骑士入场/升级的弹跳动画（加在内层，不干扰外层的移动过渡）
+function popKnight(rec, cls) {
+  rec.inner.classList.remove('piece-pop', 'knight-promote');
+  void rec.inner.getBoundingClientRect();
+  rec.inner.classList.add(cls);
+  setTimeout(() => rec.inner.classList.remove(cls), 850);
+}
+
 export function updateCKPieces(state, colors, onKnightClick) {
   if (!state.ck) return;
   curState = state;
@@ -772,26 +834,66 @@ export function updateCKPieces(state, colors, onKnightClick) {
   // 城墙已并入城市白模（piece-city-walled-white 等），不再单独画护环
   layers.walls.innerHTML = '';
 
-  // 骑士：染色白模；激活亮金光，未激活灰暗
-  layers.knights.innerHTML = '';
-  for (const [vid, k] of Object.entries(state.ck.knights)) {
+  // 骑士：染色白模，持久化元素 + transform 过渡（移动/驱逐平滑滑动，不再整层重建瞬移）。
+  // 内外两层 g：外层只管定位（transition 动画），内层挂样式类（selected 脉冲等 transform
+  // 动画在内层播放，不会打架把骑士弹回原点）。
+  knightClickCb = onKnightClick;
+  const nextKnights = state.ck.knights;
+  // 1) 失效记录：该顶点已无骑士，或换成了别家的骑士（驱逐后攻击者进驻原位）
+  const stale = [];
+  for (const [vid, rec] of knightEls) {
+    const k = nextKnights[vid];
+    if (!k || k.player !== rec.player) {
+      stale.push(rec);
+      knightEls.delete(vid);
+    }
+  }
+  for (const [vid, k] of Object.entries(nextKnights)) {
+    let rec = knightEls.get(vid);
+    let isNew = false;
+    if (!rec) {
+      // 2) 与同玩家的失效记录配对 → 视为移动：复用元素，transform 过渡自动滑过去
+      const i = stale.findIndex((r) => r.player === k.player);
+      if (i >= 0) {
+        rec = stale.splice(i, 1)[0];
+        rec.pos.setAttribute('data-vid', vid);
+      } else {
+        isNew = true;
+        const pos = el('g', { class: 'knight-pos', 'data-vid': vid }, layers.knights);
+        const inner = el('g', { class: 'knight-piece' }, pos);
+        pos.addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          const cur = curState?.ck?.knights?.[pos.getAttribute('data-vid')];
+          if (knightClickCb && cur) knightClickCb(Number(pos.getAttribute('data-vid')), cur);
+        });
+        // 放大镜描述随当前顶点走（骑士会移动，vid 从 data-vid 实时读取）
+        const desc = { kind: 'knight' };
+        Object.defineProperty(desc, 'vid', { get: () => Number(pos.getAttribute('data-vid')) });
+        attachInspect(pos, desc);
+        rec = { pos, inner, player: k.player, level: 0, active: null, pendingTint: false };
+      }
+      knightEls.set(vid, rec);
+    }
     const v = board.vertices[vid];
-    const g = el('g', { class: `knight-piece${k.active ? ' active' : ' idle'}`, 'data-vid': vid }, layers.knights);
-    el('ellipse', { cx: v.x, cy: v.y + 0.13, rx: 0.24, ry: 0.09, class: 'knight-glow' }, g); // 激活时脚下金光（不作阴影）
-    const tinted = tintedPiece(`/assets/opt/piece-knight${k.level}-white.webp`, colors[k.player]);
-    if (tinted) {
-      el('image', { href: tinted, x: v.x - 0.27, y: v.y - 0.58, width: 0.54, height: 0.74, class: 'knight-img' }, g);
-    } else {
-      el('circle', { cx: v.x, cy: v.y - 0.06, r: 0.2, fill: colors[k.player] }, g); // 染色未就绪的兜底
+    rec.pos.style.transform = `translate(${v.x}px, ${v.y}px)`;
+    rec.pos.style.cursor = onKnightClick ? 'pointer' : '';
+    const promoted = !isNew && k.level > rec.level;
+    if (isNew || k.level !== rec.level || rec.pendingTint) {
+      drawKnightContent(rec, k, colors[k.player]);
     }
-    attachInspect(g, { kind: 'knight', vid: Number(vid) });
-    if (onKnightClick) {
-      g.style.cursor = 'pointer';
-      g.addEventListener('click', (ev) => {
-        ev.stopPropagation();
-        onKnightClick(Number(vid), k);
-      });
-    }
+    rec.inner.classList.toggle('active', !!k.active);
+    rec.inner.classList.toggle('idle', !k.active);
+    if (isNew) popKnight(rec, 'piece-pop');
+    else if (promoted) popKnight(rec, 'knight-promote');
+    rec.player = k.player;
+    rec.level = k.level;
+    rec.active = k.active;
+  }
+  // 3) 没配对上的失效记录：击退淡出后移除（被驱逐无处安置 / 逃兵交出）
+  for (const rec of stale) {
+    rec.pos.classList.add('knight-out');
+    rec.pos.style.cursor = '';
+    setTimeout(() => rec.pos.remove(), 650);
   }
 
   // 大都会已并入建筑白模（piece-metropolis-white 等）；此处只画商人标记
@@ -1053,6 +1155,14 @@ export function highlightProducingHexes(total, robberHex) {
       void grp.getBoundingClientRect();
       grp.classList.add('hex-bounce');
       setTimeout(() => grp.classList.remove('hex-bounce'), 1600);
+      // 数字令牌在独立图层，跟着地块一起弹
+      const tok = tokenEls.get(hid);
+      if (tok) {
+        tok.classList.remove('hex-bounce');
+        void tok.getBoundingClientRect();
+        tok.classList.add('hex-bounce');
+        setTimeout(() => tok.classList.remove('hex-bounce'), 1600);
+      }
     }
   }
 }

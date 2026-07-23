@@ -780,6 +780,7 @@ export class Game {
     if (eligible.length === 0) return false;
     this.turn.sb = { queue: eligible, idx: 0, from: p };
     this.turn.state = 'specialBuild';
+    this.addEvent('sbStart', { players: eligible, from: p });
     this.addLog(`🔨 特别建设阶段：${eligible.map((i) => this.players[i].name).join('、')} 可依次建设`);
     return true;
   }
@@ -859,7 +860,10 @@ export class Game {
     const maxLen = Math.max(...lengths);
     const prev = this.awards.longestRoad;
     if (maxLen < 5) {
-      if (prev) this.addLog(`${this.players[prev.player].name} 失去了最长道路`);
+      if (prev) {
+        this.addLog(`${this.players[prev.player].name} 失去了最长道路`);
+        this.addEvent('award', { award: 'longestRoad', player: null, from: prev.player });
+      }
       this.awards.longestRoad = null;
       return;
     }
@@ -869,11 +873,17 @@ export class Game {
     } else if (holders.length === 1) {
       if (!prev || prev.player !== holders[0]) {
         this.addLog(`${this.players[holders[0]].name} 获得最长道路（${maxLen} 段，+2 分）！`);
+        this.addEvent('award', {
+          award: 'longestRoad', player: holders[0], from: prev ? prev.player : null, n: maxLen,
+        });
       }
       this.awards.longestRoad = { player: holders[0], length: maxLen };
     } else {
       // 持有者被截断且多人并列：奖励空置
-      if (prev) this.addLog('最长道路并列，奖励暂时空置');
+      if (prev) {
+        this.addLog('最长道路并列，奖励暂时空置');
+        this.addEvent('award', { award: 'longestRoad', player: null, from: prev.player });
+      }
       this.awards.longestRoad = null;
     }
   }
@@ -885,11 +895,14 @@ export class Game {
       if (!cur) {
         this.awards.largestArmy = { player: i, count: pl.knightsPlayed };
         this.addLog(`${pl.name} 获得最大军队（${pl.knightsPlayed} 骑士，+2 分）！`);
+        this.addEvent('award', { award: 'largestArmy', player: i, from: null, n: pl.knightsPlayed });
       } else if (cur.player === i) {
         cur.count = pl.knightsPlayed;
       } else if (pl.knightsPlayed > cur.count) {
+        const from = cur.player;
         this.awards.largestArmy = { player: i, count: pl.knightsPlayed };
         this.addLog(`${pl.name} 夺得最大军队（${pl.knightsPlayed} 骑士，+2 分）！`);
+        this.addEvent('award', { award: 'largestArmy', player: i, from, n: pl.knightsPlayed });
       }
     });
   }

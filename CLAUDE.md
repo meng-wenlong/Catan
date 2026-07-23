@@ -16,7 +16,7 @@
 - **服务端权威**：所有规则在 `server/game.js` 的 `Game` 类中校验执行；客户端只发送意图（`action` 事件），收到完整状态后渲染。手牌等私密信息只发给对应玩家（`privateState`）。
 - **坐标系**：`server/board.js` 用轴向坐标生成尖顶六边形，顶点/边通过像素坐标取整去重编号；客户端 SVG 直接使用同一套单位坐标（viewBox 缩放）。
 - **断线重连**：玩家身份靠 `token`（UUID），客户端存 sessionStorage（优先）+ localStorage；URL 加 `?new` 强制新会话（同机多开测试用）。
-- **动画**：状态里带 `events` 序列（自增 seq），客户端只播放未见过的事件；棋子出现用 CSS 动画类（`piece-pop` 等）。
+- **动画**：状态里带 `events` 序列（自增 seq），客户端只播放未见过的事件；棋子出现用 CSS 动画类（`piece-pop` 等）。最长道路/最大军队易主发 `award` 事件（`player: null` 表示奖励空置）、特别建设阶段开启发 `sbStart` 事件，客户端播中央公告/横幅。骑士是持久化元素（`render.js` 的 `knightEls`，外层 `.knight-pos` 定位 + 内层样式类），移动/驱逐走 transform 过渡，按玩家配对新旧顶点识别移动；数字令牌在独立 `tokens` 图层（`tokenEls`），发明家换数字走 `swapNumberTokens` 令牌互飞（不再重建棋盘）。
 - **规则实现注意**：本回合买的发展卡不能用（`boughtTurn` 判断）；每回合限一张发展卡；骑士可在掷骰前打；银行资源不足且多人应得时该资源全员不发；最长道路被截断且并列时奖励空置。
 - **5-6 人扩展**（人数 ≥5 自动启用，`game.big`，基础版与 ck 都支持）：大地图（`board.js` 行布局 3-4-5-6-5-4-3 共 30 格陆地、11 港、双沙漠、28 数字圈）；银行/牌库扩容（资源每种 24、商品每种 18、发展卡 34）；**特别建设阶段**——`endTurn` 后其余玩家按顺时针依次开建设窗口（`specialBuild` 状态，`turn.sb = {queue, idx, from}`），建造类动作经 `requireBuild` 放行（自己回合 main 或轮到自己的建设窗口），窗口内可建造/买发展卡/买城市升级/激活与升级骑士，禁交易、打牌、骑士行动；开窗与推进都会跳过无建设能力的玩家（`canSpecialBuild`），`sbPass` 手动结束窗口、`sbAutoAdvance`（index.js 每个动作后与掉线时调用）自动推进；只有回合玩家能获胜（`checkWin` 只看 `turn.player`），建设窗口内买升级触发大都会时选择者记在 `metroChoice.player`。
 

@@ -3,7 +3,7 @@ import {
   initBoard, updatePieces, updateCKPieces, highlightKnights, clearHotspots,
   showVertexSpots, showEdgeSpots, showRobberSpots, showHexSpots,
   zoomAt, resetZoom, highlightProducingHexes, hexPixelPosition, vertexPixelPosition,
-  updateBarbarianTrack, updateProgressDecks, deckPixelPosition,
+  updateBarbarianTrack, updateProgressDecks, deckPixelPosition, swapNumberTokens,
   attachCardInspect,
 } from './render.js';
 import { initSfx, sfx } from './sfx.js';
@@ -589,9 +589,8 @@ socket.on('state', (state) => {
     boardReady = true;
     // 首次加载/重连：不重播历史动画事件
     lastSeq = state.events.reduce((m, e) => Math.max(m, e.seq), lastSeq);
-  } else if (state.events.some((e) => e.type === 'inventor' && e.seq > lastSeq)) {
-    initBoard($('board'), state.board, state.mode === 'ck'); // 发明家换了数字令牌，重建棋盘
   }
+  // 发明家换数字不再重建棋盘：playEvents 里的 inventor 事件播放令牌互飞动画
   show('screen-game');
   updateSpectatorUI();
 
@@ -617,6 +616,7 @@ socket.on('state', (state) => {
 function applyState() {
   renderAll();
   playEvents(); // 剩余事件（产出/偷牌飘字、回合横幅等；骰子已单独播放）
+  checkSbWindow(); // 特别建设窗口轮到自己时提醒（排在 sbStart 横幅之后）
 }
 
 // ---------- 产出结算：数字变化与飞牌动画同步 ----------
@@ -1063,10 +1063,13 @@ function setEventDie(el, face) {
 function renderPlayers() {
   const panel = $('players-panel');
   panel.innerHTML = '';
+  // 特别建设阶段（5-6 人）：当前建设窗口的玩家卡片高亮 + 🔨 角标
+  const sbBuilder = S.phase === 'play' && S.turn.state === 'specialBuild' && S.turn.sb
+    ? S.turn.sb.queue[S.turn.sb.idx] : -1;
   S.players.forEach((p, i) => {
     const active = (S.phase === 'setup' ? S.setup.current : S.turn.player) === i && S.phase !== 'ended';
     const div = document.createElement('div');
-    div.className = `player-card${active ? ' active' : ''}`;
+    div.className = `player-card${active ? ' active' : ''}${sbBuilder === i ? ' sb-builder' : ''}`;
     div.id = `player-card-${i}`;
     const ckMode = S.mode === 'ck';
     const badges = [];
@@ -1086,7 +1089,7 @@ function renderPlayers() {
     div.innerHTML = `
       <div class="p-top">
         <span class="p-ava"></span>
-        <span class="p-nm">${esc(p.name)}${i === myIndex ? '<small>（我）</small>' : ''}${p.connected ? '' : ' <span class="offline">离线</span>'}</span>
+        <span class="p-nm">${esc(p.name)}${i === myIndex ? '<small>（我）</small>' : ''}${sbBuilder === i ? ' <span class="sb-tag">🔨 建设中</span>' : ''}${p.connected ? '' : ' <span class="offline">离线</span>'}</span>
         <span class="p-vp"><b>${i === myIndex ? S.you.vpTotal : p.vp}</b><small>分</small></span>
       </div>
       <div class="p-stats">
@@ -2449,7 +2452,19 @@ function playEvents() {
         break;
       }
       case 'build':
-        animStep((done) => { sfx.build(ev.kind); done(); });
+        animStep((done) => {
+          sfx.build(ev.kind);
+          // 村庄升级城市（含药剂师半价建城）：城头撒金色星光庆祝
+          if (ev.kind === 'city' && ev.vertex !== undefined) {
+            const pos = vertexPixelPosition(ev.vertex, $('board'));
+            if (pos) {
+              burstAt(pos.x, pos.y - 14, '✨');
+              setTimeout(() => burstAt(pos.x + 20, pos.y - 34, '🌟'), 180);
+              setTimeout(() => burstAt(pos.x - 18, pos.y - 26, '✨'), 340);
+            }
+          }
+          done();
+        });
         break;
       case 'knightMove':
         animStep((done) => { sfx.build('knight'); done(); });
@@ -2525,6 +2540,50 @@ function playEvents() {
       }
       case 'turnEnd':
         animStep((done) => { showTurnBanner(ev.to); done(); });
+        break;
+      // 最长道路 / 最大军队易主：中央公告（+2 分的大事件，值得全桌看清）
+      case 'award': {
+        const meta = ev.award === 'largestArmy'
+          ? { icon: '⚔️', name: '最大军队' }
+          : { icon: '🛤️', name: '最长道路' };
+        if (ev.player === null || ev.player === undefined) {
+          stepSpotlight({
+            kind: 'banner',
+            icon: meta.icon,
+            title: `${meta.name}奖励空置`,
+            sub: `${S.players[ev.from]?.name ?? ''} 的道路被截断，长度并列无人独占`,
+            accent: '#8d939c',
+            dur: 2800,
+          });
+        } else {
+          const p = S.players[ev.player];
+          stepSpotlight({
+            kind: 'banner',
+            icon: meta.icon,
+            title: `${p.name} ${ev.from !== null && ev.from !== undefined ? '夺得' : '获得'}${meta.name}！`,
+            sub: ev.award === 'largestArmy'
+              ? `已出动 ${ev.n} 名骑士 · +2 分`
+              : `连续 ${ev.n} 段道路 · +2 分`,
+            accent: p.color,
+            dur: 3200,
+            onShow: () => sfx.fanfare(),
+          });
+        }
+        break;
+      }
+      // 特别建设阶段开启（5-6 人）：轻量横幅提示，不打断节奏
+      case 'sbStart':
+        animStep((done) => {
+          showSbBanner('🔨 特别建设阶段');
+          setTimeout(done, 700); // 若自己是首位建设者，随后的个人横幅稍后接上
+        });
+        break;
+      // 发明家：两枚数字令牌互飞对调（不再整盘重建）
+      case 'inventor':
+        animStep((done) => {
+          sfx.card();
+          swapNumberTokens(ev.h1, ev.h2, done);
+        });
         break;
       case 'robber':
         animStep((done) => { sfx.robber(); done(); });
@@ -2682,6 +2741,38 @@ function showTurnBanner(to) {
     card.classList.add('turn-flash');
   }
   floatOverPlayer(to, '🎲');
+}
+
+// 特别建设阶段横幅（5-6 人）：琥珀色，区别于回合横幅的玩家色
+function showSbBanner(text, mine = false) {
+  const banner = $('turn-banner');
+  const inner = banner.querySelector('.turn-banner-inner');
+  inner.textContent = text;
+  inner.classList.toggle('mine', mine);
+  inner.style.background = 'linear-gradient(135deg, rgba(201,138,42,.92), rgba(160,100,20,.82))';
+  inner.style.color = '#fff';
+  inner.style.textShadow = '0 2px 6px rgba(0,0,0,.35)';
+  banner.classList.remove('show');
+  void banner.offsetWidth;
+  banner.classList.add('show');
+  clearTimeout(banner._timer);
+  banner._timer = setTimeout(() => banner.classList.remove('show'), 4600);
+}
+
+// 建设窗口轮转检测：轮到自己时横幅+音效提醒（走动画队列，排在 sbStart 横幅之后）
+let prevSbBuilder = null;
+function checkSbWindow() {
+  const sbNow = S.phase === 'play' && S.turn.state === 'specialBuild' && S.turn.sb
+    ? S.turn.sb.queue[S.turn.sb.idx] : null;
+  if (sbNow === prevSbBuilder) return;
+  prevSbBuilder = sbNow;
+  if (sbNow === myIndex && !isSpectating) {
+    animStep((done) => {
+      showSbBanner('🔨 轮到你建设了', true);
+      sfx.improve();
+      done();
+    });
+  }
 }
 
 // 产出飞卡：按掷骰点数反查产出该资源的地块，把资源图标从地块飞到底部对应手牌
