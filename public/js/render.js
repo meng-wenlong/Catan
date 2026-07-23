@@ -213,6 +213,11 @@ function buildDefs() {
   const tok = el('radialGradient', { id: 'token-face', cx: '50%', cy: '38%', r: '72%' }, defs);
   el('stop', { offset: '0%', 'stop-color': '#fdf7e4' }, tok);
   el('stop', { offset: '100%', 'stop-color': '#ebd9ab' }, tok);
+  // 云影：软边椭圆用径向渐变淡出（不能用 blur filter，Safari 对 SVG 子元素不支持）
+  const cloud = el('radialGradient', { id: 'cloud-soft' }, defs);
+  el('stop', { offset: '0%', 'stop-color': 'rgba(25,45,65,.14)' }, cloud);
+  el('stop', { offset: '70%', 'stop-color': 'rgba(25,45,65,.09)' }, cloud);
+  el('stop', { offset: '100%', 'stop-color': 'rgba(25,45,65,0)' }, cloud);
 }
 
 // 不规则「岛屿轮廓」：圆周叠加几组正弦扰动，确定性生成（每局形状一致）
@@ -253,11 +258,12 @@ export function initBoard(svgElement, boardData, ck = false) {
   bindZoomControls();
   initInspector();
   hideLoupe();
+  if (vignetteEl) vignetteEl.classList.remove('show'); // 换局清掉上一局的临近登陆暗角
 
   buildDefs();
   vpG = el('g', { id: 'viewport' }, svg);
   applyVB();
-  for (const name of ['island', 'barb', 'decks', 'hexes', 'tokens', 'harbors', 'roads', 'walls', 'buildings', 'knights', 'marks', 'robber', 'hotspots']) {
+  for (const name of ['ambient', 'island', 'barb', 'decks', 'hexes', 'tokens', 'harbors', 'roads', 'walls', 'buildings', 'knights', 'marks', 'robber', 'sky', 'hotspots']) {
     layers[name] = el('g', { id: `layer-${name}` }, vpG);
   }
   barbEls = null;
@@ -283,6 +289,50 @@ export function initBoard(svgElement, boardData, ck = false) {
     const wy = cy + Math.sin(a) * wr * 0.9;
     const wave = el('path', { d: `M ${wx - 0.16} ${wy} q .08 -.09 .16 0 q .08 .09 .16 0`, class: 'sea-wave' }, layers.island);
     wave.style.animationDelay = `${(i % 5) * 0.9}s`;
+  }
+
+  // ---------- 海面氛围：远处浪花 + 漂移云影 + 海鸥 ----------
+  // 远海浪花：确定性散布在视野边缘的海带上（避开岛屿一圈）
+  for (let i = 0; i < 10; i++) {
+    const wx = minX + w * ((i * 0.37 + 0.13) % 1);
+    const wy = minY + h * ((i * 0.53 + 0.07) % 1);
+    if (Math.hypot(wx - cx, (wy - cy) / 0.9) < hexR + 1.2) continue;
+    const wave = el('path', { d: `M ${wx - 0.16} ${wy} q .08 -.09 .16 0 q .08 .09 .16 0`, class: 'sea-wave far' }, layers.ambient);
+    wave.style.animationDelay = `${(i % 7) * 1.1}s`;
+  }
+  // 云影：三团软边椭圆缓慢横穿（画在岛屿层之下，只映在海面上；负延迟让开局就有一团在途中）
+  [0.2, 0.52, 0.82].forEach((f, i) => {
+    const g = el('g', { class: 'cloud-shadow' }, layers.ambient);
+    el('ellipse', { cx: 0, cy: 0, rx: 1.5 + i * 0.6, ry: 0.5 + i * 0.22, fill: 'url(#cloud-soft)' }, g);
+    const y = minY + h * f;
+    const dur = 70 + i * 26;
+    g.style.setProperty('--x0', `${(minX - 2.5).toFixed(2)}px`);
+    g.style.setProperty('--y0', `${y.toFixed(2)}px`);
+    g.style.setProperty('--x1', `${(minX + w + 2.5).toFixed(2)}px`);
+    g.style.setProperty('--y1', `${(y + 0.9).toFixed(2)}px`);
+    g.style.setProperty('--dur', `${dur}s`);
+    g.style.animationDelay = `${-dur * (0.2 + 0.28 * i)}s`;
+  });
+  // 海鸥：两小队「︿」形掠过天空（sky 层在棋子之上），队内轻微上下振翅
+  for (let i = 0; i < 2; i++) {
+    const flock = el('g', { class: 'gull-flock' }, layers.sky);
+    const offs = [[0, 0], [0.24, 0.1], [-0.21, 0.15]];
+    offs.slice(0, 2 + i).forEach(([dx, dy], j) => {
+      const p = el('path', {
+        d: `M ${dx - 0.09} ${dy} Q ${dx - 0.045} ${dy - 0.07} ${dx} ${dy} Q ${dx + 0.045} ${dy - 0.07} ${dx + 0.09} ${dy}`,
+        class: 'gull',
+      }, flock);
+      p.style.animationDelay = `${j * 0.4}s`;
+    });
+    const y0 = minY + h * (0.16 + 0.55 * i);
+    const dur = 38 + i * 16;
+    const ltr = i === 0; // 两队方向相反
+    flock.style.setProperty('--x0', `${(ltr ? minX - 1.5 : minX + w + 1.5).toFixed(2)}px`);
+    flock.style.setProperty('--y0', `${y0.toFixed(2)}px`);
+    flock.style.setProperty('--x1', `${(ltr ? minX + w + 1.5 : minX - 1.5).toFixed(2)}px`);
+    flock.style.setProperty('--y1', `${(y0 + 0.6).toFixed(2)}px`);
+    flock.style.setProperty('--dur', `${dur}s`);
+    flock.style.animationDelay = `${-dur * (0.3 + 0.35 * i)}s`;
   }
 
   for (const hex of board.hexes) {
@@ -915,11 +965,23 @@ export function updateCKPieces(state, colors, onKnightClick) {
 
 // ---------- 野蛮人航道（画在海面上，随棋盘缩放平移） ----------
 // ck 传 null 时清除；船的位置用 transform 过渡，元素持久化避免重建打断动画
+// 野蛮人临近登陆的红色暗角（HTML 覆盖层，罩在棋盘容器上）
+let vignetteEl = null;
+function ensureBarbVignette() {
+  if (vignetteEl && vignetteEl.isConnected) return vignetteEl;
+  vignetteEl = document.createElement('div');
+  vignetteEl.id = 'barb-vignette';
+  svg.parentElement.appendChild(vignetteEl);
+  return vignetteEl;
+}
+
 export function updateBarbarianTrack(ck, strength, defense, detail) {
   const layer = layers.barb;
   if (!layer) return;
   if (!ck) {
     layer.innerHTML = '';
+    layer.classList.remove('barb-near');
+    if (vignetteEl) vignetteEl.classList.remove('show');
     barbEls = null;
     return;
   }
@@ -949,6 +1011,11 @@ export function updateBarbarianTrack(ck, strength, defense, detail) {
     el('rect', { x: s0.x - 1.0, y: s0.y + 0.42, width: 2.0, height: 0.56, rx: 0.28, class: 'barb-badge-bg' }, badge);
     const vs = el('text', { x: s0.x, y: s0.y + 0.81, class: 'barb-badge-text' }, badge);
     const badgeTitle = el('title', {}, badge); // 悬浮显示各玩家城市/防御明细
+    // 登陆点警报（还差 1 步时显示）：红心脉动 + 扩散圆环
+    const sL = pt(1);
+    const land = el('g', { class: 'barb-land' }, layer);
+    el('circle', { cx: sL.x, cy: sL.y, r: 0.15, class: 'barb-land-core' }, land);
+    el('circle', { cx: sL.x, cy: sL.y, r: 0.15, class: 'barb-land-ring' }, land);
     const ship = el('g', { class: 'barb-ship' }, layer);
     el('image', {
       href: '/assets/opt/barbarian-ship.webp',
@@ -963,6 +1030,10 @@ export function updateBarbarianTrack(ck, strength, defense, detail) {
   barbEls.vs.textContent = `🏰${strength} vs ⚔️${defense}`;
   if (detail && barbEls.badgeTitle) barbEls.badgeTitle.textContent = detail;
   barbInfo = { strength, defense, pos, track, x: s.x, y: s.y };
+  // 还差 1 步登陆：船身摇晃加剧、航线转红、登陆点警报、全场红色暗角
+  const near = track - pos <= 1;
+  layer.classList.toggle('barb-near', near);
+  ensureBarbVignette().classList.toggle('show', near);
 }
 
 // ---------- 左列：三摞进步卡牌堆（竖排；点击打开城市升级面板） ----------
