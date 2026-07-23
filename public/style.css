@@ -766,13 +766,13 @@ body {
   92% { opacity: 1; }
   100% { transform: translate(var(--x1), var(--y1)); opacity: 0; }
 }
-/* 鸥群：只在周期前 28% 飞一趟，其余时间隐身——降低出现频率，不干扰思考 */
-.gull-flock { animation: gull-cross var(--dur, 150s) linear infinite; }
+/* 鸥群：只在周期前 7% 飞一趟（约 40s），其余时间隐身——两队错开后约 5 分钟才掠过一次 */
+.gull-flock { animation: gull-cross var(--dur, 600s) linear infinite; }
 @keyframes gull-cross {
   0% { transform: translate(var(--x0), var(--y0)); opacity: 0; }
-  2% { opacity: 1; }
-  26% { opacity: 1; }
-  28%, 100% { transform: translate(var(--x1), var(--y1)); opacity: 0; }
+  1% { opacity: 1; }
+  6% { opacity: 1; }
+  7%, 100% { transform: translate(var(--x1), var(--y1)); opacity: 0; }
 }
 .gull {
   fill: none; stroke: rgba(30,50,70,.65); stroke-width: .04; stroke-linecap: round;

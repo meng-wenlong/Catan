@@ -325,16 +325,15 @@ export function initBoard(svgElement, boardData, ck = false) {
       p.style.animationDelay = `${j * 0.4}s`;
     });
     const y0 = minY + h * (0.16 + 0.55 * i);
-    // 周期拉长：飞越只占周期前 28%（约 40s），其余时间不在画面里；
-    // 两队错开相位，平均一分多钟才有一队掠过，开局约 40s 后才首次出现
-    const dur = 130 + i * 40;
+    // 周期 10 分钟，飞越只占前 7%（约 40s）：两队相位对半错开 → 约每 5 分钟才有一队掠过
+    const dur = 600;
     const ltr = i === 0; // 两队方向相反
     flock.style.setProperty('--x0', `${(ltr ? minX - 1.5 : minX + w + 1.5).toFixed(2)}px`);
     flock.style.setProperty('--y0', `${y0.toFixed(2)}px`);
     flock.style.setProperty('--x1', `${(ltr ? minX + w + 1.5 : minX - 1.5).toFixed(2)}px`);
     flock.style.setProperty('--y1', `${(y0 + 0.6).toFixed(2)}px`);
     flock.style.setProperty('--dur', `${dur}s`);
-    flock.style.animationDelay = `${-dur * (0.35 + 0.4 * i)}s`;
+    flock.style.animationDelay = `${-dur * (0.72 + 0.5 * i)}s`;
   }
 
   for (const hex of board.hexes) {
