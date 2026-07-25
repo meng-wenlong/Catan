@@ -1060,9 +1060,12 @@ function setEventDie(el, face) {
   el.title = f.name;
 }
 
+let prevStats = [];   // 每家上次显示的 分数/手牌/卡数，用于变化时的弹跳反馈
+
 function renderPlayers() {
   const panel = $('players-panel');
   panel.innerHTML = '';
+  if (prevStats.length !== S.players.length) prevStats = S.players.map(() => null);
   // 特别建设阶段（5-6 人）：当前建设窗口的玩家卡片高亮 + 🔨 角标
   const sbBuilder = S.phase === 'play' && S.turn.state === 'specialBuild' && S.turn.sb
     ? S.turn.sb.queue[S.turn.sb.idx] : -1;
@@ -1086,18 +1089,29 @@ function renderPlayers() {
       ? TRACKS.map((t) => `<span title="${TRACK_META[t].name}升级等级"><b style="color:${TRACK_META[t].color}">${TRACK_META[t].name}</b> ${p.improvements[t]}</span>`).join('')
       : `<span title="已出骑士">⚔️ ${p.knightsPlayed}</span>`;
     div.style.setProperty('--pc', p.color);
+    const vp = i === myIndex ? S.you.vpTotal : p.vp;
+    const hand = p.handCount - (pendingCount[i] || 0);
+    const dev = p.devCount - (pendingProg[i] || 0);
     div.innerHTML = `
       <div class="p-top">
         <span class="p-ava"></span>
         <span class="p-nm">${esc(p.name)}${i === myIndex ? '<small>（我）</small>' : ''}${sbBuilder === i ? ' <span class="sb-tag">🔨 建设中</span>' : ''}${p.connected ? '' : ' <span class="offline">离线</span>'}</span>
-        <span class="p-vp"><b>${i === myIndex ? S.you.vpTotal : p.vp}</b><small>分</small></span>
+        <span class="p-vp"><b>${vp}</b><small>分</small></span>
       </div>
       <div class="p-stats">
-        <span title="手牌">🃏 ${p.handCount - (pendingCount[i] || 0)}</span>
-        <span title="${ckMode ? '进步卡' : '发展卡'}">🎴 ${p.devCount - (pendingProg[i] || 0)}</span>
+        <span class="p-hand" title="手牌">🃏 ${hand}</span>
+        <span class="p-dev" title="${ckMode ? '进步卡' : '发展卡'}">🎴 ${dev}</span>
         ${ckStats}
       </div>
       ${badges.length ? `<div class="p-badges">${badges.join('')}</div>` : ''}`;
+    // 数值变化时弹一下（卡片每次都整体重建，动画类要在新元素上补挂）
+    const prev = prevStats[i];
+    if (prev) {
+      if (vp !== prev.vp) div.querySelector('.p-vp b').classList.add('stat-pop');
+      if (hand !== prev.hand) div.querySelector('.p-hand').classList.add('stat-pop-sm');
+      if (dev !== prev.dev) div.querySelector('.p-dev').classList.add('stat-pop-sm');
+    }
+    prevStats[i] = { vp, hand, dev };
     panel.appendChild(div);
   });
 }
