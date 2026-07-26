@@ -210,16 +210,18 @@ export const sfx = {
     tone({ freq: 1320, type: 'sine', dur: 0.14, gain: 0.13, when: 0.16 });
     tone({ freq: 1980, type: 'sine', dur: 0.2, gain: 0.08, when: 0.22 });
   },
-  // 摇骰子：翻滚期一串疏密渐缓的「嗒嗒」，落定时双响落桌
-  dice(rollSec = 2.4) {
+  // 摇骰子：翻滚期一串疏密渐缓的「嗒嗒」，每颗骰子落定各给一记落桌声（lands 为落定秒数列表）
+  dice(rollSec = 2.4, lands = [rollSec]) {
     let w = 0;
-    while (w < rollSec - 0.25) {
+    while (w < Math.min(...lands) - 0.25) {
       noise({ freq: 1700 + Math.random() * 1600, q: 3, dur: 0.03, gain: 0.09, when: w });
       w += 0.1 + Math.random() * 0.06 + (w / rollSec) * 0.12; // 越滚越慢
     }
-    noise({ freq: 1000, q: 1.5, dur: 0.06, gain: 0.2, when: rollSec });
-    tone({ freq: 260, freq2: 160, type: 'triangle', dur: 0.08, gain: 0.16, when: rollSec });
-    noise({ freq: 1300, q: 1.5, dur: 0.05, gain: 0.13, when: rollSec + 0.09 });
+    lands.forEach((t, i) => {
+      noise({ freq: 1000, q: 1.5, dur: 0.06, gain: 0.16 + i * 0.03, when: t }); // 越靠后越响，压轴那颗最重
+      tone({ freq: 250 - i * 20, freq2: 155, type: 'triangle', dur: 0.08, gain: 0.14 + i * 0.02, when: t });
+    });
+    noise({ freq: 1300, q: 1.5, dur: 0.05, gain: 0.13, when: Math.max(...lands) + 0.09 });
   },
   // 资源飞牌落进手里：清脆的拾取「叮」，逐张升调越收越爽
   gainTick(i = 0) {

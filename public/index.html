@@ -98,10 +98,11 @@
         </div>
       </div>
       <svg id="board" preserveAspectRatio="xMidYMid meet"></svg>
+      <!-- 中央大骰子：真 3D 立方体，抛入 → 翻滚减速 → 错峰落定（骰面由 main.js 构建） -->
       <div id="dice-stage" class="hidden">
-        <div class="die big" id="bdie1"></div>
-        <div class="die big" id="bdie2"></div>
-        <div class="die big die-event hidden" id="bdie3"></div>
+        <div class="die3d" id="bdie1"><div class="cube"></div></div>
+        <div class="die3d" id="bdie2"><div class="cube"></div></div>
+        <div class="die3d hidden" id="bdie3"><div class="cube"></div></div>
       </div>
       <div id="roll-overlay"></div>
       <!-- 掷出 7：强盗现身全屏演出 -->

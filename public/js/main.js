@@ -597,6 +597,10 @@ socket.on('state', (state) => {
   // 本批新事件里若有掷骰：先单独播放骰子动画，随后所有结算推迟到动画结束
   const diceEvent = state.events.find((e) => e.type === 'dice' && e.seq > lastSeq);
   if (diceEvent) {
+    // 冻结期内接连到来的新掷骰（电脑回合节奏快）：上一批事件此刻还没播，直接推进 lastSeq
+    // 会把它们永久跳过（表现为上一家的产出不发牌）。先把它们立即入队播放——
+    // 产出飞牌与新骰子的翻滚重叠没问题，时间线本身是串行的
+    playEvents(diceEvent.seq - 1);
     lastSeq = diceEvent.seq;
     animateDiceRoll(diceEvent.dice[0], diceEvent.dice[1], diceEvent.eventDie);
     holdUntil = Date.now() + DICE_ROLL_MS + 900;
@@ -1058,6 +1062,61 @@ function setEventDie(el, face) {
   el.classList.add(f.cls);
   el.textContent = f.icon;
   el.title = f.name;
+}
+
+// ---------- 中央大骰子：真 3D 立方体 ----------
+// 骰面布局（位置 → 点数，对面相加为 7）与事件骰布局（3 面野蛮人船 + 三色城门）
+const CUBE_FACE_N = { front: 1, back: 6, right: 2, left: 5, top: 3, bottom: 4 };
+const CUBE_FACE_EV = { front: 'ship', back: 'ship', right: 'politics', left: 'trade', top: 'science', bottom: 'ship' };
+// 让某位置转到正前方所需的立方体姿态 [rotateX, rotateY]
+const CUBE_TURN = { front: [0, 0], back: [0, 180], right: [0, -90], left: [0, 90], top: [-90, 0], bottom: [90, 0] };
+const DIE_ORIENT = {};   // 点数 → 姿态
+for (const [pos, n] of Object.entries(CUBE_FACE_N)) DIE_ORIENT[n] = CUBE_TURN[pos];
+const EV_ORIENT = {};    // 事件面 → 姿态（重复面取最后一个位置即可）
+for (const [pos, f] of Object.entries(CUBE_FACE_EV)) EV_ORIENT[f] = CUBE_TURN[pos];
+
+function buildDiceCubes() {
+  for (const id of ['bdie1', 'bdie2']) {
+    $(id).querySelector('.cube').innerHTML = Object.entries(CUBE_FACE_N)
+      .map(([pos, n]) => `<div class="face fp-${pos}"><img data-n="${n}" src="/assets/opt/die-${n}.webp" alt="${n}"></div>`)
+      .join('');
+  }
+  $('bdie3').querySelector('.cube').innerHTML = Object.entries(CUBE_FACE_EV)
+    .map(([pos, f]) => `<div class="face fp-${pos} ${EVENT_FACE[f].cls}">${EVENT_FACE[f].icon}</div>`)
+    .join('');
+}
+buildDiceCubes();
+
+// ck 红骰：换上 canvas 预染色的红骰面（未就绪时保持白骰）
+function skinDiceCube(el, red) {
+  el.classList.toggle('red', red);
+  for (const img of el.querySelectorAll('.face img')) {
+    img.src = (red && redDieSrc[img.dataset.n]) || `/assets/opt/die-${img.dataset.n}.webp`;
+  }
+}
+
+// 抛掷一颗立方体：从随机初始姿态多转几整圈减速停在目标面，落定时挂 land 类（压扁回弹 + 冲击环）。
+// 落定回调用 setTimeout 而非 anim.onfinish：页面不可见时 finish 事件会被无限推迟，回来后动画状态就错了
+const cubeLandTimers = new WeakMap();
+function rollCube(el, [fx, fy], dur, onLand) {
+  el.classList.remove('land');
+  const cube = el.querySelector('.cube');
+  cube.getAnimations().forEach((a) => a.cancel());
+  const kx = (2 + Math.floor(Math.random() * 2)) * 360;
+  const ky = (2 + Math.floor(Math.random() * 2)) * 360;
+  cube.animate([
+    { transform: 'rotateX(-24deg) rotateY(38deg)' },
+    { transform: `rotateX(${fx + kx}deg) rotateY(${fy + ky}deg)` },
+  ], {
+    duration: matchMedia('(prefers-reduced-motion: reduce)').matches ? 1 : dur,
+    easing: 'cubic-bezier(.16,.7,.18,1)', // 前段急速翻滚，后段长减速吊胃口
+    fill: 'forwards',
+  });
+  clearTimeout(cubeLandTimers.get(el)); // 连续掷骰（如电脑连续回合）时清掉上一次的落定
+  cubeLandTimers.set(el, setTimeout(() => {
+    el.classList.add('land');
+    if (onLand) onLand();
+  }, dur));
 }
 
 let prevStats = [];   // 每家上次显示的 分数/手牌/卡数，用于变化时的弹跳反馈
@@ -2326,23 +2385,50 @@ function animateDiceRoll(d1, d2, eventFace = null) {
   const total = d1 + d2;
   lastDiceTotal = total;
   diceAnimUntil = Date.now() + DICE_ROLL_MS;
-  sfx.dice(DICE_ROLL_MS / 1000);
   $('dice-box').classList.remove('hidden');
-  // 屏幕中央的大骰子（Master Duel 式：关键信息居中演出），角落小骰子同步翻滚
+  // 屏幕中央的大骰子（Master Duel 式：关键信息居中演出）：
+  // 3D 立方体从空中抛入、急速翻滚后长减速，错峰落定（先后砸桌），角落小骰子同步翻滚
   const stage = $('dice-stage');
-  stage.classList.remove('hidden', 'out');
+  // 对准岛屿中心而非容器中心（ck 的 viewBox 向左多扩了海面，两者不重合），并跟随当前缩放/平移；
+  // 缩放到岛心出画面时收回到可视范围内
+  const wrap = $('board-area').getBoundingClientRect();
+  let sx = wrap.width / 2, sy = wrap.height * 0.44;
+  const ctm = $('board').getScreenCTM();
+  if (ctm && S.board.hexes.length) {
+    const mx = S.board.hexes.reduce((a, h) => a + h.x, 0) / S.board.hexes.length;
+    const my = S.board.hexes.reduce((a, h) => a + h.y, 0) / S.board.hexes.length;
+    const p = new DOMPoint(mx, my).matrixTransform(ctm);
+    sx = Math.min(Math.max(p.x - wrap.left, wrap.width * 0.2), wrap.width * 0.8);
+    sy = Math.min(Math.max(p.y - wrap.top, wrap.height * 0.25), wrap.height * 0.7);
+  }
+  stage.style.left = `${sx}px`;
+  stage.style.top = `${sy}px`;
+  const overlayEl = $('roll-overlay');
+  overlayEl.style.left = `${sx}px`;
+  overlayEl.style.top = `${sy + 100}px`;   // 结果数字在骰子正下方
+  stage.classList.remove('hidden', 'out', 'enter');
+  void stage.offsetWidth;           // 重启抛入动画
+  stage.classList.add('enter');
   clearTimeout(diceStageTimer);
   const dies = [$('die1'), $('die2')];
-  const bigDies = [$('bdie1'), $('bdie2')];
   const evDie = $('die3');
   const bigEvDie = $('bdie3');
   const evFaces = Object.keys(EVENT_FACE);
   dies[0].classList.toggle('red-die', !!eventFace);
-  bigDies[0].classList.toggle('red-die', !!eventFace);
+  skinDiceCube($('bdie1'), !!eventFace);
   evDie.classList.toggle('hidden', !eventFace);
   bigEvDie.classList.toggle('hidden', !eventFace);
-  const all = eventFace ? [...dies, ...bigDies, evDie, bigEvDie] : [...dies, ...bigDies];
-  for (const d of all) {
+  // 落定时刻错开：第一颗先停 → 事件骰 → 最后一颗压轴，配上逐颗落桌声
+  const landAt = { d1: DICE_ROLL_MS - 500, ev: DICE_ROLL_MS - 250, d2: DICE_ROLL_MS };
+  const lands = eventFace ? [landAt.d1, landAt.ev, landAt.d2] : [landAt.d1, landAt.d2];
+  sfx.dice(DICE_ROLL_MS / 1000, lands.map((t) => t / 1000));
+  rollCube($('bdie1'), DIE_ORIENT[d1], landAt.d1);
+  rollCube($('bdie2'), DIE_ORIENT[d2], landAt.d2,
+    () => { if (total !== 7) shakeBoard(); });  // 掷 7 由强盗演出负责震屏，不重复
+  if (eventFace) rollCube(bigEvDie, EV_ORIENT[eventFace], landAt.ev);
+  // 角落小骰子仍用换面翻滚
+  const small = eventFace ? [...dies, evDie] : dies;
+  for (const d of small) {
     d.classList.remove('rolling', 'settle');
     void d.offsetWidth;
     d.classList.add('rolling');
@@ -2350,41 +2436,30 @@ function animateDiceRoll(d1, d2, eventFace = null) {
   clearInterval(diceRollTimer);
   const t0 = Date.now();
   diceRollTimer = setInterval(() => {
-    if (Date.now() - t0 < DICE_ROLL_MS) {
+    if (Date.now() - t0 < DICE_ROLL_MS - 160) {
       // 翻滚中显示随机骰面
-      for (const list of [dies, bigDies]) {
-        for (const d of list) setDie(d, 1 + Math.floor(Math.random() * 6));
-      }
-      if (eventFace) {
-        const f = evFaces[Math.floor(Math.random() * evFaces.length)];
-        setEventDie(evDie, f);
-        setEventDie(bigEvDie, f);
-      }
+      for (const d of dies) setDie(d, 1 + Math.floor(Math.random() * 6));
+      if (eventFace) setEventDie(evDie, evFaces[Math.floor(Math.random() * evFaces.length)]);
       return;
     }
     clearInterval(diceRollTimer);
-    for (const [a, b] of [[dies, [d1, d2]], [bigDies, [d1, d2]]]) {
-      setDie(a[0], b[0]);
-      setDie(a[1], b[1]);
-    }
-    if (eventFace) {
-      setEventDie(evDie, eventFace);
-      setEventDie(bigEvDie, eventFace);
-    }
-    for (const d of all) {
+    setDie(dies[0], d1);
+    setDie(dies[1], d2);
+    if (eventFace) setEventDie(evDie, eventFace);
+    for (const d of small) {
       d.classList.remove('rolling');
       void d.offsetWidth;
       d.classList.add('settle');
     }
-    // 大骰子定格片刻后淡出
+    // 大骰子定格片刻后淡出（别停太久：产出闪烁时要能看清棋盘上的数字圈）
     diceStageTimer = setTimeout(() => {
       stage.classList.add('out');
       diceStageTimer = setTimeout(() => stage.classList.add('hidden'), 500);
-    }, 1600);
+    }, 1000);
     if (total === 7) {
       showSevenStage(); // 强盗现身全屏演出（替代大数字）
     } else {
-      // 中央大数字 + 产出板块闪烁
+      // 中央大数字砸落 + 产出板块闪烁
       const overlay = $('roll-overlay');
       overlay.textContent = total;
       overlay.classList.remove('seven', 'show');
@@ -2439,10 +2514,10 @@ function stepSpotlight(item) {
   animStep((done) => spotlight({ ...item, onDone: done }));
 }
 
-function playEvents() {
+function playEvents(upTo = Infinity) { // upTo：只播放该 seq 及之前的事件（冲刷被新掷骰打断的上一批）
   const progressEvents = []; // 抽进步卡单独攒起来，等资源全部落地后作为第二阶段播放
   for (const ev of S.events) {
-    if (ev.seq <= lastSeq) continue;
+    if (ev.seq <= lastSeq || ev.seq > upTo) continue;
     lastSeq = ev.seq;
     if (ev.type === 'progress') {
       progressEvents.push(ev);
@@ -2850,7 +2925,7 @@ function flyResourceFromHex(res, n, player, rollTotal = lastDiceTotal) {
       return `translate(calc(${pt.x}px - 50%), calc(${pt.y - extra}px - 50%)) scale(${s}) rotate(${rot}deg)`;
     };
     // 三段：① 从地里弹出并悬浮闪光 ② 沿弧线飞向目标 ③ 临近目标收拢
-    const anim = f.animate([
+    f.animate([
       { transform: at(0, 0, -14, 0), opacity: 0, easing: 'cubic-bezier(.34,1.56,.64,1)' },
       { transform: at(0, 1.3, 3, 22), opacity: 1, offset: 0.2 },
       { transform: at(0, 1.1, -2, 16), opacity: 1, offset: 0.34, easing: 'cubic-bezier(.45,0,.5,1)' },
@@ -2860,7 +2935,9 @@ function flyResourceFromHex(res, n, player, rollTotal = lastDiceTotal) {
     ], { duration: FLY_MS, delay: i * FLY_STAGGER, fill: 'backwards' });
     flightStarted(player === myIndex ? res : null);
     const isLast = i === shown - 1;
-    anim.onfinish = () => {
+    // 落地回调用 setTimeout 而非 anim.onfinish：页面被遮挡/切走时 finish 事件不触发，牌会永远悬着
+    setTimeout(() => {
+      if (!f.isConnected) return; // 对局重置已清场：计数器已整体复位，不再结算
       f.remove();
       flightEnded(player === myIndex ? res : null);
       // 落地才 +1：先解锁数字（renderHand/renderPlayers 重绘并 bump），再撒一圈金光
@@ -2876,7 +2953,7 @@ function flyResourceFromHex(res, n, player, rollTotal = lastDiceTotal) {
         void c.offsetWidth;
         c.classList.add('bump');
       }
-    };
+    }, FLY_MS + i * FLY_STAGGER);
   }
   return true;
 }
@@ -2905,12 +2982,13 @@ function flyDiscardCards(playerIdx, cards) {
     const rise = 42 + Math.random() * 32;
     const fall = 170 + Math.random() * 70;
     const rot = (Math.random() - 0.5) * 150;
-    const anim = f.animate([
+    f.animate([
       { transform: 'translate(-50%, -50%) scale(.4) rotate(0deg)', opacity: 0, easing: 'cubic-bezier(.34,1.56,.64,1)' },
       { transform: `translate(calc(${dx * 0.35}px - 50%), calc(${-rise}px - 50%)) scale(1.05) rotate(${rot * 0.35}deg)`, opacity: 1, offset: 0.3, easing: 'cubic-bezier(.45,0,.85,.6)' },
       { transform: `translate(calc(${dx}px - 50%), calc(${fall}px - 50%)) scale(.85) rotate(${rot}deg)`, opacity: 0, offset: 1 },
     ], { duration: 950, delay: i * 110, fill: 'backwards' });
-    anim.onfinish = () => f.remove();
+    setTimeout(() => f.remove(), 950 + i * 110); // 不用 onfinish：页面不可见时不触发
+
   });
   if (list.length > shown.length) floatOverPlayer(playerIdx, `🗑️ −${list.length}`);
   return true;
@@ -2958,7 +3036,7 @@ function flyStealCard(fromIdx, toIdx, onArrive = null) {
     return `translate(calc(${pt.x}px - 50%), calc(${pt.y}px - 50%)) scale(${s}) rotate(${rot}deg)`;
   };
   // 三段：① 拔出并左右挣扎 ② 沿弧线飞向偷牌者 ③ 临近收拢没入
-  const anim = f.animate([
+  f.animate([
     { transform: at(0, 0.3, 0), opacity: 0, easing: 'cubic-bezier(.34,1.56,.64,1)' },
     { transform: at(0, 1.12, -9), opacity: 1, offset: 0.16 },
     { transform: at(0, 1.02, 7), opacity: 1, offset: 0.3, easing: 'cubic-bezier(.5,0,.6,1)' },
@@ -2966,7 +3044,8 @@ function flyStealCard(fromIdx, toIdx, onArrive = null) {
     { transform: at(1, 0.5, 6), opacity: 0.9, offset: 1 },
   ], { duration: STEAL_MS });
   flightStarted();
-  anim.onfinish = () => {
+  setTimeout(() => { // 不用 onfinish：页面不可见时不触发
+    if (!f.isConnected) return; // 对局重置已清场
     f.remove();
     flightEnded();
     onArrive?.(); // 落地才结清数字：对应资源卡随重绘 bump +1
@@ -2974,7 +3053,7 @@ function flyStealCard(fromIdx, toIdx, onArrive = null) {
     toEl.classList.remove('bump');
     void toEl.offsetWidth;
     toEl.classList.add('bump');
-  };
+  }, STEAL_MS);
   return true;
 }
 
@@ -3021,18 +3100,19 @@ function flyProgressCard(deck, playerIdx, reverse = false, cardId = null, onArri
   const dx = to.x - from.x;
   const dy = to.y - from.y;
   // 两段式：先在起点弹出+抬升+停顿（像从牌堆/手中长出），再飞向目标
-  const anim = f.animate([
+  f.animate([
     { transform: 'translate(-50%,-50%) scale(0) rotate(-10deg)', opacity: 0, easing: 'cubic-bezier(.34,1.56,.64,1)' },
     { transform: 'translate(-50%, calc(-50% - 12px)) scale(1.18) rotate(0deg)', opacity: 1, offset: 0.3 },
     { transform: 'translate(-50%, calc(-50% - 12px)) scale(1) rotate(0deg)', opacity: 1, offset: 0.46, easing: 'cubic-bezier(.5,0,.4,1)' },
     { transform: `translate(calc(${dx}px - 50%), calc(${dy}px - 50%)) scale(.5) rotate(8deg)`, opacity: .9, offset: 1 },
   ], { duration: 1300, fill: 'backwards' });
   flightStarted();
-  anim.onfinish = () => {
+  setTimeout(() => { // 不用 onfinish：页面不可见时不触发
+    if (!f.isConnected) return; // 对局重置已清场
     f.remove();
     flightEnded();
     onArrive?.(); // 落地才结算：新卡此刻出现在底栏 / 🎴 计数 +1
-  };
+  }, 1300);
   return true;
 }
 
