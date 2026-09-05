@@ -223,6 +223,12 @@ export const sfx = {
       }
     }
   },
+  // 引水渠：水流「哗」+ 两声上行水泡
+  aqueduct() {
+    noise({ freq: 900, freq2: 2400, q: 0.8, dur: 0.5, gain: 0.07 });
+    tone({ freq: 520, freq2: 1040, type: 'sine', dur: 0.14, gain: 0.09, when: 0.12 });
+    tone({ freq: 700, freq2: 1500, type: 'sine', dur: 0.16, gain: 0.08, when: 0.32 });
+  },
   // 资源飞牌落进手里：清脆的拾取「叮」，逐张升调越收越爽
   gainTick(i = 0) {
     const scale = [660, 742, 880, 990, 1188, 1320];

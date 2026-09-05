@@ -640,7 +640,7 @@ export const ckMethods = {
     if (!RESOURCES.includes(res)) this.err('请选择一种资源');
     if (this.bank[res] <= 0) this.err(`银行的${CARD_NAME[res]}不足`);
     this.gain(p, res, 1);
-    this.addEvent('gain', { player: p, res, n: 1 });
+    this.addEvent('gain', { player: p, res, n: 1, source: 'aqueduct' }); // source：客户端从科学牌堆飞出带水光的牌
     this.addLog(`${this.players[p].name} 通过引水渠获得 1 张${CARD_NAME[res]}`);
     this.turn.pendingAqueduct = this.turn.pendingAqueduct.filter((i) => i !== p);
     if (this.turn.pendingAqueduct.length === 0) this.turn.state = 'main';
@@ -828,14 +828,16 @@ export const ckMethods = {
         if (!RESOURCES.includes(payload.res)) this.err('请选择一种资源');
         spend();
         let total = 0;
+        const from = {}; // 各受害者上缴张数（客户端据此从每家面板飞牌）
         this.players.forEach((op, i) => {
           if (i === p) return;
           const n = Math.min(2, op.hand[payload.res]);
+          if (n > 0) from[i] = n;
           op.hand[payload.res] -= n;
           pl.hand[payload.res] += n;
           total += n;
         });
-        this.addEvent('monopoly', { player: p, res: payload.res, n: total });
+        this.addEvent('monopoly', { player: p, res: payload.res, n: total, from });
         this.addLog(`${pl.name} 发动资源垄断：每人最多上缴 2 张${CARD_NAME[payload.res]}（共 ${total} 张）`);
         break;
       }
@@ -843,14 +845,16 @@ export const ckMethods = {
         if (!COMMODITIES.includes(payload.res)) this.err('请选择一种商品');
         spend();
         let total = 0;
+        const from = {}; // 各受害者上缴张数（客户端据此从每家面板飞牌）
         this.players.forEach((op, i) => {
           if (i === p) return;
           const n = Math.min(1, op.hand[payload.res]);
+          if (n > 0) from[i] = n;
           op.hand[payload.res] -= n;
           pl.hand[payload.res] += n;
           total += n;
         });
-        this.addEvent('monopoly', { player: p, res: payload.res, n: total });
+        this.addEvent('monopoly', { player: p, res: payload.res, n: total, from });
         this.addLog(`${pl.name} 发动商品垄断：每人上缴 1 张${CARD_NAME[payload.res]}（共 ${total} 张）`);
         break;
       }

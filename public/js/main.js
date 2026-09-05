@@ -668,7 +668,7 @@ function registerPendingGains(oldHand) {
         pendingCount[ev.to] = (pendingCount[ev.to] || 0) + 1;
         if (ev.to === myIndex) mySteals++;
       }
-    } else if (ev.type === 'progress') { // 抽进步卡：藏到发放飞牌落地再出现
+    } else if (ev.type === 'progress' || ev.type === 'buyDev') { // 抽进步卡 / 买发展卡：藏到发放飞牌落地再出现
       pendingProg[ev.player] = (pendingProg[ev.player] || 0) + 1;
       if (ev.player === myIndex) pendingProgSelf++;
     }
@@ -1338,6 +1338,7 @@ function renderPlayers() {
     const active = (S.phase === 'setup' ? S.setup.current : S.turn.player) === i && S.phase !== 'ended';
     el.div.classList.toggle('active', active);
     el.div.classList.toggle('sb-builder', sbBuilder === i);
+    el.div.classList.toggle('aqueduct-pending', ckMode && S.turn.state === 'aqueduct' && !!S.ck?.pendingAqueduct?.includes(i));
 
     const nm = `${esc(p.name)}${i === myIndex ? '<small>（我）</small>' : ''}${sbBuilder === i ? ' <span class="sb-tag">🔨 建设中</span>' : ''}${p.connected ? '' : ' <span class="offline">离线</span>'}`;
     if (nm !== c.nm) { el.nm.innerHTML = nm; c.nm = nm; }
@@ -1448,7 +1449,9 @@ function renderDevCards() {
     return;
   }
   const groups = {};
-  for (const c of S.you.devCards) {
+  // 刚买的卡藏到发放飞牌落地再出现（devCards 按购买顺序追加，末尾 pendingProgSelf 张即在途的）
+  const cards = pendingProgSelf > 0 ? S.you.devCards.slice(0, -pendingProgSelf) : S.you.devCards;
+  for (const c of cards) {
     if (c.played) continue;
     if (!groups[c.type]) groups[c.type] = { total: 0, playable: 0 };
     groups[c.type].total++;
@@ -2604,9 +2607,9 @@ function renderMonopolyButtons() {
 
 // ---------- 动画事件 ----------
 const DICE_ROLL_MS = 2000;    // 掷骰演出时长：最后一颗骰子静止的时刻
-const GAIN_STAGGER_MS = 1100; // 每条产出事件的间隔
-const FLY_MS = 2200;          // 单张产出飞牌全程时长
-const FLY_STAGGER = 340;      // 同一条产出内逐张起飞的间隔
+const GAIN_STAGGER_MS = 900;  // 每条产出事件的间隔
+const FLY_MS = 1500;          // 单张产出飞牌全程时长（破土 + 悬停 + 抛飞）
+const FLY_STAGGER = 220;      // 同一条产出内逐张起飞的间隔
 let diceAnimUntil = 0;
 let diceRollTimer = null;
 let lastDiceTotal = 0;       // 最近一次掷骰点数：产出飞卡动画据此反查产出地块
@@ -2624,15 +2627,8 @@ function animateDiceRoll(d1, d2, eventFace = null) {
   // 对准岛屿中心而非容器中心（ck 的 viewBox 向左多扩了海面，两者不重合），并跟随当前缩放/平移；
   // 缩放到岛心出画面时收回到可视范围内
   const wrap = $('board-area').getBoundingClientRect();
-  let sx = wrap.width / 2, sy = wrap.height * 0.44;
-  const ctm = $('board').getScreenCTM();
-  if (ctm && S.board.hexes.length) {
-    const mx = S.board.hexes.reduce((a, h) => a + h.x, 0) / S.board.hexes.length;
-    const my = S.board.hexes.reduce((a, h) => a + h.y, 0) / S.board.hexes.length;
-    const p = new DOMPoint(mx, my).matrixTransform(ctm);
-    sx = Math.min(Math.max(p.x - wrap.left, wrap.width * 0.2), wrap.width * 0.8);
-    sy = Math.min(Math.max(p.y - wrap.top, wrap.height * 0.25), wrap.height * 0.7);
-  }
+  const center = islandCenterScreen();
+  const sx = center.x - wrap.left, sy = center.y - wrap.top;
   stage.style.left = `${sx}px`;
   stage.style.top = `${sy}px`;
   const overlayEl = $('roll-overlay');
@@ -2798,7 +2794,7 @@ function playEvents(upTo = Infinity) { // upTo：只播放该 seq 及之前的�
         const rollTotal = lastDiceTotal;
         animStep((done) => {
           // 从产出地块飞牌：自己飞进手牌，别人飞到其状态栏卡片；条件不满足时回落为飘字
-          if (flyResourceFromHex(res, n, player, rollTotal)) {
+          if (flyResourceFromHex(res, n, player, rollTotal, ev.source)) {
             lastFlightEnd = Math.max(lastFlightEnd, Date.now() + FLY_MS + (Math.min(n, 6) - 1) * FLY_STAGGER);
           } else {
             floatOverPlayer(player, `+${n} ${resIcon(res)}`);
@@ -2847,9 +2843,36 @@ function playEvents(upTo = Infinity) { // upTo：只播放该 seq 及之前的�
         animStep((done) => {
           sfx.coin();
           floatOverPlayer(ev.player, `💰 +${ev.n} ${resIcon(ev.res)}`);
-          done();
+          // 各受害者面板飞出上缴的牌（旧版服务端无 from 字段时只有飘字）
+          flyMonopolyCards(ev.player, ev.res, ev.from);
+          setTimeout(done, 500); // 飞行后半程可与后续步骤重叠
         });
         break;
+      case 'buyDev':
+        animStep((done) => {
+          sfx.card();
+          // 银行发一张卡背给买家；新卡藏到落地才出现（revealProgress），无动画则立即结清
+          if (!flyDevCard(ev.player, () => revealProgress(ev.player))) {
+            floatOverPlayer(ev.player, '🎴 +1');
+            revealProgress(ev.player);
+          }
+          setTimeout(done, 450);
+        });
+        break;
+      case 'aqueduct': {
+        // 引水渠触发：中央横幅点名 + 相关玩家面板泛水光（面板高亮随 turn.state 由 renderPlayers 维持）
+        const names = ev.players.map((i) => `<b style="color:${S.players[i].color}">${esc(S.players[i].name)}</b>`).join('、');
+        stepSpotlight({
+          kind: 'banner',
+          icon: '🚰',
+          title: '引水渠',
+          html: `<div class="sp-aqueduct">${names} 本轮没有任何产出<br><span class="sp-aq-sub">科学 3 级的引水渠：可任选 1 张资源</span></div>`,
+          accent: '#3aa0c8',
+          dur: 3200,
+          onShow: () => sfx.aqueduct(),
+        });
+        break;
+      }
       case 'discard':
         animStep((done) => {
           sfx.discard();
@@ -3137,8 +3160,129 @@ const RES_TERRAIN = {
   wood: 'forest', brick: 'hills', sheep: 'pasture', wheat: 'fields', ore: 'mountains',
   paper: 'forest', cloth: 'pasture', coin: 'mountains', // CK：城市在对应地形产出商品，同样从该地块飞出
 };
-function flyResourceFromHex(res, n, player, rollTotal = lastDiceTotal) {
-  if (!S || !rollTotal) return false;
+// ---------- 飞牌物理：通用抛掷关键帧 ----------
+// 产出、偷牌、进步卡/发展卡发放、垄断收牌共用同一套运动模型，整段按物理算好后交给 WAAPI 线性播放
+// （不拼接多段缓动，段与段之间没有速度跳变）。屏幕采用斜俯视机位：高度 h 映射为屏幕上移与放大。
+//   起手（pre）：
+//     pop  从地块里立起来（rotateX 从躺平翻到面朝镜头），匀减速上抛到悬停高度，再悬停片刻让人看清（产出）
+//     tug  被拽：沿航线方向被拉出一截又被扯回，拉两下第三下才挣脱（偷牌 / 垄断上缴）
+//     deal 从牌堆或手里抬起（发牌）
+//   抛飞：地面投影沿直线匀速略带空气阻力地飞向目标，高度走抛物线落地归零；
+//         整张牌绕法线自转约一圈、落地回正，并带越飞越小的三维翻摆
+//   落地：按 targetScale 收拢（飞进自己手牌时正好变成那张卡）；fadeOut 则末段渐隐（飞进别人的面板）
+const TOSS = { hover: 26, camY: 1, camZ: 520, drag: 0.9 };
+const TOSS_PRE = { pop: [0.16, 0.3], tug: [0.3, 0.36], deal: [0.1, 0.16], none: [0, 0] }; // [起手结束, 出手时刻]
+function tossKeyframes(from, to, o = {}) {
+  const { dur = 1500, pre = 'pop', targetScale = 1, fadeOut = false, idx = 0, spin = 1, hover = TOSS.hover } = o;
+  const [P1, LAUNCH] = TOSS_PRE[pre] || TOSS_PRE.none;
+  const { camY, camZ, drag } = TOSS;
+  const dx = to.x - from.x, dy = to.y - from.y;
+  const dist = Math.hypot(dx, dy);
+  const ux = dist ? dx / dist : 0, uy = dist ? dy / dist : 0;   // 航线方向
+  const nx = -uy, ny = ux;                                       // 航线法向
+  // 每张略有不同：拱高、横向偏摆、自转方向与初始歪斜
+  const peak = Math.min(230, Math.max(90, dist * 0.3)) * (0.88 + Math.random() * 0.24);
+  const side = (Math.random() - 0.5) * 36 * (idx ? 1 : 0.4);
+  const spinDir = Math.random() < 0.5 ? -1 : 1;
+  const theta0 = (Math.random() - 0.5) * 40;
+  const wobX = 14 + Math.random() * 10, wobY = 10 + Math.random() * 8;
+  const wobPhase = Math.random() * Math.PI * 2;
+  const pull = pre === 'tug' ? 20 : 0;                          // 被拽出的距离 px
+  const frames = [];
+  const N = Math.ceil(dur / (1000 / 60));
+  for (let k = 0; k <= N; k++) {
+    const t = k / N;
+    let gx = 0, gy = 0, h = 0, sc = 1, op = 1, rz = theta0, rx = 0, ry = 0;
+    if (t < P1) {
+      const u = t / P1;
+      if (pre === 'pop') {
+        h = hover * (2 * u - u * u);                    // 上抛减速到顶
+        rx = -78 * (1 - u) * (1 - u);                   // 从躺平翻立起来，越到后面越慢
+        sc = 0.55 + 0.45 * (1 - (1 - u) * (1 - u));
+        op = Math.min(1, u * 2.4);
+      } else if (pre === 'tug') {
+        const d = Math.abs(Math.sin(Math.PI * 2.5 * u)) * (0.45 + 0.55 * u) * pull; // 拉两下又被扯回，第三下拽出
+        gx = ux * d; gy = uy * d;
+        h = hover * u * u;
+        rz = theta0 * u + 7 * Math.sin(Math.PI * 5 * u) * (1 - u * 0.5);
+        sc = 0.9 + 0.1 * u;
+        op = Math.min(1, u * 3);
+      } else if (pre === 'deal') {
+        h = hover * (2 * u - u * u);
+        sc = 0.85 + 0.15 * (1 - (1 - u) * (1 - u));
+        rz = theta0 * u;
+        op = Math.min(1, u * 3);
+      }
+    } else if (t < LAUNCH) {
+      const u = (t - P1) / (LAUNCH - P1);
+      gx = ux * pull; gy = uy * pull;
+      h = hover + 3 * Math.sin(u * Math.PI * 2);      // 悬停轻浮
+      rz = theta0 + 4 * Math.sin(u * Math.PI * 2);
+    } else {
+      const u = (t - LAUNCH) / (1 - LAUNCH);
+      const p = (1 - Math.exp(-drag * u)) / (1 - Math.exp(-drag)); // 空气阻力：越飞越慢一点
+      gx = dx * p + nx * side * Math.sin(Math.PI * p) + ux * pull * (1 - p);
+      gy = dy * p + ny * side * Math.sin(Math.PI * p) + uy * pull * (1 - p);
+      h = hover * (1 - u) + 4 * peak * u * (1 - u);   // 抛物线，落地时 h = 0
+      rz = theta0 + (spinDir * 360 * spin - theta0) * p; // 自转，落地时回正
+      const fade = (1 - u) * (1 - u);                 // 翻摆越飞越小，临近目标归零
+      rx = wobX * Math.sin(u * Math.PI * 3 + wobPhase) * fade;
+      ry = wobY * Math.sin(u * Math.PI * 2.4 + wobPhase * 0.7) * fade;
+      sc = 1 + (targetScale - 1) * p * p;             // 接近目标才向目标尺寸收拢
+      if (fadeOut) op = 1 - Math.max(0, (u - 0.82) / 0.18) * 0.85; // 末段渐隐没入
+    }
+    const scale = sc * (1 + h / camZ);
+    frames.push({
+      offset: t, opacity: op,
+      transform: `translate3d(${gx.toFixed(1)}px, ${(gy - h * camY).toFixed(1)}px, 0) perspective(600px) `
+        + `rotateX(${rx.toFixed(1)}deg) rotateY(${ry.toFixed(1)}deg) rotateZ(${rz.toFixed(1)}deg) scale(${scale.toFixed(3)})`,
+    });
+  }
+  return frames;
+}
+// 抛开（弃牌）：从手里随机方向甩出去，重力坠落、三轴翻滚，掉出桌面范围后淡出
+function tossAwayKeyframes(o = {}) {
+  const { dur = 900 } = o;
+  const g = 2200;                                              // px/s²
+  const vx = (Math.random() - 0.5) * 460;
+  const vy = -(240 + Math.random() * 180);                     // 向上为负
+  const wz = (Math.random() - 0.5) * 760, wx = (Math.random() - 0.5) * 520, wy = (Math.random() - 0.5) * 520; // 角速度 deg/s
+  const T = dur / 1000;
+  const frames = [];
+  const N = Math.ceil(dur / (1000 / 60));
+  for (let k = 0; k <= N; k++) {
+    const t = (k / N) * T;
+    const x = vx * (1 - Math.exp(-1.4 * t)) / 1.4;              // 水平带阻力
+    const y = vy * t + 0.5 * g * t * t;
+    const sc = 0.6 + 0.4 * Math.min(1, t / 0.1);                // 离手瞬间长到实际大小
+    const op = Math.min(1, t / 0.06) * Math.max(0, 1 - Math.max(0, y - 120) / 140);
+    frames.push({
+      offset: k / N, opacity: op,
+      transform: `translate3d(${x.toFixed(1)}px, ${y.toFixed(1)}px, 0) perspective(600px) `
+        + `rotateX(${(wx * t).toFixed(1)}deg) rotateY(${(wy * t).toFixed(1)}deg) rotateZ(${(wz * t).toFixed(1)}deg) scale(${sc.toFixed(3)})`,
+    });
+  }
+  return frames;
+}
+// 岛屿中心的屏幕坐标（银行发牌的出发点；ck 的 viewBox 向左多扩了海面，不能用容器中心），夹在可视范围内
+function islandCenterScreen() {
+  const wrap = $('board-area').getBoundingClientRect();
+  let x = wrap.left + wrap.width / 2, y = wrap.top + wrap.height * 0.44;
+  const ctm = $('board').getScreenCTM();
+  if (ctm && S?.board?.hexes.length) {
+    const mx = S.board.hexes.reduce((a, h) => a + h.x, 0) / S.board.hexes.length;
+    const my = S.board.hexes.reduce((a, h) => a + h.y, 0) / S.board.hexes.length;
+    const p = new DOMPoint(mx, my).matrixTransform(ctm);
+    x = Math.min(Math.max(p.x, wrap.left + wrap.width * 0.2), wrap.left + wrap.width * 0.8);
+    y = Math.min(Math.max(p.y, wrap.top + wrap.height * 0.25), wrap.top + wrap.height * 0.7);
+  }
+  return { x, y };
+}
+
+function flyResourceFromHex(res, n, player, rollTotal = lastDiceTotal, source = null) {
+  if (!S) return false;
+  if (source === 'aqueduct') return flyAqueductCard(res, player);
+  if (!rollTotal) return false;
   // 该玩家的建筑相邻的地块集合（商品只有城市产出，只算城市旁）
   const isCommodity = res === 'paper' || res === 'cloth' || res === 'coin';
   const mine = new Set();
@@ -3168,6 +3312,8 @@ function flyResourceFromHex(res, n, player, rollTotal = lastDiceTotal) {
     if (!from) return false;
     froms.push(from);
   }
+  // 目标大小：飞到自己手牌时缩放到与手牌卡一样大，落下去就「变成」那张卡；飞向别人面板时收小
+  const targetScale = player === myIndex ? Math.min(1.5, Math.max(0.8, rect.width / 50)) : 0.5;
   for (let i = 0; i < shown; i++) {
     const from = froms[i];
     const f = document.createElement('div');
@@ -3176,31 +3322,9 @@ function flyResourceFromHex(res, n, player, rollTotal = lastDiceTotal) {
     f.style.left = `${from.x}px`;
     f.style.top = `${from.y}px`;
     document.body.appendChild(f);
-    // 抛物线轨迹：拱点在两端上方，采样贝塞尔中间点作关键帧
-    const dx = ex - from.x;
-    const dy = ey - from.y;
-    const arc = Math.min(150, Math.max(70, Math.hypot(dx, dy) * 0.22)); // 距离越远拱得越高
-    const bez = (t) => { // 二次贝塞尔（控制点取中点上方 arc）
-      const cx2 = dx / 2;
-      const cy2 = Math.min(0, dy) / 2 - arc;
-      return {
-        x: 2 * (1 - t) * t * cx2 + t * t * dx,
-        y: 2 * (1 - t) * t * cy2 + t * t * dy,
-      };
-    };
-    const at = (t, s, rot, extra = 0) => {
-      const pt = bez(t);
-      return `translate(calc(${pt.x}px - 50%), calc(${pt.y - extra}px - 50%)) scale(${s}) rotate(${rot}deg)`;
-    };
-    // 三段：① 从地里弹出并悬浮闪光 ② 沿弧线飞向目标 ③ 临近目标收拢
-    f.animate([
-      { transform: at(0, 0, -14, 0), opacity: 0, easing: 'cubic-bezier(.34,1.56,.64,1)' },
-      { transform: at(0, 1.3, 3, 22), opacity: 1, offset: 0.2 },
-      { transform: at(0, 1.1, -2, 16), opacity: 1, offset: 0.34, easing: 'cubic-bezier(.45,0,.5,1)' },
-      { transform: at(0.35, 1.0, 4, 0), opacity: 1, offset: 0.58 },
-      { transform: at(0.7, 0.85, 8, 0), opacity: 1, offset: 0.8, easing: 'cubic-bezier(.4,0,.9,.6)' },
-      { transform: at(1, 0.45, 12, 0), opacity: 0.85, offset: 1 },
-    ], { duration: FLY_MS, delay: i * FLY_STAGGER, fill: 'backwards' });
+    f.animate(tossKeyframes(from, { x: ex, y: ey }, { dur: FLY_MS, pre: 'pop', targetScale, fadeOut: targetScale < 1, idx: i }), {
+      duration: FLY_MS, delay: i * FLY_STAGGER, easing: 'linear', fill: 'both',
+    });
     flightStarted(player === myIndex ? res : null);
     const isLast = i === shown - 1;
     // 落地回调用 setTimeout 而非 anim.onfinish：页面被遮挡/切走时 finish 事件不触发，牌会永远悬着
@@ -3245,18 +3369,9 @@ function flyDiscardCards(playerIdx, cards) {
     f.style.left = `${cx}px`;
     f.style.top = `${cy}px`;
     document.body.appendChild(f);
-    // 每张随机方向：先弹起再翻转坠落
-    const dx = (Math.random() - 0.5) * 190;
-    const rise = 42 + Math.random() * 32;
-    const fall = 170 + Math.random() * 70;
-    const rot = (Math.random() - 0.5) * 150;
-    f.animate([
-      { transform: 'translate(-50%, -50%) scale(.4) rotate(0deg)', opacity: 0, easing: 'cubic-bezier(.34,1.56,.64,1)' },
-      { transform: `translate(calc(${dx * 0.35}px - 50%), calc(${-rise}px - 50%)) scale(1.05) rotate(${rot * 0.35}deg)`, opacity: 1, offset: 0.3, easing: 'cubic-bezier(.45,0,.85,.6)' },
-      { transform: `translate(calc(${dx}px - 50%), calc(${fall}px - 50%)) scale(.85) rotate(${rot}deg)`, opacity: 0, offset: 1 },
-    ], { duration: 950, delay: i * 110, fill: 'backwards' });
-    setTimeout(() => f.remove(), 950 + i * 110); // 不用 onfinish：页面不可见时不触发
-
+    // 每张随机方向甩出，重力坠落、翻滚、掉出桌面淡出
+    f.animate(tossAwayKeyframes({ dur: 900 }), { duration: 900, delay: i * 90, easing: 'linear', fill: 'both' });
+    setTimeout(() => f.remove(), 900 + i * 90); // 不用 onfinish：页面不可见时不触发
   });
   if (list.length > shown.length) floatOverPlayer(playerIdx, `🗑️ −${list.length}`);
   return true;
@@ -3287,30 +3402,10 @@ function flyStealCard(fromIdx, toIdx, onArrive = null) {
   f.style.left = `${from.x}px`;
   f.style.top = `${from.y}px`;
   document.body.appendChild(f);
-  // 弧线轨迹与产出飞牌同款：二次贝塞尔采样做关键帧
-  const dx = to.x - from.x;
-  const dy = to.y - from.y;
-  const arc = Math.min(130, Math.max(60, Math.hypot(dx, dy) * 0.2));
-  const bez = (t) => {
-    const cx2 = dx / 2;
-    const cy2 = Math.min(0, dy) / 2 - arc;
-    return {
-      x: 2 * (1 - t) * t * cx2 + t * t * dx,
-      y: 2 * (1 - t) * t * cy2 + t * t * dy,
-    };
-  };
-  const at = (t, s, rot) => {
-    const pt = bez(t);
-    return `translate(calc(${pt.x}px - 50%), calc(${pt.y}px - 50%)) scale(${s}) rotate(${rot}deg)`;
-  };
-  // 三段：① 拔出并左右挣扎 ② 沿弧线飞向偷牌者 ③ 临近收拢没入
-  f.animate([
-    { transform: at(0, 0.3, 0), opacity: 0, easing: 'cubic-bezier(.34,1.56,.64,1)' },
-    { transform: at(0, 1.12, -9), opacity: 1, offset: 0.16 },
-    { transform: at(0, 1.02, 7), opacity: 1, offset: 0.3, easing: 'cubic-bezier(.5,0,.6,1)' },
-    { transform: at(0.45, 0.95, -4), opacity: 1, offset: 0.62 },
-    { transform: at(1, 0.5, 6), opacity: 0.9, offset: 1 },
-  ], { duration: STEAL_MS });
+  // 被拽：沿航线方向拉两下又被扯回（受害者面板同步抖动），第三下挣脱后抛向偷牌者，卡背自转一圈落进面板
+  f.animate(tossKeyframes(from, to, { dur: STEAL_MS, pre: 'tug', targetScale: toIdx === myIndex ? 0.9 : 0.55, fadeOut: true }), {
+    duration: STEAL_MS, easing: 'linear', fill: 'both',
+  });
   flightStarted();
   setTimeout(() => { // 不用 onfinish：页面不可见时不触发
     if (!f.isConnected) return; // 对局重置已清场
@@ -3324,11 +3419,125 @@ function flyStealCard(fromIdx, toIdx, onArrive = null) {
   return true;
 }
 
+// ---------- 垄断收牌 ----------
+// 各受害者面板各飞出自己上缴的那几张真实卡面（垄断公开资源种类），被拽出来后抛给发动者；最多 8 张
+function flyMonopolyCards(player, res, from) {
+  if (!from) return false;
+  const toEl = (player === myIndex && document.querySelector(`#hand-cards .res-card.res-${res}`)) || stealAnchorEl(player);
+  if (!toEl) return false;
+  const tr = toEl.getBoundingClientRect();
+  if (!tr.width) return false;
+  const to = { x: tr.left + tr.width / 2, y: tr.top + tr.height / 2 };
+  const targetScale = player === myIndex ? Math.min(1.5, Math.max(0.8, tr.width / 50)) : 0.5;
+  const list = [];
+  for (const [i, n] of Object.entries(from)) for (let k = 0; k < n; k++) list.push(+i);
+  const shown = list.slice(0, 8);
+  if (!shown.length) return false;
+  const MONO_MS = 1300, MONO_STAGGER = 150;
+  let launched = 0;
+  shown.forEach((victim, k) => {
+    const el = stealAnchorEl(victim);
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    if (!r.width) return;
+    if (k === shown.indexOf(victim)) replayAnim(el, 'stolen-shake');
+    const f = document.createElement('div');
+    f.className = 'fly-rescard';
+    f.style.backgroundImage = `url("/assets/opt/resource-${res}.webp")`;
+    f.style.left = `${r.left + r.width / 2}px`;
+    f.style.top = `${r.top + r.height / 2}px`;
+    document.body.appendChild(f);
+    f.animate(tossKeyframes({ x: r.left + r.width / 2, y: r.top + r.height / 2 }, to,
+      { dur: MONO_MS, pre: 'tug', targetScale, fadeOut: player !== myIndex, idx: k }), {
+      duration: MONO_MS, delay: k * MONO_STAGGER, easing: 'linear', fill: 'both',
+    });
+    launched++;
+    flightStarted();
+    setTimeout(() => {
+      if (!f.isConnected) return;
+      f.remove();
+      flightEnded();
+      sfx.gainTick(k);
+      sparkleAt(to.x, to.y);
+      replayAnim((player === myIndex && document.querySelector(`#hand-cards .res-card.res-${res}`)) || stealAnchorEl(player), 'bump');
+    }, MONO_MS + k * MONO_STAGGER);
+  });
+  return launched > 0;
+}
+
+// ---------- 发展卡发放（基础版） ----------
+// 银行从桌子中央（岛心）发一张卡背给买家：自己飞进底栏发展卡区，别人飞到其面板；落地才让新卡出现 / 计数 +1
+function flyDevCard(player, onArrive = null) {
+  let toEl;
+  if (player === myIndex) {
+    toEl = ['dev-cards', 'btn-buydev', 'hand-cards'].map((id) => $(id)).find((el) => el && el.getBoundingClientRect().width > 0);
+  } else {
+    toEl = $(`player-card-${player}`);
+  }
+  if (!toEl) return false;
+  const tr = toEl.getBoundingClientRect();
+  if (!tr.width) return false;
+  const from = islandCenterScreen();
+  const to = { x: tr.left + tr.width / 2, y: tr.top + tr.height / 2 };
+  const f = document.createElement('div');
+  f.className = 'fly-stealcard deal';
+  f.style.left = `${from.x}px`;
+  f.style.top = `${from.y}px`;
+  document.body.appendChild(f);
+  const DEAL_MS = 1200;
+  f.animate(tossKeyframes(from, to, { dur: DEAL_MS, pre: 'deal', targetScale: player === myIndex ? 1.1 : 0.55, fadeOut: true }), {
+    duration: DEAL_MS, easing: 'linear', fill: 'both',
+  });
+  flightStarted();
+  setTimeout(() => {
+    if (!f.isConnected) return;
+    f.remove();
+    flightEnded();
+    onArrive?.();
+    sparkleAt(to.x, to.y);
+    replayAnim(player === myIndex ? $('dev-cards') : $(`player-card-${player}`), 'bump');
+  }, DEAL_MS);
+  return true;
+}
+
+// ---------- 引水渠取牌 ----------
+// 科学 3 级的引水渠：无产出时任选的那张资源从科学牌堆（引水渠所属轨道）带着水光飞出
+function flyAqueductCard(res, player) {
+  const from = deckPixelPosition('science', $('board')) || islandCenterScreen();
+  const toEl = (player === myIndex && document.querySelector(`#hand-cards .res-card.res-${res}`)) || stealAnchorEl(player);
+  if (!toEl) return false;
+  const tr = toEl.getBoundingClientRect();
+  if (!tr.width) return false;
+  const to = { x: tr.left + tr.width / 2, y: tr.top + tr.height / 2 };
+  const targetScale = player === myIndex ? Math.min(1.5, Math.max(0.8, tr.width / 50)) : 0.5;
+  const f = document.createElement('div');
+  f.className = 'fly-rescard aqua';
+  f.style.backgroundImage = `url("/assets/opt/resource-${res}.webp")`;
+  f.style.left = `${from.x}px`;
+  f.style.top = `${from.y}px`;
+  document.body.appendChild(f);
+  f.animate(tossKeyframes(from, to, { dur: FLY_MS, pre: 'pop', targetScale, fadeOut: player !== myIndex }), {
+    duration: FLY_MS, easing: 'linear', fill: 'both',
+  });
+  flightStarted(player === myIndex ? res : null);
+  sfx.aqueduct();
+  setTimeout(() => {
+    if (!f.isConnected) return;
+    f.remove();
+    flightEnded(player === myIndex ? res : null);
+    sfx.gainTick(2);
+    revealGain(player, res);
+    sparkleAt(to.x, to.y, 'aqua');
+    replayAnim((player === myIndex && document.querySelector(`#hand-cards .res-card.res-${res}`)) || stealAnchorEl(player), 'bump');
+  }, FLY_MS);
+  return true;
+}
+
 // 落点金光四溅（轻量：几个小光点向四周飞散）
-function sparkleAt(x, y) {
+function sparkleAt(x, y, tone = '') {
   for (let i = 0; i < 6; i++) {
     const s = document.createElement('div');
-    s.className = 'spark';
+    s.className = `spark${tone ? ` ${tone}` : ''}`;
     const a = (Math.PI * 2 * i) / 6 + Math.random() * 0.8;
     const d = 26 + Math.random() * 22;
     s.style.left = `${x}px`;
@@ -3364,15 +3573,10 @@ function flyProgressCard(deck, playerIdx, reverse = false, cardId = null, onArri
   f.style.left = `${from.x}px`;
   f.style.top = `${from.y}px`;
   document.body.appendChild(f);
-  const dx = to.x - from.x;
-  const dy = to.y - from.y;
-  // 两段式：先在起点弹出+抬升+停顿（像从牌堆/手中长出），再飞向目标
-  f.animate([
-    { transform: 'translate(-50%,-50%) scale(0) rotate(-10deg)', opacity: 0, easing: 'cubic-bezier(.34,1.56,.64,1)' },
-    { transform: 'translate(-50%, calc(-50% - 12px)) scale(1.18) rotate(0deg)', opacity: 1, offset: 0.3 },
-    { transform: 'translate(-50%, calc(-50% - 12px)) scale(1) rotate(0deg)', opacity: 1, offset: 0.46, easing: 'cubic-bezier(.5,0,.4,1)' },
-    { transform: `translate(calc(${dx}px - 50%), calc(${dy}px - 50%)) scale(.5) rotate(8deg)`, opacity: .9, offset: 1 },
-  ], { duration: 1300, fill: 'backwards' });
+  // 发牌：从牌堆抬起后甩向玩家面板（打出后回牌堆则反向，收进牌堆底）
+  f.animate(tossKeyframes(from, to, { dur: 1300, pre: 'deal', targetScale: 0.6, fadeOut: true }), {
+    duration: 1300, easing: 'linear', fill: 'both',
+  });
   flightStarted();
   setTimeout(() => { // 不用 onfinish：页面不可见时不触发
     if (!f.isConnected) return; // 对局重置已清场

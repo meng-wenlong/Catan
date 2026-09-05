@@ -355,6 +355,7 @@ export class Game {
       if (this.turn.pendingAqueduct.length > 0) {
         next = 'aqueduct';
         const names = this.turn.pendingAqueduct.map((i) => this.players[i].name).join('、');
+        this.addEvent('aqueduct', { players: [...this.turn.pendingAqueduct] }); // 客户端中央横幅 + 面板高亮
         this.addLog(`引水渠：${names} 可任选 1 张资源。`);
       }
       if (this.enterProgressDiscard(next)) return;
@@ -636,13 +637,15 @@ export class Game {
         card.played = true;
         this.turn.devPlayed = true;
         let total = 0;
+        const from = {}; // 各受害者上缴张数（客户端据此从每家面板飞牌）
         this.players.forEach((pl, i) => {
           if (i === p) return;
+          if (pl.hand[res] > 0) from[i] = pl.hand[res];
           total += pl.hand[res];
           this.players[p].hand[res] += pl.hand[res];
           pl.hand[res] = 0;
         });
-        this.addEvent('monopoly', { player: p, res, n: total });
+        this.addEvent('monopoly', { player: p, res, n: total, from });
         this.addLog(`${this.players[p].name} 打出垄断，收走所有${RES_NAME[res]}（共 ${total} 张）`);
         break;
       }
