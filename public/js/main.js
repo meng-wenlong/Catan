@@ -774,6 +774,8 @@ socket.on('returnToLobby', () => {
   discardOpen = false;
   holdUntil = 0;
   clearTimeout(holdTimer);
+  stopDiceAnim();     // 掷骰演出的 interval / 收尾定时器一并停掉
+  playersKey = '';    // 下一局重建玩家卡片骨架
   pendingSelf = {};
   pendingCount = {};
   pendingProgSelf = 0;
@@ -1261,19 +1263,104 @@ function throwDie(el, [fx, fy], { start, end, dist, yOff = 0, lane = 0, onImpact
 
 let prevStats = [];   // 每家上次显示的 分数/手牌/卡数，用于变化时的弹跳反馈
 
-function renderPlayers() {
+// 元素持久化后不能再靠「新建元素」触发一次性动画：先摘类、强制重排、再挂回去
+function replayAnim(el, cls) {
+  if (!el) return;
+  el.classList.remove(cls);
+  void el.offsetWidth;
+  el.classList.add(cls);
+}
+
+// ---------- 玩家面板 ----------
+// 卡片持久化：整块重建会把正在播的 bump / stat-pop / turn-flash 直接掐掉
+// （产出时每张飞牌落地都会重绘一次，重建的话弹跳只能播到三分之一），
+// 因此只在人数 / 名字 / 配色 / 模式变化时重建骨架，平时逐字段差量更新。
+let playerEls = [];
+let playersKey = '';
+
+function buildPlayerCards() {
   const panel = $('players-panel');
   panel.innerHTML = '';
+  const ckMode = S.mode === 'ck';
+  playerEls = S.players.map((p, i) => {
+    const div = document.createElement('div');
+    div.className = 'player-card';
+    div.id = `player-card-${i}`;
+    div.style.setProperty('--pc', p.color);
+    div.innerHTML = `
+      <div class="p-top">
+        <span class="p-ava"></span>
+        <span class="p-nm"></span>
+        <span class="p-vp"><b></b><small>分</small></span>
+      </div>
+      <div class="p-stats">
+        <span class="p-hand" title="手牌"></span>
+        <span class="p-dev" title="${ckMode ? '进步卡' : '发展卡'}"></span>
+      </div>
+      <div class="p-badges hidden"></div>`;
+    // ck 三条升级轨道 / 基础版一个已出骑士数：个数固定，同样持久化
+    const stats = div.querySelector('.p-stats');
+    const extra = (ckMode ? TRACKS : ['army']).map((t) => {
+      const sp = document.createElement('span');
+      sp.title = ckMode ? `${TRACK_META[t].name}升级等级` : '已出骑士';
+      stats.appendChild(sp);
+      return sp;
+    });
+    panel.appendChild(div);
+    return {
+      div,
+      nm: div.querySelector('.p-nm'),
+      vp: div.querySelector('.p-vp b'),
+      hand: div.querySelector('.p-hand'),
+      dev: div.querySelector('.p-dev'),
+      badges: div.querySelector('.p-badges'),
+      extra,
+      cache: {},
+    };
+  });
+}
+
+function renderPlayers() {
+  const ckMode = S.mode === 'ck';
+  const key = `${S.mode}|${S.players.map((p) => `${p.name}${p.color}`).join('|')}`;
+  if (key !== playersKey) {
+    playersKey = key;
+    buildPlayerCards();
+    prevStats = S.players.map(() => null);
+  }
   if (prevStats.length !== S.players.length) prevStats = S.players.map(() => null);
   // 特别建设阶段（5-6 人）：当前建设窗口的玩家卡片高亮 + 🔨 角标
   const sbBuilder = S.phase === 'play' && S.turn.state === 'specialBuild' && S.turn.sb
     ? S.turn.sb.queue[S.turn.sb.idx] : -1;
   S.players.forEach((p, i) => {
+    const el = playerEls[i];
+    const c = el.cache;
     const active = (S.phase === 'setup' ? S.setup.current : S.turn.player) === i && S.phase !== 'ended';
-    const div = document.createElement('div');
-    div.className = `player-card${active ? ' active' : ''}${sbBuilder === i ? ' sb-builder' : ''}`;
-    div.id = `player-card-${i}`;
-    const ckMode = S.mode === 'ck';
+    el.div.classList.toggle('active', active);
+    el.div.classList.toggle('sb-builder', sbBuilder === i);
+
+    const nm = `${esc(p.name)}${i === myIndex ? '<small>（我）</small>' : ''}${sbBuilder === i ? ' <span class="sb-tag">🔨 建设中</span>' : ''}${p.connected ? '' : ' <span class="offline">离线</span>'}`;
+    if (nm !== c.nm) { el.nm.innerHTML = nm; c.nm = nm; }
+
+    const vp = i === myIndex ? S.you.vpTotal : p.vp;
+    const hand = p.handCount - (pendingCount[i] || 0);
+    const dev = p.devCount - (pendingProg[i] || 0);
+    if (String(vp) !== el.vp.textContent) el.vp.textContent = vp;
+    const handTxt = `🃏 ${hand}`;
+    if (handTxt !== el.hand.textContent) el.hand.textContent = handTxt;
+    const devTxt = `🎴 ${dev}`;
+    if (devTxt !== el.dev.textContent) el.dev.textContent = devTxt;
+
+    // 比对缓存的字符串而不是读 innerHTML：避免每次渲染都白写一遍
+    const extra = ckMode
+      ? TRACKS.map((t) => `<b style="color:${TRACK_META[t].color}">${TRACK_META[t].name}</b> ${p.improvements[t]}`)
+      : [`⚔️ ${p.knightsPlayed}`];
+    const extraKey = extra.join('');
+    if (extraKey !== c.extra) {
+      extra.forEach((html, k) => { el.extra[k].innerHTML = html; });
+      c.extra = extraKey;
+    }
+
     const badges = [];
     if (S.awards.longestRoad?.player === i) badges.push('<span class="badge">🛤️ 最长道路</span>');
     if (!ckMode && S.awards.largestArmy?.player === i) badges.push('<span class="badge">⚔️ 最大军队</span>');
@@ -1284,43 +1371,36 @@ function renderPlayers() {
       if (S.ck.merchant?.player === i) badges.push('<span class="badge">⛺ 商人</span>');
       if (p.defenderVP > 0) badges.push(`<span class="badge">🏅 守护者×${p.defenderVP}</span>`);
     }
-    const ckStats = ckMode
-      ? TRACKS.map((t) => `<span title="${TRACK_META[t].name}升级等级"><b style="color:${TRACK_META[t].color}">${TRACK_META[t].name}</b> ${p.improvements[t]}</span>`).join('')
-      : `<span title="已出骑士">⚔️ ${p.knightsPlayed}</span>`;
-    div.style.setProperty('--pc', p.color);
-    const vp = i === myIndex ? S.you.vpTotal : p.vp;
-    const hand = p.handCount - (pendingCount[i] || 0);
-    const dev = p.devCount - (pendingProg[i] || 0);
-    div.innerHTML = `
-      <div class="p-top">
-        <span class="p-ava"></span>
-        <span class="p-nm">${esc(p.name)}${i === myIndex ? '<small>（我）</small>' : ''}${sbBuilder === i ? ' <span class="sb-tag">🔨 建设中</span>' : ''}${p.connected ? '' : ' <span class="offline">离线</span>'}</span>
-        <span class="p-vp"><b>${vp}</b><small>分</small></span>
-      </div>
-      <div class="p-stats">
-        <span class="p-hand" title="手牌">🃏 ${hand}</span>
-        <span class="p-dev" title="${ckMode ? '进步卡' : '发展卡'}">🎴 ${dev}</span>
-        ${ckStats}
-      </div>
-      ${badges.length ? `<div class="p-badges">${badges.join('')}</div>` : ''}`;
-    // 数值变化时弹一下（卡片每次都整体重建，动画类要在新元素上补挂）
+    const bHtml = badges.join('');
+    if (bHtml !== c.badges) {
+      el.badges.innerHTML = bHtml;
+      el.badges.classList.toggle('hidden', !badges.length);
+      c.badges = bHtml;
+    }
+
+    // 数值变化时弹一下（元素不再重建，改为重启动画）
     const prev = prevStats[i];
     if (prev) {
-      if (vp !== prev.vp) div.querySelector('.p-vp b').classList.add('stat-pop');
-      if (hand !== prev.hand) div.querySelector('.p-hand').classList.add('stat-pop-sm');
-      if (dev !== prev.dev) div.querySelector('.p-dev').classList.add('stat-pop-sm');
+      if (vp !== prev.vp) replayAnim(el.vp, 'stat-pop');
+      if (hand !== prev.hand) replayAnim(el.hand, 'stat-pop-sm');
+      if (dev !== prev.dev) replayAnim(el.dev, 'stat-pop-sm');
     }
     prevStats[i] = { vp, hand, dev };
-    panel.appendChild(div);
   });
 }
+
+// ---------- 手牌区 ----------
+// 同样持久化：牌数固定（模式决定），重建会掐掉上一张飞牌落地的 bump
+let handEls = new Map();
+let handKey = '';
 
 function renderHand() {
   const wrap = $('hand-cards');
   // 显示值 = 实际值 - 待结算产出（飞牌落地时逐张 +1）
   const displayed = (r) => S.you.hand[r] - (pendingSelf[r] || 0);
+  const types = cardList();
   // 手牌数 / 弃牌上限（掷 7）
-  const total = cardList().reduce((s, r) => s + displayed(r), 0);
+  const total = types.reduce((s, r) => s + displayed(r), 0);
   const limit = S.you.handLimit ?? 7;
   const hc = $('hand-count');
   if (hc) {
@@ -1328,23 +1408,34 @@ function renderHand() {
     hc.title = `手牌 ${total} 张 · 掷 7 弃牌上限 ${limit}（超过则弃一半）`;
     hc.classList.toggle('over', total > limit);
   }
-  wrap.innerHTML = '';
+  const key = types.join(',');
+  if (key !== handKey) {
+    handKey = key;
+    handEls = new Map();
+    wrap.innerHTML = '';
+    for (const r of types) {
+      const div = document.createElement('div');
+      div.className = `res-card res-${r}`;
+      // 资源与商品卡面都是插画（CSS 背景图）
+      div.innerHTML = '<span class="cnt"></span>';
+      attachCardInspect(div, () => ({
+        img: `/assets/opt/resource-${r}.webp`,
+        name: RES_META[r].name,
+        sub: `×${S.you.hand[r]} · 银行汇率 ${S.you.rates[r]}:1`,
+      }));
+      wrap.appendChild(div);
+      handEls.set(r, { div, cnt: div.querySelector('.cnt') });
+    }
+  }
   const shown = {};
-  for (const r of cardList()) {
+  for (const r of types) {
     const n = displayed(r);
     shown[r] = n;
-    const div = document.createElement('div');
-    div.className = `res-card res-${r}`;
-    // 资源与商品卡面都是插画（CSS 背景图）
-    div.innerHTML = `<span class="cnt">${n}</span>`;
-    div.title = `${RES_META[r].name} ×${n}（银行汇率 ${S.you.rates[r]}:1）`;
-    if (prevHand && n > (prevHand[r] || 0)) div.classList.add('bump');
-    attachCardInspect(div, () => ({
-      img: `/assets/opt/resource-${r}.webp`,
-      name: RES_META[r].name,
-      sub: `×${S.you.hand[r]} · 银行汇率 ${S.you.rates[r]}:1`,
-    }));
-    wrap.appendChild(div);
+    const { div, cnt } = handEls.get(r);
+    if (cnt.textContent !== String(n)) cnt.textContent = n;
+    const title = `${RES_META[r].name} ×${n}（银行汇率 ${S.you.rates[r]}:1）`;
+    if (div.title !== title) div.title = title;
+    if (prevHand && n > (prevHand[r] || 0)) replayAnim(div, 'bump');
   }
   prevHand = shown; // 记录的是显示值：每次 reveal 后重绘都会正确触发 bump
 }
@@ -2618,7 +2709,7 @@ function animateDiceRoll(d1, d2, eventFace = null) {
       void overlay.offsetWidth;
       overlay.classList.add('show');
       setTimeout(() => overlay.classList.remove('show'), 4600);
-      highlightProducingHexes(total, S.robber);
+      if (S) highlightProducingHexes(total, S.robber);
     }
   }, 170);
 }
@@ -2637,6 +2728,31 @@ function showSevenStage() {
   setTimeout(() => shakeBoard(), 380); // 强盗落地瞬间震屏
   clearTimeout(sevenTimer);
   sevenTimer = setTimeout(() => st.classList.add('hidden'), 2750);
+}
+
+// 中断掷骰演出并复位（回大厅/换局时调用）：翻滚 interval 与几个收尾定时器不清的话，
+// 会在对局已重置后继续跑（里面要读 S，而此时 S 已是 null），还会把 7 的演出播在大厅背后
+function stopDiceAnim() {
+  clearInterval(diceRollTimer);
+  clearTimeout(diceStageTimer);
+  clearTimeout(sevenTimer);
+  diceAnimUntil = 0;
+  for (const id of ['bdie1', 'bdie2', 'bdie3']) {
+    const el = $(id);
+    for (const t of dieTimers.get(el) || []) clearTimeout(t);
+    dieTimers.set(el, []);
+    for (const n of el.querySelectorAll('.body, .cube, .shadow, .ring')) {
+      n.getAnimations().forEach((a) => a.cancel());
+    }
+  }
+  $('dice-stage').classList.add('hidden');
+  $('dice-stage').classList.remove('out');
+  $('seven-stage').classList.add('hidden');
+  $('roll-overlay').classList.remove('show', 'seven');
+  for (const d of [$('die1'), $('die2'), $('die3')]) d.classList.remove('rolling', 'settle');
+  const banner = $('turn-banner');
+  clearTimeout(banner._timer);
+  banner.classList.remove('show');
 }
 
 // ---------- 动画时间线：按事件顺序串行播放 ----------
@@ -3202,9 +3318,8 @@ function flyStealCard(fromIdx, toIdx, onArrive = null) {
     flightEnded();
     onArrive?.(); // 落地才结清数字：对应资源卡随重绘 bump +1
     sparkleAt(to.x, to.y);
-    toEl.classList.remove('bump');
-    void toEl.offsetWidth;
-    toEl.classList.add('bump');
+    // 结清过程中面板可能已重绘，重新取一次锚点（旧引用可能已脱离文档，bump 就看不见了）
+    replayAnim(stealAnchorEl(toIdx), 'bump');
   }, STEAL_MS);
   return true;
 }
