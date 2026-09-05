@@ -1802,12 +1802,32 @@ function renderHotspots() {
     showVertexSpots(S.you.hints.deserterKnights, (v) => send({ type: 'deserterPick', vertex: v }));
     return;
   }
+  // 大都会选城：选择者可能是特别建设阶段的建设者（不是回合玩家），按 metroPlayer 判断
+  if (S.turn.state === 'metropolis') {
+    if (S.ck?.metroPlayer === myIndex) {
+      showVertexSpots(S.you.hints.metroSpots || [], (v) => send({ type: 'chooseMetropolis', vertex: v }));
+    } else {
+      clearHotspots();
+    }
+    return;
+  }
+  // 建造放置：自己回合 main，或特别建设窗口轮到自己
+  if (armed && ((isMyTurn() && S.turn.state === 'main') || mySpecialBuild())) {
+    if (armed === 'road') {
+      showEdgeSpots(S.you.hints.roads || [], (e) => { armed = null; send({ type: 'buildRoad', edge: e }); }, ghostOf('road'));
+    } else if (armed === 'settlement') {
+      showVertexSpots(S.you.hints.settlements || [], (v) => { armed = null; send({ type: 'buildSettlement', vertex: v }); }, ghostOf('settlement'));
+    } else if (armed === 'city') {
+      showVertexSpots(S.you.hints.cities || [], (v) => { armed = null; send({ type: 'buildCity', vertex: v }); }, ghostOf('city'));
+    } else if (armed === 'knight') {
+      showVertexSpots(S.you.hints.knightSpots || [], (v) => { armed = null; send({ type: 'buildKnight', vertex: v }); });
+    } else if (armed === 'wall') {
+      showVertexSpots(S.you.hints.wallSpots || [], (v) => { armed = null; send({ type: 'buildWall', vertex: v }); });
+    }
+    return;
+  }
   if (isMyTurn()) {
     const st = S.turn.state;
-    if (st === 'metropolis') {
-      showVertexSpots(S.you.hints.metroSpots || [], (v) => send({ type: 'chooseMetropolis', vertex: v }));
-      return;
-    }
     if (st === 'robber') {
       showRobberSpots(S.robber, (h) => send({ type: 'moveRobber', hex: h }));
       return;
@@ -1818,20 +1838,6 @@ function renderHotspots() {
     }
     if (st === 'main' && progAction) {
       renderProgSpots();
-      return;
-    }
-    if (st === 'main' && armed) {
-      if (armed === 'road') {
-        showEdgeSpots(S.you.hints.roads || [], (e) => { armed = null; send({ type: 'buildRoad', edge: e }); }, ghostOf('road'));
-      } else if (armed === 'settlement') {
-        showVertexSpots(S.you.hints.settlements || [], (v) => { armed = null; send({ type: 'buildSettlement', vertex: v }); }, ghostOf('settlement'));
-      } else if (armed === 'city') {
-        showVertexSpots(S.you.hints.cities || [], (v) => { armed = null; send({ type: 'buildCity', vertex: v }); }, ghostOf('city'));
-      } else if (armed === 'knight') {
-        showVertexSpots(S.you.hints.knightSpots || [], (v) => { armed = null; send({ type: 'buildKnight', vertex: v }); });
-      } else if (armed === 'wall') {
-        showVertexSpots(S.you.hints.wallSpots || [], (v) => { armed = null; send({ type: 'buildWall', vertex: v }); });
-      }
       return;
     }
   }
@@ -1905,7 +1911,8 @@ function onKnightClick(v, k) {
     }
     return;
   }
-  if (k.player !== myIndex || !isMyTurn() || S.turn.state !== 'main') return;
+  // 自己回合 main 或特别建设窗口（窗口内只能激活/升级，服务端 hints 已把移动/驱逐置空）
+  if (k.player !== myIndex || !((isMyTurn() && S.turn.state === 'main') || mySpecialBuild())) return;
   openKnightMenu(v, k);
 }
 
