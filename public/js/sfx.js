@@ -252,6 +252,25 @@ export const sfx = {
     tone({ freq: 520, freq2: 330, type: 'sine', dur: 0.09, gain: 0.1 });
     tone({ freq: 330, freq2: 620, type: 'sine', dur: 0.12, gain: 0.11, when: 0.1 });
   },
+  // 特别建设阶段开启（全桌）：两声木槌轻叩，提示进入建设窗口轮转
+  sbStart() {
+    noise({ freq: 800, q: 2.5, dur: 0.05, gain: 0.14 });
+    tone({ freq: 200, freq2: 130, type: 'triangle', dur: 0.07, gain: 0.12 });
+    noise({ freq: 1000, q: 2.5, dur: 0.05, gain: 0.12, when: 0.15 });
+    tone({ freq: 245, freq2: 160, type: 'triangle', dur: 0.07, gain: 0.1, when: 0.15 });
+  },
+  // 轮到我建设：三声木槌「笃笃笃」+ 门铃式「叮——咚」，别人回合里走神也能听见
+  sbCall() {
+    for (let i = 0; i < 3; i++) {
+      const when = i * 0.14;
+      noise({ freq: 850 + i * 120, q: 2.5, dur: 0.05, gain: 0.2, when });
+      tone({ freq: 210 + i * 25, freq2: 135, type: 'triangle', dur: 0.07, gain: 0.16, when });
+    }
+    tone({ freq: 880, type: 'sine', dur: 0.36, gain: 0.16, when: 0.5 });
+    tone({ freq: 1760, type: 'sine', dur: 0.2, gain: 0.05, when: 0.5 });
+    tone({ freq: 698, type: 'sine', dur: 0.5, gain: 0.16, when: 0.74 });
+    tone({ freq: 1396, type: 'sine', dur: 0.3, gain: 0.05, when: 0.74 });
+  },
   // 城市升级：上行双音 + 高频微光
   improve() {
     tone({ freq: 587, type: 'triangle', dur: 0.1, gain: 0.14 });

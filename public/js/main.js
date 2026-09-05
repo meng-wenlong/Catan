@@ -2962,6 +2962,7 @@ function playEvents(upTo = Infinity) { // upTo：只播放该 seq 及之前的�
       case 'sbStart':
         animStep((done) => {
           showSbBanner('🔨 特别建设阶段');
+          sfx.sbStart();
           setTimeout(done, 700); // 若自己是首位建设者，随后的个人横幅稍后接上
         });
         break;
@@ -3156,7 +3157,7 @@ function checkSbWindow() {
   if (sbNow === myIndex && !isSpectating) {
     animStep((done) => {
       showSbBanner('🔨 轮到你建设了', true);
-      sfx.improve();
+      sfx.sbCall();
       done();
     });
   }
