@@ -824,22 +824,42 @@ function sbCountdownSec() {
 }
 function tickSbCountdown() {
   const sec = sbCountdownSec();
-  const el = $('sb-timer');
-  if (sec === null) {
-    el.classList.add('hidden');
+  const btn = $('btn-end');
+  // 其他人的窗口：秒数写进其玩家卡片的 🔨 标签，不占状态栏空间
+  for (const el of playerEls) {
+    const tag = el.nm.querySelector('.sb-tag');
+    if (!tag) continue;
+    let secEl = tag.querySelector('.sb-sec');
+    if (sec === null) { if (secEl) secEl.remove(); continue; }
+    if (!secEl) { secEl = document.createElement('span'); secEl.className = 'sb-sec'; tag.appendChild(secEl); }
+    secEl.textContent = `· ${sec} 秒`;
+  }
+  if (sec === null || !mySpecialBuild()) {
+    btn.classList.remove('sb-count');
+    btn.style.removeProperty('--sb-left');
     sbLastTickSec = null;
     return;
   }
-  const mine = mySpecialBuild();
-  el.textContent = mine ? `⏱️ ${sec} 秒后自动结束建设` : `⏱️ ${sec}`;
-  el.classList.toggle('mine', mine);
-  el.classList.remove('hidden');
-  if (mine) $('btn-end').textContent = `⏭️ 结束建设（${sec}）`;
-  // 建设者本人每秒一声轻响，提醒抬头
-  if (mine && sec !== sbLastTickSec && sec > 0) sfx.click();
+  // 自己的窗口：按钮文字带秒数 + 底边进度条缩短，每秒一声轻响提醒抬头
+  btn.textContent = `⏭️ 结束建设（${sec}）`;
+  btn.classList.add('sb-count');
+  btn.style.setProperty('--sb-left', Math.max(0, Math.min(1, (sbDeadlineAt - Date.now()) / sbCountdownMs)));
+  if (sec !== sbLastTickSec && sec > 0) sfx.click();
   sbLastTickSec = sec;
 }
 setInterval(tickSbCountdown, 200);
+// 自己的建设窗口内任何点击都算「还在思考」：节流后通知服务端重新起表
+let sbActivitySent = 0;
+document.addEventListener('pointerdown', () => {
+  if (!mySpecialBuild()) return;
+  const now = Date.now();
+  if (now - sbActivitySent < 1000) return;
+  sbActivitySent = now;
+  socket.emit('sbActivity');
+}, true);
+socket.on('sbTimer', ({ sbRemaining }) => {
+  sbDeadlineAt = Number.isFinite(sbRemaining) ? Date.now() + sbRemaining : null;
+});
 
 const colors = () => S.players.map((p) => p.color);
 const isMyTurn = () => S.phase === 'play' && S.turn.player === myIndex;

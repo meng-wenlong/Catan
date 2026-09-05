@@ -74,8 +74,8 @@ function broadcastLobby(room) {
 
 // 特别建设窗口的无操作超时：开窗/每次操作后重新计时，先静默 SB_IDLE_MS，
 // 再显示 SB_COUNTDOWN_MS 的倒计时，到点仍无操作则服务端自动结束该窗口
-const SB_IDLE_MS = 10000;
-const SB_COUNTDOWN_MS = 5000;
+const SB_IDLE_MS = 15000;
+const SB_COUNTDOWN_MS = 10000;
 
 function clearSbTimer(room) {
   clearTimeout(room.sbTimer);
@@ -508,6 +508,20 @@ io.on('connection', (socket) => {
         fail('服务器内部错误');
       }
     }
+  });
+
+  // 建设者在页面上有点击（不一定是游戏动作）：视为仍在思考，重新起表。
+  // 客户端已按 ~1 秒节流；只回一个轻量 sbTimer 事件，不重发整份状态
+  socket.on('sbActivity', () => {
+    const room = myRoom;
+    if (!room || !room.game) return;
+    const p = room.players.findIndex((pl) => pl.token === myToken);
+    const g = room.game;
+    if (p < 0 || g.turn.state !== 'specialBuild' || g.sbBuilder() !== p) return;
+    syncSbTimer(room);
+    const payload = { sbRemaining: room.sbDeadline - Date.now() };
+    roomEmit(room, 'sbTimer', payload);
+    emitSpectators(room, 'sbTimer', payload);
   });
 
   // 战报框滚动到顶：增量拉取更早的日志

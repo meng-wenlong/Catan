@@ -250,21 +250,14 @@ body {
 
 #status-bar {
   display: flex; align-items: center; gap: 16px;
-  /* 左侧留出 ⚙️ 设置按钮的位置（按钮绝对定位在左上角） */
-  padding: 10px 18px 10px 70px; color: #fff; font-size: 21px; font-weight: 600;
+  /* 左侧留出 ⚙️ 设置按钮的位置（按钮绝对定位在左上角）；
+     右侧留出悬浮的「结束回合/结束建设（N）」按钮，状态文字与倒计时不钻到它底下 */
+  padding: 10px 250px 10px 70px; color: #fff; font-size: 21px; font-weight: 600;
   text-shadow: 0 1px 3px rgba(0,0,0,.35);
   /* 固定高度：骰子框显隐时状态栏高度不变，避免棋盘区域被挤压导致地图突然缩放。
      必须 ≥ 骰子行高：.die 36px + 上下 padding 各 10px = 56px（54px 会差 2px 仍抖动） */
   min-height: 56px;
 }
-/* 特别建设窗口倒计时：状态栏里的琥珀色药丸，轮到自己时放大并脉动 */
-#sb-timer {
-  padding: 3px 12px; border-radius: 999px; font-size: 16px; font-weight: 700;
-  background: rgba(201,138,42,.9); color: #fff; white-space: nowrap;
-  box-shadow: 0 2px 6px rgba(0,0,0,.3);
-}
-#sb-timer.mine { font-size: 18px; background: #d9482b; animation: sb-timer-pulse .5s ease-in-out infinite alternate; }
-@keyframes sb-timer-pulse { from { transform: scale(1); } to { transform: scale(1.08); } }
 #dice-box { display: flex; gap: 8px; }
 .die {
   width: 36px; height: 36px;
@@ -455,6 +448,17 @@ body {
   box-shadow: 0 3px 10px rgba(0,0,0,.3), inset 0 1px 0 rgba(255,255,255,.3);
 }
 #btn-end:disabled { opacity: .3; }
+/* 建设窗口倒计时：按钮底边一条随时间缩短的红色进度条（不改变任何布局） */
+#btn-end { overflow: hidden; }
+#btn-end.sb-count::after {
+  content: ''; position: absolute; left: 0; bottom: 0; height: 4px;
+  width: calc(var(--sb-left, 1) * 100%);
+  background: linear-gradient(90deg, #ff8a65, #d9482b);
+  box-shadow: 0 0 6px rgba(217,72,43,.8);
+  transition: width .2s linear;
+}
+/* 其他人的建设窗口：秒数挂在其玩家卡片的 🔨 标签里 */
+.sb-tag .sb-sec { margin-left: 4px; color: #a4230f; }
 
 /* 特别建设阶段（5-6 人）：当前建设窗口的玩家卡片琥珀脉冲 + 🔨 角标 */
 .player-card.sb-builder { animation: sb-pulse 1.6s ease-in-out infinite; }
@@ -1192,7 +1196,8 @@ body {
   45% { transform: translate(-4px, -2px); } 60% { transform: translate(4px, 2px); } 75% { transform: translate(-3px, 1px); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .fx-burst, #board-area.shake, .player-card.sb-builder, .player-card.aqueduct-pending, #sb-timer.mine { animation: none; }
+  .fx-burst, #board-area.shake, .player-card.sb-builder, .player-card.aqueduct-pending { animation: none; }
+  #btn-end.sb-count::after { transition: none; }
   .knight-pos, .num-token.token-fly { transition: none; }
   .cloud-shadow, .gull-flock { display: none; } /* 氛围元素靠动画定位，禁动画时直接隐藏 */
   #barb-vignette.show, .barb-near .barb-ship image, .barb-land-core, .barb-land-ring { animation: none; }
