@@ -1095,28 +1095,168 @@ function skinDiceCube(el, red) {
   }
 }
 
-// 抛掷一颗立方体：从随机初始姿态多转几整圈减速停在目标面，落定时挂 land 类（压扁回弹 + 冲击环）。
+// ---------- 掷骰物理模拟 ----------
+// 不再用固定缓动曲线补间，而是先把整段运动按物理算出来：重力抛物线 + 逐次衰减的回弹、
+// 每次撞桌削减角速度与水平速度、桌面滚动段用带初速度的阻尼弹簧收尾（微微越过目标面再回稳，
+// 即 iOS 那种弹簧手感）。逐帧结果作为线性关键帧交给 Web Animations API 在合成线程播放，全程无断点。
+// 旋转、平移、高度共用同一条进度曲线 P(t)：像真骰子一样，滚得越快转得越快，撞桌同时减速。
+const DIE_PHYS = {
+  g: 2600,        // 重力 px/s²（按 88px 骰子的观感调，比真实重力慢很多）
+  h0: 150,        // 出手高度 px
+  vUp: 260,       // 出手时微微向上的初速度 px/s（是抛，不是丢）
+  e: 0.45,        // 回弹系数：每次撞桌保留的竖直速度比例
+  spinLoss: 0.78, // 每次撞桌保留的角速度 / 水平速度比例
+  zeta: 0.66,     // 桌面段弹簧阻尼比：<1 有轻微过冲回稳
+  camY: 0.62,     // 高度映射到屏幕上移的比例（斜俯视机位）
+  camZ: 650,      // 高度映射到放大的透视深度：scale = 1 + h / camZ
+  dt: 1 / 60,
+};
+
+// 只算轨迹，不碰 DOM：返回逐时刻取值函数与撞桌时刻表（便于同步音效/震屏）
+function simulateDie({ start, end }) {
+  const { g, h0, vUp, e, spinLoss, zeta } = DIE_PHYS;
+  // 竖直：h = h0 + vUp·τ − g·τ²/2 解首次落地，之后每次以 e 倍速度回弹，回弹太弱或剩余时间不够就贴桌
+  const impacts = [];
+  const tf = (vUp + Math.sqrt(vUp * vUp + 2 * g * h0)) / g;
+  let t = start + tf;
+  impacts.push({ t, v: g * tf - vUp });
+  let vr = impacts[0].v * e;
+  while (vr > 80 && t + 2 * vr / g < end - 0.4) {
+    t += 2 * vr / g;
+    impacts.push({ t, v: vr });
+    vr *= e;
+  }
+  const tL = t; // 最后一次触桌，之后进入桌面滚动段
+  const heightAt = (tt) => {
+    if (tt <= start) return h0;
+    if (tt >= tL) return 0;
+    let base = h0, u = vUp, t0 = start;
+    for (const im of impacts) {
+      if (tt < im.t) break;
+      base = 0; u = im.v * e; t0 = im.t;
+    }
+    const tau = tt - t0;
+    return Math.max(0, base + u * tau - g * tau * tau / 2);
+  };
+  // 进度剖面：飞行段匀速（空中无外力），每次撞桌 ×spinLoss，桌面段弹簧
+  const segs = [];
+  let w = 1, acc = 0, prev = start;
+  for (const im of impacts) {
+    segs.push({ from: prev, to: im.t, w });
+    acc += w * (im.t - prev);
+    prev = im.t;
+    w *= spinLoss;
+  }
+  const D = Math.max(0.2, end - tL);
+  const wn = 5.9 / D;                          // 自然频率：保证在 D 内收敛
+  const wd = wn * Math.sqrt(1 - zeta * zeta);
+  const v0 = w;                                // 进入桌面段的速度（连续，不跳变）
+  const E = 2 * zeta * v0 / wn * 0.75;         // 桌面段剩余行程：取得让它从一开始就在减速
+  const total = acc + E;
+  const B = (v0 - zeta * wn * E) / wd;
+  const progressAt = (tt) => {
+    if (tt <= start) return 0;
+    let s = 0;
+    if (tt < tL) {
+      for (const sg of segs) {
+        if (tt >= sg.to) s += sg.w * (sg.to - sg.from);
+        else { s += sg.w * (tt - sg.from); break; }
+      }
+    } else {
+      const tau = tt - tL;
+      s = acc + E + Math.exp(-zeta * wn * tau) * (-E * Math.cos(wd * tau) + B * Math.sin(wd * tau));
+    }
+    return s / total;
+  };
+  return { impacts, tL, heightAt, progressAt, vMax: impacts[0].v };
+}
+
+// 抛掷一颗立方体：从画面左侧抛入，弹跳着滚到自己的位置，最终停在目标面。
+// [fx, fy] 目标姿态；start/end 出手与静止时刻（秒）；dist 水平行程 px；onImpact(k, v) 每次撞桌回调。
+// 返回音效用的事件表 [{ t, v }]（v 为 0-1 的强度）。
 // 落定回调用 setTimeout 而非 anim.onfinish：页面不可见时 finish 事件会被无限推迟，回来后动画状态就错了
-const cubeLandTimers = new WeakMap();
-function rollCube(el, [fx, fy], dur, onLand) {
-  el.classList.remove('land');
+const dieTimers = new WeakMap();
+function throwDie(el, [fx, fy], { start, end, dist, yOff = 0, lane = 0, onImpact }) {
+  const body = el.querySelector('.body');
   const cube = el.querySelector('.cube');
-  cube.getAnimations().forEach((a) => a.cancel());
-  const kx = (2 + Math.floor(Math.random() * 2)) * 360;
-  const ky = (2 + Math.floor(Math.random() * 2)) * 360;
-  cube.animate([
-    { transform: 'rotateX(-24deg) rotateY(38deg)' },
-    { transform: `rotateX(${fx + kx}deg) rotateY(${fy + ky}deg)` },
-  ], {
-    duration: matchMedia('(prefers-reduced-motion: reduce)').matches ? 1 : dur,
-    easing: 'cubic-bezier(.16,.7,.18,1)', // 前段急速翻滚，后段长减速吊胃口
-    fill: 'forwards',
+  const shadow = el.querySelector('.shadow');
+  const ring = el.querySelector('.ring');
+  for (const n of [body, cube, shadow, ring]) n.getAnimations().forEach((a) => a.cancel());
+  for (const id of dieTimers.get(el) || []) clearTimeout(id);
+  const timers = [];
+  dieTimers.set(el, timers);
+  const { g, camY, camZ, dt } = DIE_PHYS;
+  const sim = simulateDie({ start, end });
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  // 目标姿态 + 整圈数：Y 轴（前进方向的滚动轴）转得最多，X/Z 轴少量翻滚增加随机感
+  const rnd = (a, b) => a + Math.random() * (b - a);
+  const zEnd = rnd(-12, 12);
+  const ax0 = rnd(0, 360), ay0 = rnd(0, 360), az0 = zEnd - Math.sign(Math.random() - 0.5) * rnd(200, 420);
+  const axEnd = fx + (Math.random() < 0.5 ? -1 : 1) * 360 * (1 + Math.floor(Math.random() * 2));
+  const ayEnd = fy + 360 * (2 + Math.floor(Math.random() * 2));
+  const spinMax = Math.max(Math.abs(axEnd - ax0), Math.abs(ayEnd - ay0));
+  const bodyKf = [], cubeKf = [], shadowKf = [];
+  const hits = [];
+  const n = Math.ceil(end / dt);
+  let lastEdge = -1, prevS = 0;
+  for (let i = 0; i <= n; i++) {
+    const tt = Math.min(end, i * dt);
+    const off = tt / end;
+    const s = sim.progressAt(tt);
+    const h = sim.heightAt(tt);
+    const x = -dist * (1 - Math.min(1, s)); // 平移不参与末段的过冲回摆（骰子不会倒滑），只有旋转会
+    const y = yOff + lane * (1 - Math.min(1, s) ** 3); // 各走各的航道，临到位才收拢成一排，空中不叠成一团
+    // 撞桌压扁：强度随撞击速度，0.13s 内压扁→回弹（横向略微鼓出，体积感）
+    let sq = 0;
+    for (const im of sim.impacts) {
+      const p = (tt - im.t) / 0.13;
+      if (p >= 0 && p < 1) sq = Math.max(sq, Math.min(0.24, im.v / 4200) * Math.sin(Math.PI * p));
+    }
+    const sc = 1 + h / camZ;
+    const op = Math.min(1, Math.max(0, (tt - start) / 0.08));
+    bodyKf.push({
+      offset: off, opacity: op,
+      transform: `translate(${x.toFixed(1)}px, ${(y - h * camY).toFixed(1)}px) scale(${(sc * (1 + sq * 0.55)).toFixed(4)}, ${(sc * (1 - sq)).toFixed(4)})`,
+    });
+    cubeKf.push({
+      offset: off,
+      transform: `rotateZ(${(az0 + (zEnd - az0) * s).toFixed(2)}deg) rotateX(${(ax0 + (axEnd - ax0) * s).toFixed(2)}deg) rotateY(${(ay0 + (ayEnd - ay0) * s).toFixed(2)}deg)`,
+    });
+    // 投影留在桌面：骰子越高影子越大越淡（软光源），落定时最实
+    shadowKf.push({
+      offset: off, opacity: op * 0.62 * Math.max(0.08, 1 - h / 230),
+      transform: `translate(${(x + 7 + h * 0.2).toFixed(1)}px, ${(y + 8 + h * 0.05).toFixed(1)}px) scale(${(1 + h / 420 + sq * 0.5).toFixed(3)}, ${(1 + h / 700).toFixed(3)})`,
+    });
+    // 桌面段每翻过一条棱（累计转过 90°）记一声轻响，越慢越轻；过冲回摆不算
+    if (tt >= sim.tL && s > prevS) {
+      const edge = Math.floor(spinMax * s / 90);
+      if (edge !== lastEdge) {
+        if (lastEdge >= 0) hits.push({ t: tt, v: Math.min(0.28, ((s - prevS) / dt) * 0.35) });
+        lastEdge = edge;
+      }
+    }
+    prevS = s;
+  }
+  const opts = { duration: reduced ? 1 : end * 1000, easing: 'linear', fill: 'forwards' };
+  body.animate(bodyKf, opts);
+  cube.animate(cubeKf, opts);
+  shadow.animate(shadowKf, opts);
+  sim.impacts.forEach((im, k) => {
+    const v = im.v / sim.vMax;
+    hits.push({ t: im.t, v: 0.3 + 0.7 * v });
+    if (!reduced && v > 0.3) {
+      // 冲击环跟着骰子当时的位置扩散
+      const p = Math.min(1, sim.progressAt(im.t));
+      const x = -dist * (1 - p), y = yOff + lane * (1 - p ** 3);
+      ring.animate([
+        { transform: `translate(${x}px, ${y}px) scale(.72)`, opacity: 0.95 * v },
+        { transform: `translate(${x}px, ${y}px) scale(1.55)`, opacity: 0 },
+      ], { duration: 420, delay: im.t * 1000, easing: 'ease-out', fill: 'backwards' });
+    }
+    if (onImpact) timers.push(setTimeout(() => onImpact(k, v), im.t * 1000));
   });
-  clearTimeout(cubeLandTimers.get(el)); // 连续掷骰（如电脑连续回合）时清掉上一次的落定
-  cubeLandTimers.set(el, setTimeout(() => {
-    el.classList.add('land');
-    if (onLand) onLand();
-  }, dur));
+  hits.sort((a, b) => a.t - b.t);
+  return hits;
 }
 
 let prevStats = [];   // 每家上次显示的 分数/手牌/卡数，用于变化时的弹跳反馈
@@ -2372,7 +2512,7 @@ function renderMonopolyButtons() {
 }
 
 // ---------- 动画事件 ----------
-const DICE_ROLL_MS = 2400;    // 骰子翻滚时长
+const DICE_ROLL_MS = 2000;    // 掷骰演出时长：最后一颗骰子静止的时刻
 const GAIN_STAGGER_MS = 1100; // 每条产出事件的间隔
 const FLY_MS = 2200;          // 单张产出飞牌全程时长
 const FLY_STAGGER = 340;      // 同一条产出内逐张起飞的间隔
@@ -2387,7 +2527,8 @@ function animateDiceRoll(d1, d2, eventFace = null) {
   diceAnimUntil = Date.now() + DICE_ROLL_MS;
   $('dice-box').classList.remove('hidden');
   // 屏幕中央的大骰子（Master Duel 式：关键信息居中演出）：
-  // 3D 立方体从空中抛入、急速翻滚后长减速，错峰落定（先后砸桌），角落小骰子同步翻滚
+  // 三颗从画面左侧同一只「手」里抛出，重力弹跳着滚向各自位置；离手越远的滚得越久，
+  // 于是自然形成先后落定（近的先停，压轴的最后停），角落小骰子同步翻滚
   const stage = $('dice-stage');
   // 对准岛屿中心而非容器中心（ck 的 viewBox 向左多扩了海面，两者不重合），并跟随当前缩放/平移；
   // 缩放到岛心出画面时收回到可视范围内
@@ -2406,9 +2547,7 @@ function animateDiceRoll(d1, d2, eventFace = null) {
   const overlayEl = $('roll-overlay');
   overlayEl.style.left = `${sx}px`;
   overlayEl.style.top = `${sy + 100}px`;   // 结果数字在骰子正下方
-  stage.classList.remove('hidden', 'out', 'enter');
-  void stage.offsetWidth;           // 重启抛入动画
-  stage.classList.add('enter');
+  stage.classList.remove('hidden', 'out');
   clearTimeout(diceStageTimer);
   const dies = [$('die1'), $('die2')];
   const evDie = $('die3');
@@ -2418,14 +2557,27 @@ function animateDiceRoll(d1, d2, eventFace = null) {
   skinDiceCube($('bdie1'), !!eventFace);
   evDie.classList.toggle('hidden', !eventFace);
   bigEvDie.classList.toggle('hidden', !eventFace);
-  // 落定时刻错开：第一颗先停 → 事件骰 → 最后一颗压轴，配上逐颗落桌声
-  const landAt = { d1: DICE_ROLL_MS - 500, ev: DICE_ROLL_MS - 250, d2: DICE_ROLL_MS };
-  const lands = eventFace ? [landAt.d1, landAt.ev, landAt.d2] : [landAt.d1, landAt.d2];
-  sfx.dice(DICE_ROLL_MS / 1000, lands.map((t) => t / 1000));
-  rollCube($('bdie1'), DIE_ORIENT[d1], landAt.d1);
-  rollCube($('bdie2'), DIE_ORIENT[d2], landAt.d2,
-    () => { if (total !== 7) shakeBoard(); });  // 掷 7 由强盗演出负责震屏，不重复
-  if (eventFace) rollCube(bigEvDie, EV_ORIENT[eventFace], landAt.ev);
+  // 舞台里从左到右：第一颗 → 事件骰 → 第二颗。行程递增；滚得最远的那颗最先离手、飞得最快，
+  // 始终跑在前面不会追尾越过别人，各颗按自己的物理过程先后停稳
+  const slotW = $('bdie1').offsetWidth + 22;
+  const throws = [
+    { el: $('bdie1'), orient: DIE_ORIENT[d1] },
+    eventFace && { el: bigEvDie, orient: EV_ORIENT[eventFace] },
+    { el: $('bdie2'), orient: DIE_ORIENT[d2] },
+  ].filter(Boolean);
+  let hits = [];
+  throws.forEach((th, k) => {
+    hits = hits.concat(throwDie(th.el, th.orient, {
+      start: (throws.length - 1 - k) * 0.15,
+      end: DICE_ROLL_MS / 1000,
+      dist: 210 + k * slotW + Math.random() * 30,
+      yOff: (Math.random() - 0.5) * 22,  // 落点略有高低，不像列队
+      lane: (k - (throws.length - 1) / 2) * 70, // 出手时上下错开的航道
+      onImpact: k === throws.length - 1 ? (i) => { if (i === 0) shakeBoard(); } : null, // 最先出手那颗砸桌时震一震屏
+    }));
+  });
+  hits.sort((a, b) => a.t - b.t);
+  sfx.dice(hits);
   // 角落小骰子仍用换面翻滚
   const small = eventFace ? [...dies, evDie] : dies;
   for (const d of small) {

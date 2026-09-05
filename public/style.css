@@ -1507,7 +1507,7 @@ body {
   50% { transform: scale(1.25); }
 }
 
-/* ---------- 中央大骰子：真 3D 立方体 ---------- */
+/* ---------- 中央大骰子：真 3D 立方体（运动由 main.js 物理模拟生成关键帧驱动） ---------- */
 #dice-stage {
   /* 棋盘正中央演出：关键信息居中，减少眼球移动；落定 1s 后就淡出让位 */
   position: absolute; top: 44%; left: 50%; transform: translate(-50%, -50%);
@@ -1519,36 +1519,36 @@ body {
   position: relative;
   width: 88px; height: 88px;
   --hz: 44px;               /* 立方体半边长，骰面 translateZ 用 */
-  perspective: 480px;
 }
-/* 桌面投影：落定时放大加深，衬托砸桌感 */
-.die3d::before {
-  content: ''; position: absolute; left: 4%; right: 4%; bottom: -18px; height: 18px;
-  background: radial-gradient(ellipse at center, rgba(20, 10, 0, .45), transparent 68%);
-  transform: scale(.7); opacity: .45;
-  transition: transform .35s ease, opacity .35s ease;
+/* 桌面投影：留在桌面上（光源在左上，影子落在右下），骰子越高影子越大越淡，落定时最实。
+   用径向渐变而不用 filter: blur——blur 在这个合成层上不出图 */
+.die3d .shadow {
+  position: absolute; left: -12%; right: -12%; top: 14%; bottom: -26%; border-radius: 50%;
+  background: radial-gradient(ellipse at center, rgba(20, 10, 0, .85) 35%, rgba(20, 10, 0, .45) 60%, transparent 100%);
+  opacity: 0; will-change: transform, opacity;
 }
-.die3d.land::before { transform: scale(1.04); opacity: 1; }
-/* 落定冲击环 */
-.die3d::after {
-  content: ''; position: absolute; inset: -6px; border-radius: 24px;
+/* 承载高度（上移 + 放大）、水平位移与撞桌压扁；透视挂在这里让内部 cube 有 3D 感 */
+.die3d .body {
+  position: absolute; inset: 0;
+  perspective: 480px; transform-origin: 50% 85%;
+  opacity: 0; will-change: transform, opacity;
+}
+/* 撞桌冲击环（跟随撞击时的位置） */
+.die3d .ring {
+  position: absolute; inset: -6px; border-radius: 24px;
   border: 3px solid rgba(255, 234, 170, .95);
   opacity: 0;
 }
-.die3d.land::after { animation: die-ring .45s ease-out; }
-@keyframes die-ring {
-  0% { transform: scale(.72); opacity: .95; }
-  100% { transform: scale(1.55); opacity: 0; }
-}
 .die3d .cube {
   position: relative; width: 100%; height: 100%;
-  transform-style: preserve-3d;
+  transform-style: preserve-3d; will-change: transform;
 }
 .die3d .face {
   position: absolute; inset: 0; border-radius: 14px;
   background: #ecdcb8;      /* 补上骰面插画圆角的透明缺口，让立方体棱角看起来实心 */
   display: grid; place-items: center;
   font-size: 46px; color: #fff; text-shadow: 0 2px 6px rgba(0,0,0,.4);
+  backface-visibility: hidden; /* 背面不画，避免透视下透出对面骰面 */
 }
 .die3d.red .face { background: #dd5a4d; }
 .die3d .face img { width: 100%; height: 100%; display: block; }
@@ -1558,27 +1558,6 @@ body {
 .fp-left   { transform: rotateY(-90deg) translateZ(var(--hz)); }
 .fp-top    { transform: rotateX(90deg) translateZ(var(--hz)); }
 .fp-bottom { transform: rotateX(-90deg) translateZ(var(--hz)); }
-/* 抛入：从高处坠落 + 轻微过冲回弹，三颗错开起跳 */
-#dice-stage.enter .die3d { animation: die-toss .62s cubic-bezier(.24,.86,.3,1.14) backwards; }
-#dice-stage.enter .die3d:nth-child(2) { animation-delay: .09s; }
-#dice-stage.enter .die3d:nth-child(3) { animation-delay: .17s; }
-@keyframes die-toss {
-  from { transform: translateY(-52vh); opacity: 0; }
-  35% { opacity: 1; }
-  to { transform: translateY(0); opacity: 1; }
-}
-/* 落定：整颗压扁回弹（squash & stretch）。写在 enter 规则之后以覆盖抛入动画 */
-#dice-stage .die3d.land { animation: die-squash .5s cubic-bezier(.34,1.56,.64,1); }
-@keyframes die-squash {
-  0% { transform: scale(1); }
-  30% { transform: scale(1.15, .86) translateY(4px); }
-  62% { transform: scale(.95, 1.06); }
-  100% { transform: scale(1); }
-}
-@media (prefers-reduced-motion: reduce) {
-  /* 与上面的抛入/落定选择器同级或更高，保证能盖过 */
-  #dice-stage.enter .die3d, #dice-stage .die3d.land, .die3d.land::after { animation: none; }
-}
 
 /* 窄屏适配 */
 @media (max-width: 900px) {
