@@ -582,6 +582,9 @@ socket.on('state', (state) => {
   const oldHand = S?.you?.hand ? { ...S.you.hand } : null;
   S = state;
   window.__S = state; // 调试/测试用
+  // 建设窗口自动结束时刻：服务端发的是剩余毫秒，按收到时刻换算成本地时间
+  sbDeadlineAt = Number.isFinite(state.sbRemaining) ? Date.now() + state.sbRemaining : null;
+  sbCountdownMs = state.sbCountdownMs || 5000;
   isSpectating = !!state.you.spectating;
   myIndex = state.you.index;
   if (!boardReady) {
@@ -806,6 +809,37 @@ socket.on('returnToLobby', () => {
   show('screen-lobby');
   toast('房主已结束本局，回到等待大厅');
 });
+
+// ---------- 特别建设窗口倒计时 ----------
+// 服务端在窗口无操作一段时间后自动结束；最后 sbCountdownMs 内显示秒数倒计时
+let sbDeadlineAt = null;
+let sbCountdownMs = 5000;
+let sbLastTickSec = null;
+// 倒计时可见时返回剩余整秒数，否则 null
+function sbCountdownSec() {
+  if (!S || S.phase !== 'play' || S.turn.state !== 'specialBuild' || sbDeadlineAt === null) return null;
+  const left = sbDeadlineAt - Date.now();
+  if (left > sbCountdownMs) return null;
+  return Math.max(0, Math.ceil(left / 1000));
+}
+function tickSbCountdown() {
+  const sec = sbCountdownSec();
+  const el = $('sb-timer');
+  if (sec === null) {
+    el.classList.add('hidden');
+    sbLastTickSec = null;
+    return;
+  }
+  const mine = mySpecialBuild();
+  el.textContent = mine ? `⏱️ ${sec} 秒后自动结束建设` : `⏱️ ${sec}`;
+  el.classList.toggle('mine', mine);
+  el.classList.remove('hidden');
+  if (mine) $('btn-end').textContent = `⏭️ 结束建设（${sec}）`;
+  // 建设者本人每秒一声轻响，提醒抬头
+  if (mine && sec !== sbLastTickSec && sec > 0) sfx.click();
+  sbLastTickSec = sec;
+}
+setInterval(tickSbCountdown, 200);
 
 const colors = () => S.players.map((p) => p.color);
 const isMyTurn = () => S.phase === 'play' && S.turn.player === myIndex;
@@ -1748,7 +1782,9 @@ function renderButtons() {
   }
   $('btn-trade').disabled = !(my && S.turn.state === 'main');
   $('btn-end').disabled = !main;
-  $('btn-end').textContent = sbMine ? '⏭️ 结束建设' : '✅ 结束回合';
+  const sbSec = sbMine ? sbCountdownSec() : null;
+  $('btn-end').textContent = sbMine
+    ? (sbSec !== null ? `⏭️ 结束建设（${sbSec}）` : '⏭️ 结束建设') : '✅ 结束回合';
 
   for (const [id, kind] of [['btn-road', 'road'], ['btn-settlement', 'settlement'], ['btn-city', 'city'], ['btn-knight', 'knight'], ['btn-wall', 'wall']]) {
     $(id).classList.toggle('armed', armed === kind);

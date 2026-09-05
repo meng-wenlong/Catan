@@ -257,6 +257,14 @@ body {
      必须 ≥ 骰子行高：.die 36px + 上下 padding 各 10px = 56px（54px 会差 2px 仍抖动） */
   min-height: 56px;
 }
+/* 特别建设窗口倒计时：状态栏里的琥珀色药丸，轮到自己时放大并脉动 */
+#sb-timer {
+  padding: 3px 12px; border-radius: 999px; font-size: 16px; font-weight: 700;
+  background: rgba(201,138,42,.9); color: #fff; white-space: nowrap;
+  box-shadow: 0 2px 6px rgba(0,0,0,.3);
+}
+#sb-timer.mine { font-size: 18px; background: #d9482b; animation: sb-timer-pulse .5s ease-in-out infinite alternate; }
+@keyframes sb-timer-pulse { from { transform: scale(1); } to { transform: scale(1.08); } }
 #dice-box { display: flex; gap: 8px; }
 .die {
   width: 36px; height: 36px;
@@ -1184,7 +1192,7 @@ body {
   45% { transform: translate(-4px, -2px); } 60% { transform: translate(4px, 2px); } 75% { transform: translate(-3px, 1px); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .fx-burst, #board-area.shake, .player-card.sb-builder, .player-card.aqueduct-pending { animation: none; }
+  .fx-burst, #board-area.shake, .player-card.sb-builder, .player-card.aqueduct-pending, #sb-timer.mine { animation: none; }
   .knight-pos, .num-token.token-fly { transition: none; }
   .cloud-shadow, .gull-flock { display: none; } /* 氛围元素靠动画定位，禁动画时直接隐藏 */
   #barb-vignette.show, .barb-near .barb-ship image, .barb-land-core, .barb-land-ring { animation: none; }

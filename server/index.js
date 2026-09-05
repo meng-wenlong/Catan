@@ -72,15 +72,55 @@ function broadcastLobby(room) {
   roomEmit(room, 'lobby', null, (i) => ({ ...st, you: i }));
 }
 
+// 特别建设窗口的无操作超时：开窗/每次操作后重新计时，先静默 SB_IDLE_MS，
+// 再显示 SB_COUNTDOWN_MS 的倒计时，到点仍无操作则服务端自动结束该窗口
+const SB_IDLE_MS = 10000;
+const SB_COUNTDOWN_MS = 5000;
+
+function clearSbTimer(room) {
+  clearTimeout(room.sbTimer);
+  room.sbTimer = null;
+  room.sbDeadline = null;
+}
+
+// 与当前游戏状态同步计时器：在建设窗口内则（重新）起表，否则清掉
+function syncSbTimer(room) {
+  clearSbTimer(room);
+  const g = room.game;
+  if (!g || g.turn.state !== 'specialBuild') return;
+  const builder = g.sbBuilder();
+  const idx = g.turn.sb.idx;
+  room.sbDeadline = Date.now() + SB_IDLE_MS + SB_COUNTDOWN_MS;
+  room.sbTimer = setTimeout(() => {
+    room.sbTimer = null;
+    room.sbDeadline = null;
+    // 期间对局已换/状态已变/窗口已推进：本次超时作废
+    if (room.game !== g || g.turn.state !== 'specialBuild'
+      || g.sbBuilder() !== builder || g.turn.sb.idx !== idx) return;
+    try {
+      g.addLog(`⏱️ ${g.players[builder].name} 超时未操作，建设窗口自动结束`);
+      g.sbPass(builder);
+    } catch (e) {
+      console.error(e);
+      return;
+    }
+    syncSbTimer(room); // 下一位建设者接着计时
+    broadcastGame(room);
+  }, SB_IDLE_MS + SB_COUNTDOWN_MS);
+}
+
 function broadcastGame(room) {
   if (!room.game) return;
   const pub = room.game.publicState();
   const hostIndex = room.players.findIndex((p) => p.token === room.hostToken);
-  roomEmit(room, 'state', null, (i) => ({ ...pub, hostIndex, you: room.game.privateState(i) }));
+  // sbRemaining：建设窗口自动结束的剩余毫秒（发相对值，客户端按收到时刻换算，不受时钟偏差影响）
+  const sbRemaining = room.sbDeadline ? Math.max(0, room.sbDeadline - Date.now()) : null;
+  const extra = { hostIndex, sbRemaining, sbCountdownMs: SB_COUNTDOWN_MS };
+  roomEmit(room, 'state', null, (i) => ({ ...pub, ...extra, you: room.game.privateState(i) }));
   // 观战者：公开状态，不含手牌；存根须与 privateState 同构（含 ck 商品与 progressCards）
   emitSpectators(room, 'state', {
     ...pub,
-    hostIndex,
+    ...extra,
     you: {
       spectating: true, index: -1, hand: room.game.blankHand(),
       devCards: [], progressCards: [], rates: {}, hints: {}, vpTotal: 0,
@@ -135,7 +175,7 @@ const EMOTES = ['😄', '😂', '😭', '😡', '🤔', '😱', '👍', '👎', 
 setInterval(() => {
   const now = Date.now();
   for (const [code, room] of rooms) {
-    if (now - room.createdAt > 24 * 3600 * 1000) rooms.delete(code);
+    if (now - room.createdAt > 24 * 3600 * 1000) { clearSbTimer(room); rooms.delete(code); }
   }
 }, 3600 * 1000);
 
@@ -347,6 +387,7 @@ io.on('connection', (socket) => {
       mode,
     );
     room.picking = null;
+    clearSbTimer(room);
     broadcastLobby(room);
     broadcastGame(room);
     broadcastOpenRooms();
@@ -359,6 +400,7 @@ io.on('connection', (socket) => {
     if (room.hostToken !== myToken) return fail('只有房主可以结束本局');
     if (!room.game) return fail('游戏尚未开始');
     room.game = null;
+    clearSbTimer(room);
     roomEmit(room, 'returnToLobby');
     emitSpectators(room, 'returnToLobby');
     broadcastLobby(room);
@@ -388,6 +430,7 @@ io.on('connection', (socket) => {
     if (!room) return fail('尚未加入房间');
     if (room.hostToken !== myToken) return fail('只有房主可以销毁房间');
     rooms.delete(room.code);
+    clearSbTimer(room);
     roomEmit(room, 'roomDestroyed');
     emitSpectators(room, 'roomDestroyed');
     // 清空残留引用：其他成员的连接仍握着此 room，防止销毁后继续收发
@@ -456,6 +499,7 @@ io.on('connection', (socket) => {
       }
       // 特别建设阶段：动作结算后当前建设者已无事可做时自动推进
       g.sbAutoAdvance();
+      syncSbTimer(room); // 开窗/推进/建设者每次操作都重新起表
       broadcastGame(room);
     } catch (e) {
       if (e.isGameError) fail(e.message);
@@ -524,7 +568,9 @@ io.on('connection', (socket) => {
     if (room.game) {
       room.game.players[idx].connected = false;
       // 特别建设阶段的当前建设者掉线：自动跳过，避免卡住所有人
+      const before = room.game.sbBuilder();
       room.game.sbAutoAdvance();
+      if (room.game.sbBuilder() !== before) syncSbTimer(room); // 换了建设者才重新起表
       broadcastGame(room);
     } else if (room.hostToken === myToken && room.players.length === 1) {
       rooms.delete(room.code); // 空的未开始房间直接清理
