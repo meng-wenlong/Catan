@@ -1495,6 +1495,182 @@ body {
 #spotlight .sp-name { color: #fff; font-size: 24px; font-weight: 800; font-family: var(--font-title); margin-bottom: 4px; }
 #spotlight .sp-desc { color: #cfd6e2; font-size: 16px; line-height: 1.55; }
 #spotlight .sp-sub { color: #d8dee8; font-size: 17px; text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+/* ---------- 开场演出（opening.js）：电影黑边 + 镜头俯冲 + 烫金标题 + 玩家铭牌登场 ---------- */
+#opening {
+  position: fixed; inset: 0; z-index: 90; overflow: hidden; cursor: pointer;
+  --gold-1: #fff6d8; --gold-2: #f3c85a; --gold-3: #b9832a; --gold-4: #6e4512;
+}
+/* 电影黑边：开场合拢成全黑，睁眼到宽银幕比例，收尾退出画面 */
+#opening .op-bar {
+  position: absolute; left: 0; right: 0; height: 50.5vh; background: #050506;
+  transition: height 2.4s cubic-bezier(.65,0,.2,1);
+}
+#opening .op-bar.top { top: 0; box-shadow: inset 0 -1px 0 rgba(243,200,90,.0); }
+#opening .op-bar.bottom { bottom: 0; }
+#opening.s-open .op-bar { height: 10.5vh; }
+#opening.s-open .op-bar.top { box-shadow: inset 0 -1px 0 rgba(243,200,90,.35); transition: height 2.4s cubic-bezier(.65,0,.2,1), box-shadow 1.4s 1.6s; }
+#opening.s-open .op-bar.bottom { box-shadow: inset 0 1px 0 rgba(243,200,90,.35); transition: height 2.4s cubic-bezier(.65,0,.2,1), box-shadow 1.4s 1.6s; }
+#opening.s-out .op-bar { height: 0; transition: height 1s cubic-bezier(.5,0,.75,0); }
+#opening .op-skip {
+  position: absolute; right: 28px; top: 50%; transform: translateY(-50%);
+  color: rgba(255,255,255,.4); font-size: 13px; letter-spacing: 3px; opacity: 0;
+  transition: opacity .8s 1.8s;
+}
+#opening.s-open .op-skip { opacity: 1; }
+#opening.s-out .op-skip { opacity: 0; transition-delay: 0s; }
+
+/* 云雾：五团软边云在镜头穿过时向外散开（径向渐变，不用 filter，Safari 合成层上更稳） */
+#opening .op-fog i {
+  position: absolute; left: 50%; top: 50%; width: 90vmax; height: 60vmax; margin: -30vmax 0 0 -45vmax;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(250,252,255,.96), rgba(236,242,250,.75) 45%, rgba(230,238,248,0));
+  transform: translate(var(--fx), var(--fy)) scale(.9); opacity: 1;
+  transition: transform 4.2s cubic-bezier(.3,0,.2,1), opacity 3.6s ease .5s;
+}
+#opening .op-fog i:nth-child(1) { --fx: -30vw; --fy: -18vh; --tx: -110vw; --ty: -50vh; }
+#opening .op-fog i:nth-child(2) { --fx: 28vw; --fy: -10vh; --tx: 110vw; --ty: -35vh; }
+#opening .op-fog i:nth-child(3) { --fx: -20vw; --fy: 22vh; --tx: -100vw; --ty: 70vh; }
+#opening .op-fog i:nth-child(4) { --fx: 24vw; --fy: 26vh; --tx: 105vw; --ty: 60vh; }
+#opening .op-fog i:nth-child(5) { --fx: 0; --fy: 0; --tx: 0; --ty: 10vh; width: 70vmax; margin-left: -35vmax; }
+#opening.s-open .op-fog i { transform: translate(var(--tx), var(--ty)) scale(1.8); opacity: 0; }
+#opening.s-open .op-fog i:nth-child(5) { transform: translate(0, 10vh) scale(3); transition-duration: 3.6s, 2.2s; transition-delay: 0s, .2s; }
+
+/* 落地闪白 + 标题底下的压暗 */
+#opening .op-flash {
+  position: absolute; inset: 0; opacity: 0; pointer-events: none;
+  background: radial-gradient(ellipse 55% 50% at 50% 50%, rgba(255,246,220,.75), rgba(255,236,190,0) 70%);
+}
+#opening.s-land .op-flash { animation: op-flash 1.3s ease-out forwards; }
+@keyframes op-flash { 0% { opacity: 0; } 15% { opacity: 1; } 100% { opacity: 0; } }
+#opening .op-dim {
+  position: absolute; inset: 0; opacity: 0; transition: opacity 1.2s ease;
+  background: radial-gradient(ellipse 70% 60% at 50% 50%, rgba(6,10,18,.55), rgba(3,5,10,.86));
+}
+#opening.s-title .op-dim { opacity: 1; }
+#opening.s-out .op-dim { opacity: 0; transition-duration: .9s; }
+
+/* 标题组 */
+#opening .op-center {
+  position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 10px; pointer-events: none; text-align: center;
+}
+#opening.s-out .op-center { animation: op-center-out .9s cubic-bezier(.5,0,.75,0) forwards; }
+@keyframes op-center-out { to { opacity: 0; transform: translateY(-24px) scale(1.04); } }
+#opening .op-eyebrow {
+  color: var(--gold-2); font-size: 15px; font-weight: 700; letter-spacing: 8px; opacity: 0;
+  text-shadow: 0 0 18px rgba(243,200,90,.5);
+}
+#opening.s-title .op-eyebrow { animation: op-fade-up 1.2s ease .25s forwards; }
+#opening .op-rule { display: flex; align-items: center; gap: 12px; width: min(520px, 80vw); }
+#opening .op-rule i {
+  flex: 1; height: 1px; transform: scaleX(0);
+  background: linear-gradient(90deg, transparent, var(--gold-2) 60%, var(--gold-1));
+}
+#opening .op-rule i:last-child { background: linear-gradient(90deg, var(--gold-1), var(--gold-2) 40%, transparent); }
+#opening .op-rule i:first-child { transform-origin: right; }
+#opening .op-rule i:last-child { transform-origin: left; }
+#opening .op-rule b { color: var(--gold-1); font-size: 12px; opacity: 0; text-shadow: 0 0 10px var(--gold-2); }
+#opening.s-title .op-rule i { animation: op-rule-grow 1.6s cubic-bezier(.22,1,.36,1) .4s forwards; }
+#opening.s-title .op-rule b { animation: op-fade-up .8s ease .3s forwards; }
+@keyframes op-rule-grow { to { transform: scaleX(1); } }
+
+/* 烫金大标题：投影层 / 金属渐变字 / 扫光层三层叠放（不在 background-clip:text 上叠 filter，Safari 会渲染错） */
+#opening .op-title {
+  display: grid; font-family: var(--font-title); font-weight: 900;
+  font-size: clamp(64px, 11vw, 132px); line-height: 1.05; letter-spacing: .5em; padding-left: .5em;
+  opacity: 0; transform: scale(1.35);
+}
+#opening .op-title > span { grid-area: 1 / 1; }
+#opening .op-title .t-shadow { color: #3d2406; text-shadow: 0 4px 0 #2c1904, 0 14px 30px rgba(0,0,0,.75); }
+#opening .op-title .t-gold, #opening .op-title .t-shine {
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+#opening .op-title .t-gold {
+  background-image: linear-gradient(180deg, var(--gold-1) 0%, var(--gold-2) 38%, var(--gold-3) 62%, #f7dc8c 78%, var(--gold-4) 100%);
+}
+#opening .op-title .t-shine {
+  background-image: linear-gradient(105deg, transparent 38%, rgba(255,255,255,.95) 48%, rgba(255,250,225,.6) 52%, transparent 62%);
+  background-size: 260% 100%; background-position: 130% 0;
+}
+#opening.s-title .op-title { animation: op-title-slam 1.1s cubic-bezier(.2,1.2,.3,1) .15s forwards; }
+#opening.s-shine .op-title .t-shine { animation: op-shine 1.6s ease-in-out forwards; }
+@keyframes op-title-slam {
+  0% { opacity: 0; transform: scale(1.35); letter-spacing: .9em; }
+  60% { opacity: 1; }
+  100% { opacity: 1; transform: scale(1); letter-spacing: .5em; }
+}
+@keyframes op-shine { from { background-position: 130% 0; } to { background-position: -30% 0; } }
+#opening .op-sub {
+  color: #f0e6cc; font-size: 19px; font-weight: 700; letter-spacing: 3px; opacity: 0;
+  text-shadow: 0 2px 10px rgba(0,0,0,.7);
+}
+#opening .op-sub span { margin: 0 12px; color: var(--gold-2); }
+#opening .op-sub b { color: var(--gold-2); font-size: 24px; }
+#opening.s-title .op-sub { animation: op-fade-up 1.1s ease .9s forwards; }
+@keyframes op-fade-up { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+
+/* 玩家铭牌：斜切的暗色玻璃牌 + 玩家色描边光，从两侧冲入后重击定格 */
+#opening .op-lineup {
+  display: flex; flex-wrap: wrap; justify-content: center; gap: 14px 18px;
+  margin-top: 22px; max-width: min(980px, 92vw);
+}
+#opening .op-plate {
+  transform: skewX(-12deg); opacity: 0;
+  translate: var(--from, -60vw) 0;
+}
+#opening .op-plate.from-right { --from: 60vw; }
+#opening.s-lineup .op-plate { animation: op-plate-in .8s cubic-bezier(.2,.9,.25,1.15) forwards; animation-delay: calc(var(--k) * .45s); }
+@keyframes op-plate-in {
+  0% { opacity: 0; translate: var(--from) 0; }
+  60% { opacity: 1; }
+  80% { translate: calc(var(--from) * -.015) 0; }
+  100% { opacity: 1; translate: 0 0; }
+}
+#opening .op-plate-inner {
+  position: relative; display: flex; align-items: center; gap: 12px;
+  padding: 10px 26px 10px 12px; min-width: 150px;
+  background: linear-gradient(100deg, color-mix(in srgb, var(--seat) 38%, #0b0f17) 0%, rgba(11,15,23,.92) 55%);
+  border: 1.5px solid color-mix(in srgb, var(--seat) 80%, #fff);
+  box-shadow: 0 0 0 1px rgba(0,0,0,.6), 0 0 26px color-mix(in srgb, var(--seat) 55%, transparent), inset 0 1px 0 rgba(255,255,255,.18);
+}
+#opening .op-plate-inner > * { transform: skewX(12deg); }
+#opening.s-lineup .op-plate-inner { animation: op-plate-hit .9s ease-out forwards; animation-delay: calc(var(--k) * .45s + .5s); }
+@keyframes op-plate-hit {
+  0% { box-shadow: 0 0 0 1px rgba(0,0,0,.6), 0 0 60px 10px var(--seat), inset 0 0 30px color-mix(in srgb, var(--seat) 60%, transparent); }
+  100% { box-shadow: 0 0 0 1px rgba(0,0,0,.6), 0 0 26px color-mix(in srgb, var(--seat) 55%, transparent), inset 0 1px 0 rgba(255,255,255,.18); }
+}
+#opening .op-seat-no {
+  width: 34px; height: 34px; display: grid; place-items: center; flex: none;
+  background: var(--seat); color: #fff; font-size: 18px; font-weight: 900;
+  text-shadow: 0 1px 3px rgba(0,0,0,.7); box-shadow: inset 0 -3px 0 rgba(0,0,0,.25);
+}
+#opening .op-seat-name { color: #fff; font-size: 21px; font-weight: 800; letter-spacing: 1px; white-space: nowrap; }
+#opening .op-seat-name small {
+  margin-left: 8px; padding: 1px 7px; border-radius: 4px; font-size: 12px; vertical-align: 3px;
+  background: rgba(255,255,255,.16); color: #fff;
+}
+#opening .op-first {
+  position: absolute; top: -11px; right: -6px; padding: 2px 9px;
+  background: linear-gradient(180deg, var(--gold-1), var(--gold-2) 55%, var(--gold-3));
+  color: #4a2c08; font-size: 12px; font-weight: 900; letter-spacing: 2px;
+  box-shadow: 0 3px 10px rgba(0,0,0,.5);
+}
+
+/* 开场期间界面元素收在屏幕外，演出结束时从四边依次滑入（只动 translate/opacity，不碰元素原有 transform） */
+#status-bar, #side-panel, #bottom-bar, #zoom-controls, #btn-settings, #log-panel {
+  transition: translate 1.2s cubic-bezier(.16,1,.3,1), opacity .9s ease;
+}
+.opening-hud #status-bar, .opening-hud #btn-settings { translate: 0 -140%; opacity: 0; transition: none; }
+.opening-hud #side-panel { translate: 110% 0; opacity: 0; transition: none; }
+.opening-hud #bottom-bar { translate: 0 120%; opacity: 0; transition: none; }
+.opening-hud #zoom-controls { translate: 160% 0; opacity: 0; transition: none; }
+.opening-hud #log-panel { translate: -130% 0; opacity: 0; transition: none; }
+#side-panel { transition-delay: .15s; }
+#bottom-bar { transition-delay: .3s; }
+#zoom-controls, #log-panel { transition-delay: .45s; }
+/* 开场演出期间棋盘锁定：不可点击、不显示落子热区 */
+#board.board-intro { pointer-events: none; }
+#board.board-intro #layer-hotspots { visibility: hidden; }
 #spotlight .sp-bannerimg {
   height: min(30vh, 240px); object-fit: contain;
   filter: drop-shadow(0 14px 34px rgba(0,0,0,.55)) drop-shadow(0 0 30px color-mix(in srgb, var(--sp-accent) 55%, transparent));

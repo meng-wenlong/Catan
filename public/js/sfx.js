@@ -341,6 +341,33 @@ export const sfx = {
       tone({ freq: 115, freq2: 62, type: 'sawtooth', dur: 0.55, gain: 0.2, when: 0.42 });
     }
   },
+  // 开场镜头穿云：长段海风「呼——」层层叠起 + 低频轰鸣垫底
+  openingWind() {
+    noise({ freq: 300, freq2: 1400, q: 0.6, dur: 1.6, gain: 0.08 });
+    noise({ freq: 900, freq2: 260, q: 0.8, dur: 2.2, gain: 0.07, when: 0.9 });
+    noise({ freq: 2400, freq2: 600, q: 1.2, dur: 1.4, gain: 0.04, when: 1.6 });
+    tone({ freq: 55, freq2: 42, type: 'sine', dur: 3.2, gain: 0.16 });
+  },
+  // 镜头落定 / 标题砸下：重低音冲击 + 闷响 + 余震
+  openingImpact() {
+    tone({ freq: 120, freq2: 36, type: 'sine', dur: 1.3, gain: 0.32 });
+    tone({ freq: 62, freq2: 30, type: 'triangle', dur: 1.6, gain: 0.18, when: 0.02 });
+    noise({ freq: 180, q: 0.9, dur: 0.45, gain: 0.22 });
+    noise({ freq: 3200, freq2: 900, q: 0.8, dur: 0.6, gain: 0.05, when: 0.03 });
+  },
+  // 金字扫光：高处一串玻璃质感的闪烁音
+  openingShine() {
+    [2093, 2637, 3136, 4186].forEach((f, i) => {
+      tone({ freq: f, type: 'sine', dur: 0.5 - i * 0.06, gain: 0.05, when: i * 0.07 });
+      tone({ freq: f * 1.5, type: 'sine', dur: 0.3, gain: 0.018, when: i * 0.07 + 0.01 });
+    });
+  },
+  // 玩家铭牌冲入：短促挥风 + 落点重击，逐个升调
+  openingPlate(i = 0) {
+    noise({ freq: 700, freq2: 3000, q: 0.9, dur: 0.16, gain: 0.1 });
+    tone({ freq: 196 * 2 ** (i * 2 / 12), freq2: 98, type: 'triangle', dur: 0.24, gain: 0.2, when: 0.12 });
+    noise({ freq: 400, q: 1.5, dur: 0.1, gain: 0.14, when: 0.12 });
+  },
 };
 
 // 事件委托挂在捕获阶段：即使按钮自己的 handler 里 stopPropagation 也能出声

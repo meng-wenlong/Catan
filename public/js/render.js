@@ -391,6 +391,84 @@ export function initBoard(svgElement, boardData, ck = false) {
   attachInspect(robberEl, { kind: 'robber' });
 }
 
+// 开局演出：岛屿浮现 → 地块由中心向外逐圈落下 → 数字令牌弹出 → 港口/牌堆/强盗登场。
+// 只给 initBoard 已建好的元素套 WAAPI（fill: backwards 让延迟期间先隐藏），结束后撤掉动画与内联样式，
+// 不影响之后的 hex-bounce / 令牌互飞。onRing(i) 在第 i 圈落地时回调（配音用）。
+// pace 为整体放慢倍数。返回 { duration, finish }：finish() 立即跳到落成状态（开场被点击跳过时用）
+export function playBoardIntro({ onRing, pace = 1 } = {}) {
+  const T = (ms) => ms * pace;
+  const anims = [];
+  const timers = [];
+  const run = (node, keyframes, opts) => {
+    node.style.transformBox = 'fill-box';
+    node.style.transformOrigin = 'center';
+    anims.push([node, node.animate(keyframes, { fill: 'backwards', ...opts })]);
+  };
+  run(layers.island, [
+    { opacity: 0, transform: 'scale(.82)' },
+    { opacity: 1, transform: 'scale(1)' },
+  ], { duration: T(650), easing: 'cubic-bezier(.22,1,.36,1)' });
+
+  // 每块地按到岛心的距离分圈（相邻地块中心距 = HEX_W），圈内按方位角错开，形成螺旋落下
+  const HEX_START = T(350);
+  const RING_GAP = T(280);
+  let end = 0;
+  const ringsSeen = new Set();
+  board.hexes.forEach((hex, i) => {
+    const g = layers.hexes.children[i];
+    const ring = Math.round(Math.hypot(hex.x - isle.cx, hex.y - isle.cy) / HEX_W);
+    const turn = (Math.atan2(hex.y - isle.cy, hex.x - isle.cx) / (2 * Math.PI) + 1) % 1;
+    const delay = HEX_START + ring * RING_GAP + turn * T(220);
+    run(g, [
+      { opacity: 0, transform: 'translateY(-1.4px) scale(.55)' },
+      { opacity: 1, transform: 'translateY(.05px) scale(1.03)', offset: 0.65 },
+      { opacity: 1, transform: 'none' },
+    ], { duration: T(520), delay, easing: 'cubic-bezier(.3,.7,.4,1)' });
+    const token = tokenEls.get(hex.id);
+    if (token) {
+      run(token, [
+        { opacity: 0, transform: 'scale(0)' },
+        { opacity: 1, transform: 'scale(1.18)', offset: 0.6 },
+        { opacity: 1, transform: 'scale(1)' },
+      ], { duration: T(420), delay: delay + T(360), easing: 'ease-out' });
+    }
+    if (!ringsSeen.has(ring)) {
+      ringsSeen.add(ring);
+      if (onRing) timers.push(setTimeout(() => onRing(ring), HEX_START + ring * RING_GAP + T(300)));
+    }
+    end = Math.max(end, delay + T(780));
+  });
+
+  // 港口逐个点亮，ck 的牌堆与野蛮人航道随后淡入，强盗最后落到沙漠
+  [...layers.harbors.children].forEach((hg, i) => {
+    run(hg, [
+      { opacity: 0, transform: 'scale(.4)' },
+      { opacity: 1, transform: 'scale(1)' },
+    ], { duration: T(380), delay: end - T(300) + i * T(60), easing: 'cubic-bezier(.34,1.56,.64,1)' });
+  });
+  end += layers.harbors.children.length * T(60);
+  for (const layer of [layers.decks, layers.barb]) {
+    run(layer, [{ opacity: 0 }, { opacity: 1 }], { duration: T(500), delay: end - T(200), easing: 'ease-out' });
+  }
+  run(robberEl.firstElementChild, [ // 外层 g 的 transform 管位置，只动内层插画
+    { opacity: 0, transform: 'translateY(-1.2px)' },
+    { opacity: 1, transform: 'translateY(.04px)', offset: 0.7 },
+    { opacity: 1, transform: 'none' },
+  ], { duration: T(480), delay: end, easing: 'cubic-bezier(.5,0,.75,0)' });
+  end += T(480);
+
+  const finish = () => {
+    timers.forEach(clearTimeout);
+    for (const [node, a] of anims) {
+      a.cancel();
+      node.style.transformBox = '';
+      node.style.transformOrigin = '';
+    }
+  };
+  timers.push(setTimeout(finish, end + 50));
+  return { duration: end, finish };
+}
+
 // 数字令牌画在独立图层（pointer-events: none，点击穿透到地块热区）：
 // 发明家交换数字时两枚令牌可以整组飞行，而无需重建棋盘
 function drawNumberToken(hex) {

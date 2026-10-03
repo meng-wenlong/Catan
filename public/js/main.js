@@ -9,6 +9,7 @@ import {
 import { initSfx, sfx } from './sfx.js';
 import { initSound, duckBgm } from './sound.js';
 import { spotlight, clearSpotlight } from './spotlight.js';
+import { playOpening as runOpening, stopOpening } from './opening.js';
 import { startConfetti, stopConfetti } from './confetti.js';
 
 initSfx();
@@ -179,6 +180,7 @@ function exitSpectate(msg) {
   pendingSelf = {};
   pendingCount = {};
   $('log-list').innerHTML = '';
+  stopOpening();
   show('screen-home');
   if (msg) toast(msg);
 }
@@ -592,6 +594,9 @@ socket.on('state', (state) => {
     boardReady = true;
     // 首次加载/重连：不重播历史动画事件
     lastSeq = state.events.reduce((m, e) => Math.max(m, e.seq), lastSeq);
+    $('board').classList.remove('board-intro'); // 上一局开场演出被打断时残留的锁定
+    // 新开局（初始摆放还没人落子）：先播开场演出，给全桌一个缓冲再进入摆放
+    if (state.phase === 'setup' && state.setup.pos === 0 && state.setup.awaiting === 'settlement') playOpening();
   }
   // 发明家换数字不再重建棋盘：playEvents 里的 inventor 事件播放令牌互飞动画
   show('screen-game');
@@ -804,6 +809,7 @@ socket.on('returnToLobby', () => {
     $(m).classList.add('hidden');
   }
   clearSpotlight();
+  stopOpening();
   cancelProgAction();
   $('aqueduct-btns').innerHTML = '';
   show('screen-lobby');
@@ -2841,6 +2847,29 @@ function stepSpotlight(item) {
   animStep((done) => spotlight({ ...item, onDone: done }));
 }
 
+// 开场演出（opening.js）：镜头俯冲落岛 → 烫金标题 → 玩家按摆放顺序登场 → 界面滑入，随后横幅点名先手。
+// 演出期间棋盘锁定（不可点、不显示落子热区），点击任意处跳过
+function playOpening() {
+  const boardEl = $('board');
+  const first = S.setup.current;
+  const n = S.players.length;
+  const order = Array.from({ length: n }, (_, k) => (first + k) % n);
+  boardEl.classList.add('board-intro');
+  animStep((done) => runOpening({
+    players: order.map((i) => ({ name: S.players[i].name, color: S.players[i].color, me: i === myIndex })),
+    mode: `${S.mode === 'ck' ? '城市与骑士' : '基础版'}${n >= 5 ? ' · 5-6 人扩展' : ''}`,
+    goal: S.winGoal,
+    onDone: () => {
+      boardEl.classList.remove('board-intro');
+      done();
+    },
+  }));
+  animStep((done) => {
+    showStartBanner(first);
+    done();
+  });
+}
+
 function playEvents(upTo = Infinity) { // upTo：只播放该 seq 及之前的事件（冲刷被新掷骰打断的上一批）
   const progressEvents = []; // 抽进步卡单独攒起来，等资源全部落地后作为第二阶段播放
   for (const ev of S.events) {
@@ -3164,12 +3193,7 @@ function showTurnBanner(to) {
     const inner = banner.querySelector('.turn-banner-inner');
     inner.textContent = `轮到 ${p.name} 的回合`;
     inner.classList.remove('mine');
-    // 横幅底色使用新玩家的颜色；浅色（如白色玩家）自动改用深色文字
-    inner.style.background = `linear-gradient(135deg, ${p.color}e6, ${p.color}b0)`;
-    const [r, g, b] = [1, 3, 5].map((i) => parseInt(p.color.slice(i, i + 2), 16));
-    const light = 0.299 * r + 0.587 * g + 0.114 * b > 186;
-    inner.style.color = light ? '#334' : '#fff';
-    inner.style.textShadow = light ? 'none' : '0 2px 6px rgba(0,0,0,.35)';
+    paintBannerColor(inner, p.color);
     banner.classList.remove('show');
     void banner.offsetWidth;
     banner.classList.add('show');
@@ -3185,6 +3209,37 @@ function showTurnBanner(to) {
     card.classList.add('turn-flash');
   }
   floatOverPlayer(to, '🎲');
+}
+
+// 横幅底色使用玩家颜色；浅色（如白色玩家）自动改用深色文字
+function paintBannerColor(inner, color) {
+  inner.style.background = `linear-gradient(135deg, ${color}e6, ${color}b0)`;
+  const [r, g, b] = [1, 3, 5].map((i) => parseInt(color.slice(i, i + 2), 16));
+  const light = 0.299 * r + 0.587 * g + 0.114 * b > 186;
+  inner.style.color = light ? '#334' : '#fff';
+  inner.style.textShadow = light ? 'none' : '0 2px 6px rgba(0,0,0,.35)';
+}
+
+// 开场点名先手：自己先手时用大号字
+function showStartBanner(first) {
+  const p = S.players[first];
+  const mine = first === myIndex;
+  const banner = $('turn-banner');
+  const inner = banner.querySelector('.turn-banner-inner');
+  inner.textContent = mine ? '📍 你先放置' : `📍 ${p.name} 先放置`;
+  inner.classList.toggle('mine', mine);
+  paintBannerColor(inner, p.color);
+  banner.classList.remove('show');
+  void banner.offsetWidth;
+  banner.classList.add('show');
+  clearTimeout(banner._timer);
+  banner._timer = setTimeout(() => banner.classList.remove('show'), 4600);
+  const card = $(`player-card-${first}`);
+  if (card) {
+    card.classList.remove('turn-flash');
+    void card.offsetWidth;
+    card.classList.add('turn-flash');
+  }
 }
 
 // 特别建设阶段横幅（5-6 人）：琥珀色，区别于回合横幅的玩家色
