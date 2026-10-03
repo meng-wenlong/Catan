@@ -40,9 +40,14 @@
   --font-body: "Glow Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
   --font-title: var(--font-body);
   --font-num: var(--font-body);
+  /* 棋盘 SVG 文字禁用未来荧黑：Safari（WebKit 22625）缩放棋盘时用它画 SVG 文字会触发
+     FontCascade::drawGlyphBuffer 断言，整页崩溃重载（压测连续缩放 6~15 秒必现，换系统字体不再复现） */
+  --font-board: "Baloo 2", -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
 }
 
 h1, h2, .turn-banner-inner { font-family: var(--font-title); }
+/* 统一兜底，覆盖下方各棋盘文字类（数字令牌/港口/野蛮人/牌堆计数…）自带的字体 */
+#board text { font-family: var(--font-board); }
 .vp-big, .room-code, .die, #roll-overlay,
 .res-card .cnt, .rp-cnt { font-family: var(--font-num); }
 
@@ -852,7 +857,7 @@ body {
 .token-ring { fill: none; stroke: rgba(120,90,40,.28); stroke-width: .012; pointer-events: none; }
 .token-num {
   font-size: .38px; font-weight: 700; text-anchor: middle; pointer-events: none;
-  font-family: "Baloo 2", var(--font-num); /* 地块数字保留圆体，不随全站换未来荧黑 */
+  font-family: var(--font-board); /* 地块数字保留圆体 Baloo 2 */
 }
 .token-num.red { fill: #c0392b; }
 .token-dots { fill: #333; }
@@ -861,7 +866,7 @@ body {
 /* 港口：插画徽章（harbor-*.webp）+ 底部羊皮纸比例小签 */
 .harbor-text { font-size: .3px; text-anchor: middle; pointer-events: none; }
 .rate-pill { fill: #f7ecd2; stroke: #8a7a55; stroke-width: .018; }
-.harbor-rate { font-size: .14px; font-weight: 700; fill: #6b5a35; font-family: "Baloo 2", var(--font-num); } /* 港口汇率保留圆体 */
+.harbor-rate { font-size: .14px; font-weight: 700; fill: #6b5a35; font-family: var(--font-board); } /* 港口汇率保留圆体 Baloo 2 */
 .harbor-line { stroke: #8a7a55; stroke-width: .035; stroke-dasharray: .1 .07; fill: none; }
 
 .road-piece { stroke-linecap: round; stroke-width: .16; }
@@ -1255,7 +1260,7 @@ body {
 .barb-badge-bg { fill: rgba(20,35,52,.62); stroke: rgba(255,255,255,.35); stroke-width: .025; }
 .barb-badge-text {
   font-size: .3px; text-anchor: middle; fill: #fff;
-  font-weight: 700; font-family: var(--font-num);
+  font-weight: 700;
 }
 
 /* ---------- 野蛮人临近登陆（还差 1 步）：紧张感演出 ---------- */
@@ -1296,7 +1301,7 @@ body {
 .pdeck-ico { font-size: .34px; text-anchor: middle; }
 .pdeck-count {
   font-size: .26px; text-anchor: middle; fill: #fff;
-  font-weight: 700; font-family: var(--font-num);
+  font-weight: 700;
   paint-order: stroke; stroke: rgba(0,0,0,.35); stroke-width: .04;
 }
 .pdeck-top { transform-box: fill-box; transform-origin: center; }
