@@ -10,14 +10,19 @@ import { PLAYER_COLORS, COLOR_NAMES } from './constants.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
-app.use(express.static(path.join(__dirname, '..', 'public'), {
+const staticOpts = {
   setHeaders(res, filePath) {
     // html/js/css 每次都向服务器校验新鲜度（ETag 304，代价极小）：
     // 否则 Chrome 按启发式缓存旧 JS，部署新版后会出现新旧代码混跑（渲染中断、弹窗不出）
     if (/\.(html|js|css)$/.test(filePath)) res.setHeader('Cache-Control', 'no-cache');
     else res.setHeader('Cache-Control', 'public, max-age=86400'); // 插画/音频缓存一天
   },
-}));
+};
+app.use(express.static(path.join(__dirname, '..', 'public'), staticOpts));
+// three.js（3D 强盗）：直接提供依赖里的 ES 模块，无构建步骤；前端经 import map 解析 'three'
+const THREE_DIR = path.join(__dirname, '..', 'node_modules', 'three');
+app.use('/vendor/three/build', express.static(path.join(THREE_DIR, 'build'), staticOpts));
+app.use('/vendor/three/examples/jsm', express.static(path.join(THREE_DIR, 'examples', 'jsm'), staticOpts));
 
 const server = http.createServer(app);
 const io = new Server(server, { pingInterval: 10000, pingTimeout: 20000 });

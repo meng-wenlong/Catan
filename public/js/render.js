@@ -1,4 +1,10 @@
 // SVG 棋盘渲染：地形、数字、港口、棋子、强盗、可点击热点
+import {
+  attachBoard3D, moveBoardRobber, boardRobberIntro, finishBoardRobberIntro,
+  boardViewChanged, syncBoardKnights, setKnightSelection,
+} from './board3d.js';
+import { robberSnapshot, knightSnapshot } from './stage3d.js';
+
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
 // 地形板块用设计师插画（tile-*.webp）；渐变色块垫在图片下面作加载失败的兜底
@@ -38,6 +44,7 @@ function applyVB() {
   const s = baseVB.w / vb.w;
   vpG.setAttribute('transform',
     `translate(${baseVB.x - s * vb.x} ${baseVB.y - s * vb.y}) scale(${s})`);
+  boardViewChanged(); // 3D 棋子画布的相机跟着视野走
 }
 
 function clampVB() {
@@ -389,6 +396,11 @@ export function initBoard(svgElement, boardData, ck = false) {
     class: 'hex-img',
   }, robberEl);
   attachInspect(robberEl, { kind: 'robber' });
+  // 3D 棋子就绪后强盗/骑士插画转为透明命中区（点击/悬停/放大镜仍挂在它们身上）
+  attachBoard3D({
+    svg, board, robberEl, knightsLayer: layers.knights,
+    getView: () => ({ baseVB, vb }), getState: () => curState,
+  });
 }
 
 // 开局演出：岛屿浮现 → 地块由中心向外逐圈落下 → 数字令牌弹出 → 港口/牌堆/强盗登场。
@@ -450,15 +462,18 @@ export function playBoardIntro({ onRing, pace = 1 } = {}) {
   for (const layer of [layers.decks, layers.barb]) {
     run(layer, [{ opacity: 0 }, { opacity: 1 }], { duration: T(500), delay: end - T(200), easing: 'ease-out' });
   }
-  run(robberEl.firstElementChild, [ // 外层 g 的 transform 管位置，只动内层插画
-    { opacity: 0, transform: 'translateY(-1.2px)' },
-    { opacity: 1, transform: 'translateY(.04px)', offset: 0.7 },
-    { opacity: 1, transform: 'none' },
-  ], { duration: T(480), delay: end, easing: 'cubic-bezier(.5,0,.75,0)' });
+  if (!boardRobberIntro(end, T(480))) { // 3D 强盗自己演落地；未就绪时退回插画动画
+    run(robberEl.firstElementChild, [ // 外层 g 的 transform 管位置，只动内层插画
+      { opacity: 0, transform: 'translateY(-1.2px)' },
+      { opacity: 1, transform: 'translateY(.04px)', offset: 0.7 },
+      { opacity: 1, transform: 'none' },
+    ], { duration: T(480), delay: end, easing: 'cubic-bezier(.5,0,.75,0)' });
+  }
   end += T(480);
 
   const finish = () => {
     timers.forEach(clearTimeout);
+    finishBoardRobberIntro();
     for (const [node, a] of anims) {
       a.cancel();
       node.style.transformBox = '';
@@ -662,6 +677,11 @@ function producePiece(target, desc) {
   const clone = target.cloneNode(true);
   clone.classList.remove('piece-pop', 'road-pop', 'inspecting'); // 去掉入场/悬停动画，保留定位用的 inline transform
   clone.removeAttribute('id'); // 避免与原元素（如 #robber-piece）重复 id
+  // 3D 棋子：镜片里换成同款静帧（休整的骑士由插画的 idle 样式灰化）
+  const snap = desc.kind === 'robber' ? robberSnapshot()
+    : desc.kind === 'knight' && curState?.ck?.knights?.[desc.vid]
+      ? knightSnapshot(curState.ck.knights[desc.vid].level, curColors[curState.ck.knights[desc.vid].player]) : null;
+  if (snap) clone.querySelector('image')?.setAttribute('href', snap);
   return { label: d.label, color: d.color, svgClone: clone, viewBox: `${d.cx - d.R} ${d.cy - d.R} ${d.R * 2} ${d.R * 2}` };
 }
 
@@ -803,6 +823,7 @@ export function attachCardInspect(target, resolve) {
 export function updateRobber(hexId) {
   const hex = board.hexes[hexId];
   robberEl.style.transform = `translate(${hex.x - 0.42}px, ${hex.y - 0.32}px)`;
+  moveBoardRobber(hex.x - 0.42, hex.y - 0.14); // 3D 强盗的落脚点（底座圆心）
 }
 
 export function updatePieces(state, colors) {
@@ -891,6 +912,7 @@ export function highlightKnights(vertexIds) {
   for (const [vid, rec] of knightEls) {
     rec.inner.classList.toggle('knight-selected', set.has(Number(vid)));
   }
+  setKnightSelection(vertexIds); // 3D 骑士：脚下绿圈 + 脉冲
 }
 
 // keepBelow>0：底部该占比以下保持白（城墙留白，便于区分带城墙的城市）
@@ -1024,6 +1046,7 @@ export function updateCKPieces(state, colors, onKnightClick) {
     rec.pos.style.cursor = '';
     setTimeout(() => rec.pos.remove(), 650);
   }
+  syncBoardKnights(nextKnights, colors); // 3D 骑士按状态对齐（事件接管的移动/对战留给时间线）
 
   // 大都会已并入建筑白模（piece-metropolis-white 等）；此处只画商人标记
   layers.marks.innerHTML = '';

@@ -1,6 +1,7 @@
 // 开场演出（新开局、初始摆放前）：电影黑边睁眼 → 镜头穿云俯冲落到岛上、地块逐圈落成 →
 // 烫金标题砸下扫光 → 玩家铭牌按摆放顺序冲入 → 黑边收起、界面从四边滑入。点击任意处跳过。
 import { playBoardIntro } from './render.js';
+import { boardCanvas } from './board3d.js';
 import { sfx } from './sfx.js';
 import { duckBgm } from './sound.js';
 
@@ -64,7 +65,10 @@ export function playOpening({ players, mode, goal, onDone }) {
 
   const timers = [];
   const at = (ms, fn) => timers.push(setTimeout(fn, ms));
-  const camera = board.animate(CAMERA, { duration: CAMERA_MS, easing: 'cubic-bezier(.42,0,.18,1)', fill: 'backwards' });
+  // 3D 棋子画布与 svg 同盒叠放，套同一组镜头关键帧才能跟棋盘一起倾斜俯冲
+  const cams = [board, boardCanvas()].filter(Boolean)
+    .map((el) => el.animate(CAMERA, { duration: CAMERA_MS, easing: 'cubic-bezier(.42,0,.18,1)', fill: 'backwards' }));
+  const camera = { cancel: () => cams.forEach((a) => a.cancel()) };
   let tiles = null;
   sfx.openingWind();
   void root.offsetWidth;

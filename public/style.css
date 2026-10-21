@@ -339,6 +339,35 @@ body {
   62% { opacity: 1; transform: translateY(6px) scale(.94); }
   100% { opacity: 1; transform: translateY(0) scale(1); }
 }
+/* 3D 演出画布：铺满所在演出层（砸落/击飞的模型远大于插画盒）；掷 7 时落点由脚本对准隐形的插画占位 */
+.stage3d { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+#seven-stage.r3d .sv-robber { visibility: hidden; animation: none; }
+
+/* ---------- 骑士驱逐强盗：中央 3D 特写 ---------- */
+#chase-stage {
+  position: absolute; inset: 0; z-index: 22; overflow: hidden; cursor: pointer;
+  transition: opacity .28s ease;
+}
+#chase-stage.out { opacity: 0; }
+#chase-stage .cs-scrim {
+  position: absolute; inset: 0;
+  background: radial-gradient(ellipse at center, rgba(24,15,5,.5) 20%, rgba(10,6,2,.86) 100%);
+  animation: sv-scrim .35s ease both;
+}
+#chase-stage .cs-cap {
+  position: absolute; left: 0; right: 0; bottom: 14%; padding: 0 16px; text-align: center;
+  font-size: 26px; font-weight: 800; letter-spacing: 3px; color: #fff3e0;
+  text-shadow: 0 2px 8px rgba(0,0,0,.75), 0 0 22px rgba(255,190,90,.35);
+  opacity: 0; transform: translateY(14px); transition: opacity .35s ease, transform .35s ease;
+}
+#chase-stage.cap .cs-cap { opacity: 1; transform: none; }
+#chase-stage .cs-cap b { text-shadow: 0 2px 8px rgba(0,0,0,.75); }
+#chase-stage .cs-lv {
+  display: inline-block; margin: 0 6px; padding: 0 10px; border-radius: 999px;
+  background: linear-gradient(#e9b956, #b07a26); color: #2b1a05; text-shadow: none; letter-spacing: 1px;
+}
+#chase-stage .cs-skip { position: absolute; right: 16px; bottom: 12px; font-size: 12px; color: rgba(255,255,255,.6); letter-spacing: 2px; }
+@media (max-width: 600px) { #chase-stage .cs-cap { font-size: 18px; letter-spacing: 1px; } }
 #seven-stage .sv-seven { /* 猩红大 7 像印章一样斜着砸上去 */
   position: absolute; top: -34px; right: -62px;
   font-size: 128px; font-weight: 800; line-height: 1; color: #ff4d33;
@@ -971,6 +1000,11 @@ body {
 
 #robber-piece { transition: transform 1.2s cubic-bezier(.45,.05,.35,1.2); pointer-events: auto; }
 #robber-piece image { pointer-events: auto; } /* 覆盖 .hex-img 的 none，让强盗可悬停放大 */
+/* 3D 棋子：画布与 svg#board 同盒叠放、不接收指针；就绪后强盗/骑士插画只当透明命中区 */
+#board3d { position: absolute; left: 0; bottom: 0; pointer-events: none; display: none; }
+#board3d.on { display: block; }
+#robber-piece.robber-3d image { opacity: 0; }
+#layer-knights.k3d .knight-img, #layer-knights.k3d .knight-glow, #layer-knights.k3d .knight-piece > circle { opacity: 0; }
 
 .hotspot { fill: rgba(255,255,255,0); cursor: pointer; }
 .hotspot.vertex-spot { transition: fill .15s; }

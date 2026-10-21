@@ -369,6 +369,8 @@
 </div>
 
 <script src="/socket.io/socket.io.js"></script>
+<!-- three.js 由服务端直接从依赖目录提供（无构建步骤），import map 让模块里的 'three' 能解析 -->
+<script type="importmap">{ "imports": { "three": "/vendor/three/build/three.module.js", "three/addons/": "/vendor/three/examples/jsm/" } }</script>
 <script type="module" src="js/main.js"></script>
 </body>
 </html>

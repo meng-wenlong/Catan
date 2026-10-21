@@ -159,6 +159,52 @@ export const sfx = {
     tone({ freq: 200, freq2: 90, type: 'sawtooth', dur: 0.4, gain: 0.15 });
     tone({ freq: 285, freq2: 268, type: 'triangle', dur: 0.22, gain: 0.09, when: 0.06 });
   },
+  // ---- 骑士驱逐强盗 ----
+  // 脚步：轻步兵是短促的「嗒」，重甲是带金属碰响的闷「咚」
+  knightStep(heavy) {
+    if (heavy) {
+      tone({ freq: 95, freq2: 55, type: 'triangle', dur: 0.14, gain: 0.22 });
+      noise({ freq: 380, q: 1, dur: 0.08, gain: 0.14 });
+      noise({ freq: 2800, q: 1.5, dur: 0.04, gain: 0.05, when: 0.01 });
+    } else {
+      noise({ freq: 1100, q: 2, dur: 0.035, gain: 0.08 });
+    }
+  },
+  // 挥剑破风「唰」
+  swordSwing() {
+    noise({ freq: 700, freq2: 3200, q: 1.4, dur: 0.16, gain: 0.14 });
+  },
+  // 剑刃命中：金属「锵」+ 一记钝响
+  swordHit() {
+    noise({ freq: 3600, q: 0.9, dur: 0.1, gain: 0.16 });
+    tone({ freq: 1480, freq2: 1180, type: 'square', dur: 0.09, gain: 0.06 });
+    tone({ freq: 2210, type: 'sine', dur: 0.22, gain: 0.05, when: 0.01 });
+    tone({ freq: 150, freq2: 80, type: 'triangle', dur: 0.12, gain: 0.18 });
+  },
+  // 盾击：厚重的「嘭」
+  shieldBash() {
+    noise({ freq: 300, q: 0.8, dur: 0.14, gain: 0.26 });
+    tone({ freq: 120, freq2: 60, type: 'triangle', dur: 0.16, gain: 0.24 });
+    noise({ freq: 1800, q: 1.2, dur: 0.05, gain: 0.08, when: 0.02 });
+  },
+  // 3 级骑士落地下劈：重锤砸地 + 金色余韵上行
+  heroImpact() {
+    noise({ freq: 200, q: 0.7, dur: 0.32, gain: 0.32 });
+    tone({ freq: 80, freq2: 38, type: 'triangle', dur: 0.45, gain: 0.3 });
+    noise({ freq: 3400, q: 0.9, dur: 0.12, gain: 0.14 });
+    tone({ freq: 784, type: 'triangle', dur: 0.12, gain: 0.1, when: 0.12 });
+    tone({ freq: 1175, type: 'sine', dur: 0.3, gain: 0.08, when: 0.2 });
+  },
+  // 强盗挨打的怪叫：下滑的「哇——」
+  robberYelp() {
+    tone({ freq: 620, freq2: 260, type: 'sawtooth', dur: 0.28, gain: 0.07, when: 0.03 });
+    tone({ freq: 930, freq2: 390, type: 'triangle', dur: 0.24, gain: 0.05, when: 0.03 });
+  },
+  // 被打飞到天边：一声「叮」的星光
+  twinkle() {
+    tone({ freq: 1760, type: 'sine', dur: 0.18, gain: 0.08 });
+    tone({ freq: 2637, type: 'sine', dur: 0.26, gain: 0.06, when: 0.08 });
+  },
   // 海盗船前进：短促的双声低音号角「呜·呜——」
   ship() {
     tone({ freq: 165, freq2: 152, type: 'sawtooth', dur: 0.16, gain: 0.12 });

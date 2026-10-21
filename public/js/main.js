@@ -11,10 +11,14 @@ import { initSound, duckBgm } from './sound.js';
 import { spotlight, clearSpotlight } from './spotlight.js';
 import { playOpening as runOpening, stopOpening } from './opening.js';
 import { startConfetti, stopConfetti } from './confetti.js';
+import { preloadStage3D, playSevenRobber, stopSevenRobber, playChaseCinematic } from './stage3d.js';
+import { expectBoardEvents, playKnightMoveBoard, playChaseBoard, playRobberFlee, isRobberFlee } from './board3d.js';
 
 initSfx();
 initSound();
 const socket = io();
+// 3D 棋子（强盗/骑士）：页面空闲时预加载 three.js，开局前就绪；加载失败则一直用插画
+(window.requestIdleCallback || ((f) => setTimeout(f, 300)))(() => preloadStage3D());
 const $ = (id) => document.getElementById(id);
 
 const RES = ['wood', 'brick', 'sheep', 'wheat', 'ore'];
@@ -617,6 +621,7 @@ socket.on('state', (state) => {
   // 新产出立即从显示数字里扣住（S 已替换：冻结期间上一批飞牌落地/兜底 flush 会重绘，
   // 若等到 applyState 才登记，这些重绘会提前泄露新数字，表现为卡片抖一下又跌回去）
   registerPendingGains(oldHand);
+  registerBoardEvents();
 
   // 处于冻结窗口内则延后应用（含冻结期间到达的后续状态），否则立即应用
   const wait = holdUntil - Date.now();
@@ -653,6 +658,16 @@ function flightEnded(res = null) {
 }
 const hasPending = () => Object.keys(pendingSelf).length > 0 || Object.keys(pendingCount).length > 0
   || pendingProgSelf > 0 || Object.keys(pendingProg).length > 0;
+
+// 3D 棋盘层：渲染前先告诉它本批有哪些事件要由时间线来演（骑士行军/对战、驱逐强盗、强盗逃窜），
+// 渲染时这些变化先按住原样。游标独立于 lastSeq，理由同下方的产出登记
+let lastBoardSeq = 0;
+function registerBoardEvents() {
+  const seen = Math.max(lastSeq, lastBoardSeq);
+  const fresh = S.events.filter((e) => e.seq > seen);
+  for (const e of fresh) lastBoardSeq = Math.max(lastBoardSeq, e.seq);
+  if (fresh.length) expectBoardEvents(fresh);
+}
 
 let lastPendingSeq = 0; // 登记游标独立于 lastSeq：状态到达即登记，playEvents 稍后才推进 lastSeq
 function registerPendingGains(oldHand) {
@@ -2789,6 +2804,7 @@ function showSevenStage() {
   for (const el of els) el.style.animation = 'none';
   void st.offsetWidth;
   for (const el of els) el.style.animation = '';
+  playSevenRobber(); // 3D 强盗砸落（未就绪时插画照常演出）
   sfx.seven();
   setTimeout(() => shakeBoard(), 380); // 强盗落地瞬间震屏
   clearTimeout(sevenTimer);
@@ -2801,6 +2817,7 @@ function stopDiceAnim() {
   clearInterval(diceRollTimer);
   clearTimeout(diceStageTimer);
   clearTimeout(sevenTimer);
+  stopSevenRobber();
   diceAnimUntil = 0;
   for (const id of ['bdie1', 'bdie2', 'bdie3']) {
     const el = $(id);
@@ -2911,9 +2928,21 @@ function playEvents(upTo = Infinity) { // upTo：只播放该 seq 及之前的�
           done();
         });
         break;
+      // 骑士行军：3D 层沿道路走过去；驱逐对方骑士时就地对战（按攻击方等级出招）
       case 'knightMove':
-        animStep((done) => { sfx.build('knight'); done(); });
+        animStep((done) => {
+          sfx.build('knight');
+          playKnightMoveBoard(ev).then(done);
+        });
         break;
+      // 骑士驱逐强盗：先放中央特写（点击可跳过），再在棋盘上演出招、强盗被打退缩成一团
+      case 'knightChase': {
+        const k = S.ck?.knights?.[ev.vertex];
+        const pl = S.players[ev.player];
+        animStep((done) => playChaseCinematic({ level: k?.level || 1, color: pl.color, name: pl.name }).then(done));
+        animStep((done) => playChaseBoard(ev).then(done));
+        break;
+      }
       case 'improve':
         animStep((done) => { sfx.improve(); done(); });
         break;
@@ -3059,7 +3088,12 @@ function playEvents(upTo = Infinity) { // upTo：只播放该 seq 及之前的�
         });
         break;
       case 'robber':
-        animStep((done) => { sfx.robber(); done(); });
+        if (isRobberFlee(ev)) { // 被骑士驱逐后的那次移动：强盗连滚带爬逃到新地块
+          animStep((done) => {
+            sfx.robber();
+            playRobberFlee().then(done);
+          });
+        } else animStep((done) => { sfx.robber(); done(); });
         break;
       // 基础版发展卡打出：中央大卡演出
       case 'playDev':

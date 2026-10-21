@@ -335,6 +335,7 @@ export const ckMethods = {
     const k = this.knights[v];
     k.active = false; // 驱逐强盗会使骑士休整
     k.actedTurn = this.turn.count;
+    this.addEvent('knightChase', { player: p, vertex: v, hex: this.robber }); // 仅供客户端演出
     this.addLog(`${this.players[p].name} 的骑士驱逐了强盗！请移动强盗。`);
     this.turn.state = 'robber';
   },
