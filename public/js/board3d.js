@@ -888,7 +888,9 @@ export function expectBoardEvents(events) {
     else if (ev.type === 'knightChase') {
       B.expectChase.set(String(ev.vertex), { ev, at: now });
       B.chasePending = true;
-    } else if (ev.type === 'robber' && B.chasePending) { // 驱逐后的那次移动：按住强盗，等逃窜演出
+    } else if (ev.type === 'playProgress' && ev.card === 'bishop') { // 主教：强盗先在演出里被圣光赶走，棋盘上随后逃窜过去
+      B.chasePending = true;
+    } else if (ev.type === 'robber' && B.chasePending) { // 驱逐/主教后的那次移动：按住强盗，等逃窜演出
       B.chasePending = false;
       B.fleeSeq = ev.seq;
       B.robberHeld = true;

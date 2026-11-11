@@ -13,12 +13,13 @@ import { playOpening as runOpening, stopOpening } from './opening.js';
 import { startConfetti, stopConfetti } from './confetti.js';
 import { preloadStage3D, playSevenRobber, stopSevenRobber, playChaseCinematic } from './stage3d.js';
 import { expectBoardEvents, playKnightMoveBoard, playChaseBoard, playRobberFlee, isRobberFlee } from './board3d.js';
+import { preloadCardScenes, playCardScene, hasCardScene } from './card-scenes.js';
 
 initSfx();
 initSound();
 const socket = io();
 // 3D 棋子（强盗/骑士）：页面空闲时预加载 three.js，开局前就绪；加载失败则一直用插画
-(window.requestIdleCallback || ((f) => setTimeout(f, 300)))(() => preloadStage3D());
+(window.requestIdleCallback || ((f) => setTimeout(f, 300)))(() => { preloadStage3D(); preloadCardScenes(); });
 const $ = (id) => document.getElementById(id);
 
 const RES = ['wood', 'brick', 'sheep', 'wheat', 'ore'];
@@ -220,9 +221,10 @@ function buildDevPanel() {
     <div class="dev-body">
       <button class="dev-btn" data-act="fill">💰 填满我的资源</button>
       <div class="dev-line"><select id="dev-c1">${opt(devCards)}</select><button class="dev-btn" data-act="grantDev">发展卡→我</button></div>
-      <div class="dev-line"><select id="dev-c2">${opt(progCards)}</select><button class="dev-btn" data-act="grantProg">进步卡→我</button></div>
+      <div class="dev-line"><select id="dev-c2">${opt(progCards)}</select><button class="dev-btn" data-act="grantProg">进步卡→我</button><button class="dev-btn" data-act="grantProgNpc" title="给上面「给」选中的电脑">→电脑</button></div>
       <div class="dev-line">🎲 <input id="dev-d1" type="number" min="1" max="6" value="4"><input id="dev-d2" type="number" min="1" max="6" value="4"><select id="dev-ev">${opt(events)}</select><button class="dev-btn" data-act="dice">掷</button></div>
       <div class="dev-line">给 <select id="dev-npc"></select><select id="dev-card"></select><button class="dev-btn" data-act="give">发牌</button></div>
+      <div class="dev-line">🎬 <select id="dev-scene"></select><button class="dev-btn" data-act="scene">演示动画</button></div>
       <div id="dev-hands"></div>
     </div>`;
   $('dev-toggle').onclick = () => $('dev-panel').classList.toggle('collapsed');
@@ -233,8 +235,55 @@ function buildDevPanel() {
     if (a === 'fill') send({ type: 'devFill' });
     else if (a === 'grantDev') send({ type: 'devGrantDev', card: $('dev-c1').value });
     else if (a === 'grantProg') send({ type: 'devGrantProgress', card: $('dev-c2').value });
+    else if (a === 'grantProgNpc') send({ type: 'devGrantProgress', card: $('dev-c2').value, to: +$('dev-npc').value });
     else if (a === 'dice') send({ type: 'devSetDice', d1: +$('dev-d1').value, d2: +$('dev-d2').value, eventDie: $('dev-ev').value || null });
     else if (a === 'give') send({ type: 'devGiveNPC', target: +$('dev-npc').value, card: $('dev-card').value, n: 1 });
+    else if (a === 'scene') demoCardScene($('dev-scene').value);
+  });
+  // 演示下拉：只列已有演出的卡（进步卡 + 发展卡）
+  $('dev-scene').innerHTML = [
+    ...Object.entries(PROG_META).map(([k, v]) => [k, `进步卡·${v.name}`]),
+    ...Object.entries(DEV_META).map(([k, v]) => [`dev:${k}`, `发展卡·${v.name}`]),
+  ].filter(([k]) => hasCardScene(k.replace(/^dev:/, ''))).map(([v, t]) => `<option value="${v}">${t}</option>`).join('');
+}
+
+const PROG_DECK_OF = {
+  trade: ['merchant', 'merchantFleet', 'commercialHarbor', 'masterMerchant', 'resourceMonopoly', 'tradeMonopoly'],
+  politics: ['bishop', 'constitution', 'deserter', 'diplomat', 'intrigue', 'saboteur', 'spy', 'warlord', 'wedding'],
+  science: ['alchemist', 'crane', 'engineer', 'inventor', 'irrigation', 'medicine', 'mining', 'printer', 'roadBuilding', 'smith'],
+};
+// 调试：不改局面，直接按当前局面拼一个假事件播放该卡的演出（受害者/宾客 = 全部其他玩家，目标地块随机挑）
+function demoCardScene(key) {
+  if (!key || !S) return;
+  const dev = key.startsWith('dev:');
+  const card = key.replace(/^dev:/, '');
+  const me = myIndex >= 0 ? myIndex : 0;
+  const others = S.players.map((_, i) => i).filter((i) => i !== me);
+  const hexes = S.board.hexes;
+  const numbered = hexes.filter((h) => h.number && ![2, 6, 8, 12].includes(h.number));
+  const pick = (list) => list[Math.floor(Math.random() * list.length)];
+  const h1 = pick(numbered);
+  const h2 = pick(numbered.filter((h) => h.id !== h1?.id));
+  const land = hexes.filter((h) => h.terrain !== 'desert' && h.id !== S.robber);
+  const deck = Object.keys(PROG_DECK_OF).find((d) => PROG_DECK_OF[d].includes(card)) || 'politics';
+  const COMS = ['cloth', 'coin', 'paper'];
+  const RES5 = ['wood', 'brick', 'sheep', 'wheat', 'ore'];
+  const res = card === 'tradeMonopoly' || card === 'merchantFleet' ? pick(COMS) : pick(RES5);
+  const terrain = card === 'irrigation' ? 'fields' : 'mountains';
+  const ev = {
+    type: dev ? 'playDev' : (['constitution', 'printer'].includes(card) ? 'progressVP' : 'playProgress'), player: me, card, deck,
+    victims: others, guests: others, partners: others, target: others[0] ?? me,
+    owner: others[0] ?? me, victim: others[0] ?? me, level: 2,
+    hex: pick(land)?.id ?? 0,
+    h1: h1?.id, h2: h2?.id, n1: h1?.number, n2: h2?.number,
+    res, from: Object.fromEntries(others.map((i) => [i, 1 + (i % 2)])),
+    r1: pick(RES5), r2: pick(RES5), d1: 1 + Math.floor(Math.random() * 6), d2: 1 + Math.floor(Math.random() * 6),
+    hexes: hexes.filter((h) => h.terrain === terrain).slice(0, 3).map((h) => h.id), n: 2, levels: [1, 2, 3],
+  };
+  if (card === 'smith') ev.levels = [2, 3];
+  animStep((done) => {
+    const p = startCardScene(ev);
+    if (p) p.then(done); else { toast('该卡暂无 3D 演出（或 3D 未加载）'); done(); }
   });
 }
 
@@ -612,16 +661,32 @@ socket.on('state', (state) => {
     // 冻结期内接连到来的新掷骰（电脑回合节奏快）：上一批事件此刻还没播，直接推进 lastSeq
     // 会把它们永久跳过（表现为上一家的产出不发牌）。先把它们立即入队播放——
     // 产出飞牌与新骰子的翻滚重叠没问题，时间线本身是串行的
+    // 炼金术士：先演完定骰子的小剧场，骰子再翻滚（掷骰排进时间线，结算冻结到骰子落定）
+    const alch = hasCardScene('alchemist') && state.events.some((e) => e.type === 'playProgress' && e.card === 'alchemist'
+      && e.seq > lastSeq && e.seq < diceEvent.seq);
     playEvents(diceEvent.seq - 1);
     lastSeq = diceEvent.seq;
-    animateDiceRoll(diceEvent.dice[0], diceEvent.dice[1], diceEvent.eventDie);
-    holdUntil = Date.now() + DICE_ROLL_MS + 900;
+    if (alch) {
+      holdUntil = Date.now() + 20000; // 兜底：时间线卡住也最多冻结 20 秒
+      const d = diceEvent;
+      animStep((done) => {
+        animateDiceRoll(d.dice[0], d.dice[1], d.eventDie);
+        holdUntil = Date.now() + DICE_ROLL_MS + 900;
+        clearTimeout(holdTimer);
+        holdTimer = setTimeout(applyState, DICE_ROLL_MS + 900);
+        setTimeout(done, DICE_ROLL_MS);
+      });
+    } else {
+      animateDiceRoll(diceEvent.dice[0], diceEvent.dice[1], diceEvent.eventDie);
+      holdUntil = Date.now() + DICE_ROLL_MS + 900;
+    }
   }
 
   // 新产出立即从显示数字里扣住（S 已替换：冻结期间上一批飞牌落地/兜底 flush 会重绘，
   // 若等到 applyState 才登记，这些重绘会提前泄露新数字，表现为卡片抖一下又跌回去）
   registerPendingGains(oldHand);
   registerBoardEvents();
+  registerCardScenes();
 
   // 处于冻结窗口内则延后应用（含冻结期间到达的后续状态），否则立即应用
   const wait = holdUntil - Date.now();
@@ -885,7 +950,7 @@ socket.on('sbTimer', ({ sbRemaining }) => {
 const colors = () => S.players.map((p) => p.color);
 const isMyTurn = () => S.phase === 'play' && S.turn.player === myIndex;
 // 特别建设阶段（5-6 人）：当前建设窗口是否轮到我
-const mySpecialBuild = () => S.phase === 'play' && S.turn.state === 'specialBuild'
+const mySpecialBuild = () => !!S && S.phase === 'play' && S.turn.state === 'specialBuild'
   && S.turn.sb && S.turn.sb.queue[S.turn.sb.idx] === myIndex;
 const isMySetup = () => S.phase === 'setup' && S.setup.current === myIndex;
 const amHost = () => !!S && S.hostIndex === myIndex;
@@ -2416,7 +2481,9 @@ function statePickSpec() {
 }
 
 function renderModals() {
-  const needDiscard = S.turn.state === 'discard' && S.turn.pendingDiscards[myIndex];
+  // 卡牌演出播放中：先让全桌看完发生了什么，选择框（弃牌/送礼/选牌…）等演完再弹
+  const held = sceneHolding();
+  const needDiscard = !held && S.turn.state === 'discard' && S.turn.pendingDiscards[myIndex];
   if (needDiscard && !discardOpen) {
     discardOpen = true;
     discardSel = {};
@@ -2450,7 +2517,7 @@ function renderModals() {
   }
 
   // 交互式选牌（商业大亨/间谍/婚礼/商业港）：状态驱动的强制选择
-  const spec = statePickSpec();
+  const spec = held ? null : statePickSpec();
   if (spec) {
     openPickModal(spec.title, spec.options, { forced: true });
     statePickOpen = true;
@@ -2864,6 +2931,57 @@ function stepSpotlight(item) {
   animStep((done) => spotlight({ ...item, onDone: done }));
 }
 
+// ---------- 卡牌发动演出（card-scenes.js） ----------
+// 状态到达时登记本批有演出的打牌事件（renderAll 之前），演完之前选择类弹窗一律压住
+const SCENE_EVENTS = new Set(['playProgress', 'playDev', 'progressVP']);
+let sceneHold = 0;
+let sceneHoldAt = 0;
+let lastSceneSeq = 0;
+function registerCardScenes() {
+  const seen = Math.max(lastSeq, lastSceneSeq);
+  for (const ev of S.events) {
+    if (ev.seq <= seen) continue;
+    lastSceneSeq = Math.max(lastSceneSeq, ev.seq);
+    if (SCENE_EVENTS.has(ev.type) && hasCardScene(ev.card)) { sceneHold++; sceneHoldAt = Date.now(); }
+  }
+}
+const sceneHolding = () => {
+  if (sceneHold > 0 && Date.now() - sceneHoldAt > 15000) sceneHold = 0; // 兜底：演出出意外也不会永远压住选择
+  return sceneHold > 0;
+};
+function releaseSceneHold() {
+  sceneHold = Math.max(0, sceneHold - 1);
+  if (S) renderModals();
+}
+function cardSceneSpec(ev) {
+  const prog = ev.type !== 'playDev';
+  return {
+    card: ev.card,
+    img: prog ? `/assets/opt/progress-${ev.card}.webp` : `/assets/opt/dev-${DEV_ASSET[ev.card] || 'knight'}.webp`,
+    accent: prog ? TRACK_META[ev.deck]?.color : '#8a5fc0',
+    title: ev.type === 'progressVP' ? `${S.players[ev.player]?.name || ''} 抽到分数卡（+1 分）`
+      : `${S.players[ev.player]?.name || ''} 打出${prog ? '进步卡' : '发展卡'}`,
+    name: (prog ? PROG_META : DEV_META)[ev.card]?.name || '',
+    desc: (prog ? PROG_META : DEV_META)[ev.card]?.desc || '',
+    ev,
+    players: S.players.map((p) => ({ name: p.name, color: p.color })),
+    resName: (r) => RES_META[r]?.name || r,
+    board: S.board,
+    state: S,
+  };
+}
+function startCardScene(ev) { return playCardScene(cardSceneSpec(ev)); }
+function stepCardScene(ev) {
+  animStep((done) => {
+    const finish = () => { releaseSceneHold(); done(); };
+    const p = startCardScene(ev);
+    if (p) { p.then(finish); return; }
+    // 3D 不可用：回退平面大卡
+    const spec = cardSceneSpec(ev);
+    spotlight({ kind: 'card', title: spec.title, img: spec.img, name: spec.name, desc: spec.desc, accent: spec.accent, dur: 3600, onShow: () => sfx.card(), onDone: finish });
+  });
+}
+
 // 开场演出（opening.js）：镜头俯冲落岛 → 烫金标题 → 玩家按摆放顺序登场 → 界面滑入，随后横幅点名先手。
 // 演出期间棋盘锁定（不可点、不显示落子热区），点击任意处跳过
 function playOpening() {
@@ -3097,6 +3215,7 @@ function playEvents(upTo = Infinity) { // upTo：只播放该 seq 及之前的�
         break;
       // 基础版发展卡打出：中央大卡演出
       case 'playDev':
+        if (hasCardScene(ev.card)) { stepCardScene(ev); break; }
         stepSpotlight({
           kind: 'card',
           title: `${S.players[ev.player].name} 打出发展卡`,
@@ -3148,6 +3267,7 @@ function playEvents(upTo = Infinity) { // upTo：只播放该 seq 及之前的�
         });
         break;
       case 'progressVP':
+        if (hasCardScene(ev.card)) { stepCardScene(ev); break; }
         // 分数卡抽到即亮出：中央演出真实卡面
         stepSpotlight({
           kind: 'card',
@@ -3183,6 +3303,8 @@ function playEvents(upTo = Infinity) { // upTo：只播放该 seq 及之前的�
         });
         break;
       case 'playProgress':
+        // 有 3D 小剧场的卡：先演故事，演完才放出受害者/宾客的选择框（sceneHold）
+        if (hasCardScene(ev.card)) { stepCardScene(ev); break; }
         // 中央大卡演出（替代原先的小飞牌），给全桌留出反应时间
         stepSpotlight({
           kind: 'card',

@@ -205,6 +205,64 @@ export const sfx = {
     tone({ freq: 1760, type: 'sine', dur: 0.18, gain: 0.08 });
     tone({ freq: 2637, type: 'sine', dur: 0.26, gain: 0.06, when: 0.08 });
   },
+  // ---- 卡牌发动演出 ----
+  // 蹑手蹑脚：极轻的「嗒」
+  sneak() {
+    noise({ freq: 1600 + Math.random() * 600, q: 3, dur: 0.025, gain: 0.04 });
+  },
+  // 划火柴点引信：「嚓——」
+  fuseLight() {
+    noise({ freq: 2400, freq2: 5200, q: 1.2, dur: 0.18, gain: 0.12 });
+    noise({ freq: 900, q: 0.8, dur: 0.3, gain: 0.05, when: 0.08 });
+  },
+  // 引信燃烧的嘶嘶声
+  fuseHiss() {
+    noise({ freq: 6000, q: 2.5, dur: 0.3, gain: 0.035 });
+  },
+  // 炸药桶落地：木头闷响
+  kegLand() {
+    tone({ freq: 160, freq2: 90, type: 'triangle', dur: 0.12, gain: 0.16 });
+    noise({ freq: 700, q: 1.4, dur: 0.06, gain: 0.08 });
+  },
+  // 哑火：一声泄气
+  fizzle() {
+    noise({ freq: 3000, freq2: 600, q: 1, dur: 0.4, gain: 0.06 });
+    tone({ freq: 300, freq2: 180, type: 'triangle', dur: 0.3, gain: 0.04, when: 0.15 });
+  },
+  // 爆炸：低频轰鸣 + 碎裂噪声，连环爆炸音高略错开
+  boom(i = 0) {
+    const k = 1 - i * 0.06;
+    noise({ freq: 160 * k, q: 0.6, dur: 0.7, gain: 0.34 });
+    tone({ freq: 70 * k, freq2: 30, type: 'triangle', dur: 0.7, gain: 0.32 });
+    noise({ freq: 2600, freq2: 900, q: 0.8, dur: 0.35, gain: 0.12, when: 0.03 });
+  },
+  // 婚礼钟声：三声叠音钟鸣
+  weddingBell() {
+    [[784, 0], [988, 0.22], [1175, 0.44], [1568, 0.66]].forEach(([f, w]) => {
+      tone({ freq: f, type: 'sine', dur: 1.1, gain: 0.07, when: w });
+      tone({ freq: f * 2.76, type: 'sine', dur: 0.5, gain: 0.02, when: w });
+    });
+  },
+  // 间谍被发现的一惊：短促上滑
+  spyAlarm() {
+    tone({ freq: 520, freq2: 1040, type: 'square', dur: 0.12, gain: 0.04 });
+    tone({ freq: 700, freq2: 1400, type: 'triangle', dur: 0.1, gain: 0.05, when: 0.13 });
+  },
+  // 圣光：明亮的上行琶音 + 长余韵
+  holyChime() {
+    [523, 659, 784, 1047].forEach((f, i) => tone({ freq: f, type: 'sine', dur: 0.9, gain: 0.06, when: i * 0.08 }));
+    tone({ freq: 2093, type: 'sine', dur: 1.2, gain: 0.03, when: 0.32 });
+  },
+  // 笔尖沙沙
+  scribble() {
+    noise({ freq: 3800, freq2: 2600, q: 2, dur: 0.08, gain: 0.03 });
+  },
+  // 拉杆：金属「咔哒」+ 机关启动
+  lever() {
+    noise({ freq: 2800, q: 2, dur: 0.05, gain: 0.12 });
+    tone({ freq: 180, freq2: 120, type: 'square', dur: 0.18, gain: 0.05, when: 0.04 });
+    tone({ freq: 220, freq2: 440, type: 'sawtooth', dur: 0.4, gain: 0.03, when: 0.12 });
+  },
   // 海盗船前进：短促的双声低音号角「呜·呜——」
   ship() {
     tone({ freq: 165, freq2: 152, type: 'sawtooth', dur: 0.16, gain: 0.12 });
