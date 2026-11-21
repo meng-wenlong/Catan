@@ -769,11 +769,13 @@ export const ckMethods = {
     const idx = pl.progressCards.findIndex((c) => c.type === type);
     if (idx < 0) this.err('你没有这张进步卡');
     // 各分支先完成校验再调用 spend()，保证失败时卡不丢
+    // 返回 playProgress 事件本身：各分支可往里补演出用的字段（受害者、目标地块等，只放公开信息）
     const spend = () => {
       const [card] = pl.progressCards.splice(idx, 1);
       this.progressDecks[card.deck].unshift(card.type); // 用掉的卡放回牌堆底部
       this.addEvent('playProgress', { player: p, card: type, deck: card.deck });
       this.addLog(`${pl.name} 打出进步卡「${PROGRESS_NAME[type]}」`);
+      return this.events[this.events.length - 1];
     };
 
     switch (type) {
@@ -785,7 +787,7 @@ export const ckMethods = {
           (v) => v.hexes.includes(hex.id) && this.buildings[v.id]?.player === p,
         );
         if (!near) this.err('商人只能放在自己建筑相邻的板块');
-        spend();
+        spend().hex = hex.id;
         this.merchant = { hex: hex.id, player: p };
         this.addEvent('merchant', { player: p, hex: hex.id });
         this.addLog(`${pl.name} 放置了商人：${CARD_NAME[TERRAIN_RESOURCE[hex.terrain]]}可 2:1 交易（+1 分）`);
@@ -793,7 +795,7 @@ export const ckMethods = {
       }
       case 'merchantFleet': {
         if (!this.cardTypes().includes(payload.res)) this.err('请选择一种资源或商品');
-        spend();
+        spend().res = payload.res;
         this.turn.fleet = payload.res;
         this.addLog(`本回合${CARD_NAME[payload.res]}可 2:1 与银行交易`);
         break;
@@ -807,7 +809,7 @@ export const ckMethods = {
           if (cardsOf(this.players[i].hand, COMMODITIES).length > 0) queue.push(i);
         }
         if (queue.length === 0) this.err('没有持有商品的对手');
-        spend();
+        spend().partners = queue;
         this.turn.harbor = { queue, idx: 0, stage: 'give', give: null };
         this.turn.state = 'harbor';
         this.addLog(`商业港：${pl.name} 将与 ${queue.map((i) => this.players[i].name).join('、')} 依次交换（资源换商品）`);
@@ -819,7 +821,7 @@ export const ckMethods = {
         if (this.victoryPoints(t, true) <= this.victoryPoints(p, true)) this.err('只能选择分数比你高的玩家');
         const theirs = cardsOf(this.players[t].hand, this.cardTypes()).length;
         if (theirs === 0) this.err('对方没有手牌');
-        spend();
+        Object.assign(spend(), { target: t, n: Math.min(2, theirs) });
         this.turn.pick = { type: 'masterMerchant', from: t, count: Math.min(2, theirs) };
         this.turn.state = 'pickCards';
         this.addLog(`${pl.name} 查看 ${this.players[t].name} 的手牌并拿走 ${this.turn.pick.count} 张`);
@@ -827,7 +829,8 @@ export const ckMethods = {
       }
       case 'resourceMonopoly': {
         if (!RESOURCES.includes(payload.res)) this.err('请选择一种资源');
-        spend();
+        const pev = spend();
+        pev.res = payload.res;
         let total = 0;
         const from = {}; // 各受害者上缴张数（客户端据此从每家面板飞牌）
         this.players.forEach((op, i) => {
@@ -838,13 +841,15 @@ export const ckMethods = {
           pl.hand[payload.res] += n;
           total += n;
         });
+        pev.from = from;
         this.addEvent('monopoly', { player: p, res: payload.res, n: total, from });
         this.addLog(`${pl.name} 发动资源垄断：每人最多上缴 2 张${CARD_NAME[payload.res]}（共 ${total} 张）`);
         break;
       }
       case 'tradeMonopoly': {
         if (!COMMODITIES.includes(payload.res)) this.err('请选择一种商品');
-        spend();
+        const pev = spend();
+        pev.res = payload.res;
         let total = 0;
         const from = {}; // 各受害者上缴张数（客户端据此从每家面板飞牌）
         this.players.forEach((op, i) => {
@@ -855,6 +860,7 @@ export const ckMethods = {
           pl.hand[payload.res] += n;
           total += n;
         });
+        pev.from = from;
         this.addEvent('monopoly', { player: p, res: payload.res, n: total, from });
         this.addLog(`${pl.name} 发动商品垄断：每人上缴 1 张${CARD_NAME[payload.res]}（共 ${total} 张）`);
         break;
@@ -865,7 +871,7 @@ export const ckMethods = {
         if (this.barbarians.attacks === 0) this.err('野蛮人首次来袭前强盗不能移动');
         const hex = this.board.hexes[payload.hex];
         if (!hex || hex.id === this.robber) this.err('请选择强盗的新位置');
-        spend();
+        const pev = spend();
         this.robber = hex.id;
         this.addEvent('robber', { hex: hex.id });
         const targets = new Set();
@@ -874,6 +880,7 @@ export const ckMethods = {
           const b = this.buildings[v.id];
           if (b && b.player !== p) targets.add(b.player);
         }
+        Object.assign(pev, { hex: hex.id, victims: [...targets] });
         for (const t of targets) {
           const got = this.moveRandomCard(t, p);
           if (got) {
@@ -891,7 +898,7 @@ export const ckMethods = {
         const t = payload.target;
         if (!Number.isInteger(t) || t === p || !this.players[t]) this.err('请选择一名对手');
         if (!Object.values(this.knights).some((k) => k.player === t)) this.err('该玩家没有骑士');
-        spend();
+        spend().target = t;
         this.turn.deserter = { from: p, target: t };
         this.turn.state = 'deserterPick';
         this.addLog(`等待 ${this.players[t].name} 选择叛逃的骑士…`);
@@ -907,7 +914,7 @@ export const ckMethods = {
           return !this.board.vertices[v].adjE.some((e2) => e2 !== e.id && this.roads[e2] === owner);
         };
         if (!freeEnd(e.v1) && !freeEnd(e.v2)) this.err('只能移除两端未延伸的「开放道路」');
-        spend();
+        Object.assign(spend(), { edge: e.id, owner });
         delete this.roads[e.id];
         this.players[owner].pieces.road++;
         this.addEvent('roadRemove', { edge: e.id });
@@ -928,7 +935,7 @@ export const ckMethods = {
         if (!k || k.player === p) this.err('请选择一名对手的骑士');
         const onMyRoad = this.board.vertices[payload.vertex].adjE.some((e2) => this.roads[e2] === p);
         if (!onMyRoad) this.err('只能驱逐位于你道路上的骑士');
-        spend();
+        Object.assign(spend(), { vertex: Number(payload.vertex), victim: k.player, level: k.level });
         const spots = this.knightMoveTargets(k.player, payload.vertex).moves;
         delete this.knights[payload.vertex];
         this.startDisplace(k, spots, `${pl.name} 用阴谋驱逐了 ${this.players[k.player].name} 的骑士`);
@@ -936,7 +943,7 @@ export const ckMethods = {
         break;
       }
       case 'saboteur': {
-        spend();
+        const pev = spend();
         const myVp = this.victoryPoints(p, true);
         const pending = {};
         this.players.forEach((op, i) => {
@@ -945,6 +952,7 @@ export const ckMethods = {
           const c = Object.values(op.hand).reduce((s, n) => s + n, 0);
           if (c >= 2) pending[i] = Math.floor(c / 2);
         });
+        pev.victims = Object.keys(pending).map(Number);
         if (Object.keys(pending).length === 0) {
           this.addLog('没有玩家受到破坏者影响');
         } else {
@@ -962,7 +970,7 @@ export const ckMethods = {
         if (!Number.isInteger(t) || t === p || !this.players[t]) this.err('请选择一名对手');
         const cards = this.players[t].progressCards;
         if (cards.length === 0) this.err('对方没有进步卡');
-        spend();
+        spend().target = t;
         this.turn.pick = { type: 'spy', from: t, count: 1 };
         this.turn.state = 'pickProgress';
         this.addLog(`${pl.name} 用间谍查看 ${this.players[t].name} 的进步卡`);
@@ -971,7 +979,7 @@ export const ckMethods = {
       case 'warlord': {
         const idle = Object.values(this.knights).filter((k) => k.player === p && !k.active);
         if (idle.length === 0) this.err('没有可激活的骑士');
-        spend();
+        Object.assign(spend(), { n: idle.length, levels: Object.values(this.knights).filter((k) => k.player === p).map((k) => k.level) });
         for (const k of idle) {
           k.active = true;
           k.activatedTurn = this.turn.count;
@@ -980,7 +988,7 @@ export const ckMethods = {
         break;
       }
       case 'wedding': {
-        spend();
+        const pev = spend();
         const myVp = this.victoryPoints(p, true);
         const pending = {};
         this.players.forEach((op, i) => {
@@ -988,6 +996,7 @@ export const ckMethods = {
           const n = Math.min(2, cardsOf(op.hand, this.cardTypes()).length);
           if (n > 0) pending[i] = n;
         });
+        pev.guests = Object.keys(pending).map(Number);
         if (Object.keys(pending).length === 0) {
           this.addLog('没有分数更高的玩家，婚礼无人送礼');
         } else {
@@ -1004,7 +1013,7 @@ export const ckMethods = {
         const { d1, d2 } = payload;
         const ok = (n) => Number.isInteger(n) && n >= 1 && n <= 6;
         if (!ok(d1) || !ok(d2)) this.err('请指定两个骰子的点数（1-6）');
-        spend();
+        Object.assign(spend(), { d1, d2 });
         this.addLog(`${pl.name} 用炼金术士将骰子定为 ${d1}+${d2}`);
         this.roll(p, { d1, d2 });
         break;
@@ -1020,7 +1029,7 @@ export const ckMethods = {
         if (!b || b.player !== p || b.type !== 'city') this.err('请选择自己的城市');
         if (this.walls[payload.vertex] !== undefined) this.err('该城市已有城墙');
         if (this.wallCountOf(p) >= MAX_WALLS) this.err(`每人最多 ${MAX_WALLS} 座城墙`);
-        spend();
+        spend().vertex = Number(payload.vertex);
         this.walls[payload.vertex] = p;
         this.addEvent('build', { player: p, kind: 'wall', vertex: payload.vertex });
         this.addLog(`${pl.name} 免费修建了一座城墙`);
@@ -1031,8 +1040,8 @@ export const ckMethods = {
         const h2 = this.board.hexes[payload.h2];
         const ok = (h) => h && h.number && !INVENTOR_FORBIDDEN.includes(h.number);
         if (!ok(h1) || !ok(h2) || h1.id === h2.id) this.err('请选择两块数字为 3/4/5/9/10/11 的板块');
-        spend();
         const n1 = h1.number, n2 = h2.number;
+        Object.assign(spend(), { h1: h1.id, h2: h2.id, n1, n2 });
         [h1.number, h2.number] = [h2.number, h1.number];
         this.addEvent('inventor', { h1: h1.id, h2: h2.id });
         this.addLog(`${pl.name} 用发明家交换了 ${this.hexPos(h1)}(${n1}) 与 ${this.hexPos(h2)}(${n2}) 的数字`, { cat: 'progress' });
@@ -1050,8 +1059,9 @@ export const ckMethods = {
           }
         }
         if (hexes.size === 0) this.err(`你的建筑不与任何${type === 'irrigation' ? '麦田' : '矿山'}相邻`);
-        spend();
+        const pev = spend();
         const got = this.gain(p, res, hexes.size * 2);
+        Object.assign(pev, { hexes: [...hexes], res, n: got });
         this.addEvent('gain', { player: p, res, n: got });
         this.addLog(`${pl.name} 获得 ${got} 张${CARD_NAME[res]}`);
         break;
@@ -1062,7 +1072,7 @@ export const ckMethods = {
         if (this.players[p].pieces.city <= 0) this.err('城市棋子已用完');
         const cost = { ore: 2, wheat: 1 };
         if (!this.canAfford(p, cost)) this.err('资源不足（医学升城需要 2矿石 1小麦）');
-        spend();
+        spend().vertex = Number(payload.vertex);
         this.pay(p, cost);
         b.type = 'city';
         this.players[p].pieces.city--;
@@ -1074,7 +1084,7 @@ export const ckMethods = {
       case 'roadBuilding': {
         const free = Math.min(2, this.players[p].pieces.road);
         if (free === 0 || this.validRoadEdges(p).length === 0) this.err('没有可修路的位置');
-        spend();
+        spend().n = free;
         this.turn.freeRoads = free;
         this.turn.state = 'roadbuilding';
         this.addLog(`${pl.name} 可免费修 ${free} 条路`);
@@ -1093,7 +1103,8 @@ export const ckMethods = {
           sim[k.level]--;
           sim[k.level + 1]++;
         }
-        spend();
+        const pev = spend();
+        pev.levels = vs.map((v) => this.knights[v].level + 1);
         for (const v of vs) {
           const k = this.knights[v];
           k.level++;
@@ -1190,15 +1201,16 @@ export const ckMethods = {
     }
   },
 
-  // 调试模式：直接把指定进步卡塞进玩家 0 的手里（dev-only）
-  devGrantProgress(type) {
+  // 调试模式：直接把指定进步卡塞进某玩家手里（默认玩家 0，dev-only）
+  devGrantProgress(type, to = 0) {
     if (!this.dev) this.err('非调试模式');
     let deck = null;
     for (const [d, list] of Object.entries(PROGRESS_DECKS)) {
       if (list.includes(type)) { deck = d; break; }
     }
     if (!deck) this.err('未知进步卡');
-    this.players[0].progressCards.push({ type, deck });
-    this.addLog(`🛠 获得进步卡：${PROGRESS_NAME[type]}`);
+    const p = Number.isInteger(to) && this.players[to] ? to : 0;
+    this.players[p].progressCards.push({ type, deck });
+    this.addLog(`🛠 ${p === 0 ? '' : `${this.players[p].name} `}获得进步卡：${PROGRESS_NAME[type]}`);
   },
 };

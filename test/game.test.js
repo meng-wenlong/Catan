@@ -242,6 +242,23 @@ test('垄断卡收走所有对应资源', () => {
   assert.equal(g.players[1].hand.wheat, 0);
 });
 
+test('打出发展卡：playDev 事件排在效果事件之前，并带演出字段', () => {
+  const g = newGame(3);
+  doSetup(g);
+  forceMain(g, 0);
+  g.players[0].devCards.push({ type: 'monopoly', boughtTurn: 0, played: false });
+  g.players[1].hand.wheat = 3;
+  g.players[2].hand.wheat = 0;
+  const seq0 = g.eventSeq;
+  g.playDev(0, 'monopoly', { res: 'wheat' });
+  const fresh = g.events.filter((e) => e.seq > seq0);
+  assert.deepEqual(fresh.map((e) => e.type), ['playDev', 'monopoly']);
+  assert.deepEqual(fresh.map((e) => e.seq), [seq0 + 1, seq0 + 2]);
+  assert.equal(g.eventSeq, seq0 + 2);
+  assert.equal(fresh[0].res, 'wheat');
+  assert.deepEqual(fresh[0].from, { 1: 3 });
+});
+
 test('10 分获胜', () => {
   const g = newGame(2, 5);
   doSetup(g);

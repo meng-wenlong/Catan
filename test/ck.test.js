@@ -356,6 +356,9 @@ test('ck：破坏者让分数不低于出牌者的玩家弃一半手牌', () => 
   g.playProgress(0, 'saboteur');
   assert.equal(g.turn.state, 'discard');
   assert.equal(g.turn.pendingDiscards[1], 2);
+  // 演出字段：playProgress 事件带上受害者（与 pendingDiscards 一致，只含公开信息）
+  const pev = g.events.filter((e) => e.type === 'playProgress').pop();
+  assert.deepEqual(pev.victims, Object.keys(g.turn.pendingDiscards).map(Number));
   g.discard(1, { wood: 2 });
   if (Object.keys(g.turn.pendingDiscards).length === 0) {
     assert.equal(g.turn.state, 'main'); // 弃完回到 main，不进强盗流程

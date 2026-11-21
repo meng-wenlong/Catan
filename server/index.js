@@ -497,7 +497,7 @@ io.on('connection', (socket) => {
         // ---- 调试模式（g.dev 为 false 时下列方法内部直接报错）----
         case 'devFill': g.devFill(0); break;
         case 'devGrantDev': g.devGrantDev(data.card); break;
-        case 'devGrantProgress': g.devGrantProgress(data.card); break;
+        case 'devGrantProgress': g.devGrantProgress(data.card, data.to); break;
         case 'devSetDice': g.devSetDice(data.d1, data.d2, data.eventDie || null); break;
         case 'devGiveNPC': g.devGiveNPC(data.target, data.card, data.n || 1); break;
         default: return fail('未知操作');

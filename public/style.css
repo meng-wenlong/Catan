@@ -1908,3 +1908,46 @@ body {
   0%, 100% { box-shadow: 0 4px 16px rgba(0,0,0,.35), 0 0 12px rgba(255,200,80,.25), inset 0 1px 0 rgba(255,255,255,.7); }
   50% { box-shadow: 0 4px 16px rgba(0,0,0,.35), 0 0 26px rgba(255,200,80,.55), inset 0 1px 0 rgba(255,255,255,.7); }
 }
+
+/* ---------- 卡牌发动演出（card-scenes.js）：3D 小剧场，点击跳过 ---------- */
+#card-scene {
+  position: fixed; inset: 0; z-index: 85; cursor: pointer; overflow: hidden;
+  transition: opacity .28s ease;
+}
+#card-scene.hidden { display: none; }
+#card-scene.out { opacity: 0; }
+#card-scene .cx-scrim {
+  position: absolute; inset: 0;
+  background: radial-gradient(ellipse at 50% 55%, rgba(26,17,7,.92) 25%, rgba(6,4,2,.97) 100%);
+  animation: sv-scrim .35s ease both;
+}
+#card-scene .cx-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+#card-scene .cx-intro {
+  position: absolute; left: 0; right: 0; bottom: 9%; text-align: center; padding: 0 16px;
+  color: #fff3e0; text-shadow: 0 2px 8px rgba(0,0,0,.8);
+  opacity: 0; transform: translateY(12px); transition: opacity .22s ease, transform .22s ease;
+}
+#card-scene.intro .cx-intro { opacity: 1; transform: none; }
+#card-scene .cx-title { font-size: 16px; letter-spacing: 3px; opacity: .85; }
+#card-scene .cx-name { font-size: 32px; font-weight: 800; letter-spacing: 4px; color: var(--cx-accent); filter: brightness(1.35); margin: 2px 0 4px; }
+#card-scene .cx-desc { font-size: 15px; opacity: .9; }
+#card-scene .cx-badge {
+  position: absolute; top: 14px; left: 0; width: 34vw; max-width: 300px; text-align: center;
+  font-size: 13px; font-weight: 700; color: #fff3e0; letter-spacing: 2px; text-shadow: 0 1px 4px #000;
+  opacity: 0; transition: opacity .3s ease; pointer-events: none;
+}
+#card-scene .cx-beat {
+  position: absolute; left: 0; right: 0; bottom: 8%; padding: 0 16px; text-align: center;
+  font-size: 24px; font-weight: 800; letter-spacing: 2px; color: #fff3e0;
+  text-shadow: 0 2px 8px rgba(0,0,0,.85), 0 0 20px rgba(255,190,90,.3);
+  opacity: 0; transform: translateY(12px);
+}
+#card-scene .cx-beat.on { animation: cx-beat .35s ease .3s forwards; } /* 等开场卡名淡出再浮现，不叠字 */
+#card-scene.intro .cx-beat { opacity: 0 !important; animation: none; }
+#card-scene .cx-beat b { text-shadow: 0 2px 6px rgba(0,0,0,.9); }
+@keyframes cx-beat { to { opacity: 1; transform: none; } }
+#card-scene .cx-skip { position: absolute; right: 16px; bottom: 12px; font-size: 12px; color: rgba(255,255,255,.55); letter-spacing: 2px; }
+@media (max-width: 600px) {
+  #card-scene .cx-name { font-size: 24px; }
+  #card-scene .cx-beat { font-size: 17px; letter-spacing: 1px; }
+}

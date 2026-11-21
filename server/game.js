@@ -121,6 +121,19 @@ export class Game {
     if (this.events.length > 30) this.events.shift();
   }
 
+  // 把事件插到 seq0 之后产生的事件前面（后者顺延重新编号，保持数组顺序 = seq 顺序）
+  addEventBefore(seq0, type, data = {}) {
+    const tail = this.events.filter((e) => e.seq > seq0);
+    this.events = this.events.filter((e) => e.seq <= seq0);
+    this.eventSeq = seq0;
+    this.addEvent(type, data);
+    for (const e of tail) {
+      e.seq = ++this.eventSeq;
+      this.events.push(e);
+    }
+    while (this.events.length > 30) this.events.shift();
+  }
+
   err(msg) {
     const e = new Error(msg);
     e.isGameError = true;
@@ -596,6 +609,8 @@ export class Game {
       (c) => c.type === type && !c.played && c.boughtTurn < this.turn.count,
     );
     if (!card) this.err('没有可打出的这张发展卡（本回合购买的不能立即使用）');
+    const seq0 = this.eventSeq;
+    const fx = {}; // 演出用的公开字段（垄断的资源与各家上缴数、丰收的两种资源、修路条数）
 
     switch (type) {
       case 'knight': {
@@ -615,6 +630,7 @@ export class Game {
         this.turn.devPlayed = true;
         this.turn.freeRoads = free;
         this.turn.state = 'roadbuilding';
+        fx.n = free;
         this.addLog(`${this.players[p].name} 打出了修路卡，可免费修 ${free} 条路`);
         break;
       }
@@ -628,6 +644,7 @@ export class Game {
         this.turn.devPlayed = true;
         this.gain(p, r1, 1);
         this.gain(p, r2, 1);
+        Object.assign(fx, { r1, r2 });
         this.addLog(`${this.players[p].name} 打出丰收之年，获得${RES_NAME[r1]}和${RES_NAME[r2]}`);
         break;
       }
@@ -645,6 +662,7 @@ export class Game {
           this.players[p].hand[res] += pl.hand[res];
           pl.hand[res] = 0;
         });
+        Object.assign(fx, { res, from });
         this.addEvent('monopoly', { player: p, res, n: total, from });
         this.addLog(`${this.players[p].name} 打出垄断，收走所有${RES_NAME[res]}（共 ${total} 张）`);
         break;
@@ -652,8 +670,9 @@ export class Game {
       default:
         this.err('无法打出该卡');
     }
-    // 各 case 校验都可能中途 err 抛出，只有走完才记事件（客户端中央演出用）
-    this.addEvent('playDev', { player: p, card: type });
+    // 各 case 校验都可能中途 err 抛出，只有走完才记事件（客户端中央演出用）；
+    // 插到本次打牌产生的效果事件（垄断收牌等）之前：客户端先演卡，再演效果
+    this.addEventBefore(seq0, 'playDev', { player: p, card: type, ...fx });
   }
 
   // ---------- 交易 ----------
