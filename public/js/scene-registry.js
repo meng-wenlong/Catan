@@ -22,15 +22,24 @@ export function walk(actor, a, b, k, steps, amp = 0.55, yaw = null) {
   return moving ? ph : null;
 }
 export function floorDisc(world, color = '#7a5232', r = 2.1) {
-  const m = new THREE.Mesh(new THREE.CylinderGeometry(r, r * 1.02, 0.1, 48), K.mat(color, { rough: 0.85 }));
+  // 木地板：深浅相间的木条（按圆裁长度）+ 一圈深色包边
+  const m = new THREE.Mesh(new THREE.CylinderGeometry(r, r * 1.02, 0.1, 64), K.mat(color, { rough: 0.85 }));
   m.position.y = -0.05;
   world.add(m);
-  // 木地板纹路
-  for (let i = -4; i <= 4; i++) {
-    const l = new THREE.Mesh(new THREE.BoxGeometry(0.008, 0.002, Math.sqrt(Math.max(0, r * r - (i * 0.45) ** 2)) * 2), K.mat('#5a3b22'));
-    l.position.set(i * 0.45, 0.001, 0);
-    world.add(l);
+  const light = `#${new THREE.Color(color).multiplyScalar(1.12).getHexString()}`;
+  const W = 0.3;
+  for (let i = -Math.floor(r / W); i <= Math.floor(r / W); i++) {
+    const x = i * W;
+    const len = Math.sqrt(Math.max(0, (r * 0.97) ** 2 - (Math.abs(x) + W / 2) ** 2)) * 2;
+    if (len < 0.2) continue;
+    const p = new THREE.Mesh(K.box(W - 0.012, 0.02, len), K.mat(i % 2 ? color : light, { rough: 0.8 }));
+    p.position.set(x, -0.006, 0);
+    world.add(p);
   }
+  const rim = new THREE.Mesh(new THREE.TorusGeometry(r, 0.05, 10, 72), K.mat(`#${new THREE.Color(color).multiplyScalar(0.7).getHexString()}`, { rough: 0.7 }));
+  rim.rotation.x = Math.PI / 2;
+  rim.position.y = -0.01;
+  world.add(rim);
   return m;
 }
 export function hexPos(board, id) {
@@ -58,7 +67,7 @@ export function knightActor(world, level, color, shadowSize = 0.5) {
   squash.add(model.fig);
   world.add(root);
   const shadow = new THREE.Mesh(new THREE.PlaneGeometry(1, 1),
-    new THREE.MeshBasicMaterial({ map: textures().blob, color: '#120804', transparent: true, depthWrite: false, opacity: 0.5 }));
+    new THREE.MeshBasicMaterial({ map: textures().blob, color: '#120804', transparent: true, depthWrite: false, opacity: 0.3 }));
   shadow.rotation.x = -Math.PI / 2;
   shadow.scale.setScalar(shadowSize);
   world.add(shadow);

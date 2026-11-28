@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>卡坦岛 Online</title>
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏝️</text></svg>">
+<link rel="icon" href="/assets/opt/home-island.webp">
 <!-- 全站字体：未来荧黑 Glow Sans SC（自托管，见 fonts/README.md），预加载正文字重防闪字 -->
 <link rel="preload" href="/fonts/GlowSansSC-Regular.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="style.css">
@@ -14,7 +14,7 @@
 <!-- 首页 -->
 <div id="screen-home" class="screen">
   <div class="home-card">
-    <h1>🏝️ 卡坦岛 Online</h1>
+    <h1>卡坦岛 Online</h1>
     <p class="subtitle">与好友一起在浏览器里玩卡坦岛（基础版 / 城市与骑士）</p>
     <input id="home-name" maxlength="12" placeholder="你的昵称">
     <button id="btn-create" class="btn primary big">创建房间</button>
@@ -24,14 +24,14 @@
     </div>
     <div class="join-row">
       <input id="home-spectate-code" maxlength="4" placeholder="观战房间码">
-      <button id="btn-spectate" class="btn big">👁️ 观战</button>
+      <button id="btn-spectate" class="btn big"><img class="ic" src="/assets/icons/eye.webp" alt="">观战</button>
     </div>
     <p id="home-error" class="error-text"></p>
     <div id="home-rooms" class="open-rooms hidden">
-      <p class="or-title">🟢 正在等待玩家的房间</p>
+      <p class="or-title"><span class="conn on"></span>正在等待玩家的房间</p>
       <ul id="home-rooms-list" class="rooms-list"></ul>
     </div>
-    <button id="btn-dev" class="btn subtle hidden">🛠 单人调试模式</button>
+    <button id="btn-dev" class="btn subtle hidden">单人调试模式</button>
   </div>
 </div>
 
@@ -46,8 +46,8 @@
     <ul id="lobby-players" class="lobby-list"></ul>
     <button id="btn-start" class="btn primary big hidden">开始游戏</button>
     <div class="lobby-exit-row">
-      <button id="btn-leave" class="btn hidden">🚪 退出房间</button>
-      <button id="btn-destroy" class="btn danger hidden">💥 销毁房间</button>
+      <button id="btn-leave" class="btn hidden"><img class="ic" src="/assets/icons/door.webp" alt="">退出房间</button>
+      <button id="btn-destroy" class="btn danger hidden">销毁房间</button>
     </div>
     <p class="hint" id="lobby-hint">把房间码发给同学，人齐后由房主开始（3-4 人标准；5-6 人自动启用大地图与特别建设阶段；支持 2 人测试）</p>
     <p id="lobby-error" class="error-text"></p>
@@ -61,23 +61,23 @@
 <!-- 选颜色 / 定先手 -->
 <div id="screen-pick" class="screen hidden">
   <div class="home-card">
-    <h1>🎨 对局设置</h1>
+    <h1>对局设置</h1>
     <p class="subtitle">每人挑一种颜色，房主选择模式并指定谁先开始</p>
     <div id="pick-mode-box">
-      <p class="pick-label">🎮 游戏模式</p>
+      <p class="pick-label">游戏模式</p>
       <div id="pick-mode">
-        <button id="mode-base" class="btn small mode-btn">🏝️ 基础版（10 分）</button>
-        <button id="mode-ck" class="btn small mode-btn">⚔️ 城市与骑士（13 分）</button>
+        <button id="mode-base" class="btn small mode-btn">基础版（10 分）</button>
+        <button id="mode-ck" class="btn small mode-btn">城市与骑士（13 分）</button>
       </div>
     </div>
     <div id="pick-colors"></div>
     <ul id="pick-players" class="lobby-list"></ul>
     <div id="pick-first-box">
-      <p class="pick-label">🥇 起始玩家</p>
+      <p class="pick-label">起始玩家</p>
       <div id="pick-first"></div>
       <p class="hint" id="pick-first-hint"></p>
     </div>
-    <button id="pick-confirm" class="btn primary big hidden">⚔️ 开始对局</button>
+    <button id="pick-confirm" class="btn primary big hidden"><img class="ic" src="/assets/icons/swords.webp" alt="">开始对局</button>
     <button id="pick-cancel" class="btn small hidden">返回大厅</button>
     <p class="hint" id="pick-hint"></p>
     <p id="pick-error" class="error-text"></p>
@@ -90,7 +90,7 @@
     <div id="board-area">
       <div id="status-bar">
         <span id="status-text"></span>
-        <button id="btn-spec-leave" class="btn small hidden">🚪 退出观战</button>
+        <button id="btn-spec-leave" class="btn small hidden"><img class="ic" src="/assets/icons/door.webp" alt="">退出观战</button>
         <div id="dice-box" class="hidden">
           <div class="die" id="die1"></div>
           <div class="die" id="die2"></div>
@@ -121,34 +121,34 @@
       <!-- 自己回合掷骰阶段：中央大掷骰按钮（仪式感 + 回合提醒） -->
       <div id="roll-big-wrap" class="hidden">
         <button id="roll-big">
-          <span class="rb-dice">🎲</span>
+          <span class="rb-dice"><img class="ic" src="/assets/icons/dice.webp" alt=""></span>
           <span class="rb-text">掷骰子<small>你的回合</small></span>
         </button>
       </div>
       <!-- 结束回合：右上角悬浮，与底栏动作按钮视觉隔离防误触 -->
-      <button id="btn-end" class="btn danger">✅ 结束回合</button>
+      <button id="btn-end" class="btn danger">结束回合</button>
       <!-- 复盘模式：随时回到结算画面 -->
-      <button id="btn-victory-back" class="hidden">🏆 返回结算</button>
+      <button id="btn-victory-back" class="hidden"><img class="ic" src="/assets/icons/trophy.webp" alt="">返回结算</button>
       <div id="zoom-controls">
         <button id="zoom-in" title="放大">＋</button>
         <button id="zoom-out" title="缩小">－</button>
         <button id="zoom-reset" title="复位视野（双击棋盘同效）">⤢</button>
       </div>
-      <button id="btn-settings" title="设置：声音 / 结束本局">⚙️</button>
+      <button id="btn-settings" title="设置：声音 / 结束本局"><img class="ic" src="/assets/icons/gear.webp" alt=""></button>
       <div id="float-layer"></div>
       <!-- 战报/聊天：棋盘左下角浮层抽屉（默认折叠成一枚小签） -->
       <div id="log-panel" class="collapsed">
         <div id="log-resize" title="拖动调整战报框高度"></div>
         <div id="log-head">
-          <span class="lh-title">📜 战报 / 聊天</span>
+          <span class="lh-title"><img class="ic" src="/assets/icons/scroll.webp" alt="">战报 / 聊天</span>
           <span id="log-unread" class="hidden"></span>
           <span class="lh-arrow">▾</span>
         </div>
         <div id="log-filter">
           <button data-lf="all" class="active">全部</button>
-          <button data-lf="chat" title="聊天/表情">💬</button>
-          <button data-lf="dice" title="骰子">🎲</button>
-          <button data-lf="progress" title="进步卡">🎴</button>
+          <button data-lf="chat" title="聊天/表情"><img class="ic" src="/assets/icons/chat.webp" alt=""></button>
+          <button data-lf="dice" title="骰子"><img class="ic" src="/assets/icons/dice.webp" alt=""></button>
+          <button data-lf="progress" title="进步卡"><img class="ic" src="/assets/icons/cardback.webp" alt=""></button>
         </div>
         <div id="log-list"></div>
         <div id="chat-row">
@@ -174,17 +174,17 @@
     <div id="action-buttons">
       <div id="build-box">
         <div id="build-menu" class="hidden">
-          <button id="btn-road" class="btn build" title="1木 1砖">🛤️ 修路<small>1木 1砖</small></button>
-          <button id="btn-settlement" class="btn build" title="木 砖 羊 麦 各1">🏠 村庄<small>木砖羊麦各1</small></button>
-          <button id="btn-city" class="btn build" title="2麦 3矿">🏰 城市<small>2麦 3矿</small></button>
-          <button id="btn-buydev" class="btn build" title="羊 麦 矿 各1">🎴 发展卡<small>羊麦矿各1</small></button>
-          <button id="btn-knight" class="btn build hidden" title="招募骑士：1羊 1矿（点击自己的骑士可激活/升级/行动）">⚔️ 骑士<small>1羊 1矿</small></button>
-          <button id="btn-wall" class="btn build hidden" title="城墙：2砖，建在城市下，手牌上限 +2">🧱 城墙<small>2砖</small></button>
+          <button id="btn-road" class="btn build" title="1木 1砖"><img class="ic" src="/assets/icons/road.webp" alt="">修路<small>1木 1砖</small></button>
+          <button id="btn-settlement" class="btn build" title="木 砖 羊 麦 各1"><img class="ic" src="/assets/icons/settlement.webp" alt="">村庄<small>木砖羊麦各1</small></button>
+          <button id="btn-city" class="btn build" title="2麦 3矿"><img class="ic" src="/assets/icons/city.webp" alt="">城市<small>2麦 3矿</small></button>
+          <button id="btn-buydev" class="btn build" title="羊 麦 矿 各1"><img class="ic" src="/assets/icons/cardback.webp" alt="">发展卡<small>羊麦矿各1</small></button>
+          <button id="btn-knight" class="btn build hidden" title="招募骑士：1羊 1矿（点击自己的骑士可激活/升级/行动）"><img class="ic" src="/assets/icons/knight.webp" alt="">骑士<small>1羊 1矿</small></button>
+          <button id="btn-wall" class="btn build hidden" title="城墙：2砖，建在城市下，手牌上限 +2"><img class="ic" src="/assets/icons/wall.webp" alt="">城墙<small>2砖</small></button>
         </div>
-        <button id="btn-build" class="btn">🔨 建造</button>
+        <button id="btn-build" class="btn"><img class="ic" src="/assets/icons/hammer.webp" alt="">建造</button>
       </div>
-      <button id="btn-improve" class="btn build hidden" title="城市升级：花商品提升贸易/政治/科学等级（点击棋盘左侧牌堆同效）">🏛️ 升级</button>
-      <button id="btn-trade" class="btn">🔄 交易</button>
+      <button id="btn-improve" class="btn build hidden" title="城市升级：花商品提升贸易/政治/科学等级（点击棋盘左侧牌堆同效）"><img class="ic" src="/assets/icons/columns.webp" alt="">升级</button>
+      <button id="btn-trade" class="btn"><img class="ic" src="/assets/icons/trade.webp" alt="">交易</button>
     </div>
   </div>
 
@@ -228,7 +228,7 @@
             <p class="trade-label small">给出</p>
             <div id="bank-give" class="res-radio"></div>
           </div>
-          <div class="trade-arrow">➡️</div>
+          <div class="trade-arrow">→</div>
           <div>
             <p class="trade-label small">获得</p>
             <div id="bank-get" class="res-radio"></div>
@@ -272,8 +272,8 @@
       </div>
       <div id="winner-scores"></div>
       <div class="victory-actions">
-        <button id="btn-review" class="btn">🔍 复盘本局</button>
-        <button id="btn-again" class="btn primary hidden">🔄 回到大厅再来一局</button>
+        <button id="btn-review" class="btn"><img class="ic" src="/assets/icons/eye.webp" alt="">复盘本局</button>
+        <button id="btn-again" class="btn primary hidden">回到大厅再来一局</button>
       </div>
       <p class="hint" id="winner-hint">等待房主结束本局…</p>
     </div>
@@ -283,7 +283,7 @@
   <!-- 城市升级面板（城市与骑士；点棋盘左侧牌堆或底栏「升级」打开） -->
   <div id="modal-improve" class="modal hidden">
     <div class="modal-box wide improve-box">
-      <h2>🏛️ 城市升级</h2>
+      <h2><img class="ic" src="/assets/icons/columns.webp" alt="">城市升级</h2>
       <div id="improve-cols"></div>
       <button class="modal-close btn small" data-close="modal-improve">关闭</button>
     </div>
@@ -292,7 +292,7 @@
   <!-- 引水渠：任选一张资源 -->
   <div id="modal-aqueduct" class="modal hidden">
     <div class="modal-box">
-      <h2>🚰 引水渠：本轮无产出，任选 1 张资源</h2>
+      <h2><img class="ic" src="/assets/icons/water.webp" alt="">引水渠：任选 1 张资源</h2>
       <div id="aqueduct-btns" class="btn-column"></div>
     </div>
   </div>
@@ -300,7 +300,7 @@
   <!-- 炼金术士：指定骰子 -->
   <div id="modal-alchemist" class="modal hidden">
     <div class="modal-box">
-      <h2>⚗️ 炼金术士：指定两个骰子的点数</h2>
+      <h2><img class="ic" src="/assets/icons/dice.webp" alt="">炼金术士：指定两个骰子的点数</h2>
       <div id="alchemist-picks" class="alchemist-row"></div>
       <button id="alchemist-confirm" class="btn primary" disabled>确认</button>
       <button class="modal-close btn small" data-close="modal-alchemist">取消</button>
@@ -319,7 +319,7 @@
   <!-- 骑士操作菜单 -->
   <div id="modal-knightmenu" class="modal hidden">
     <div class="modal-box">
-      <h2 id="knightmenu-title">⚔️ 骑士</h2>
+      <h2 id="knightmenu-title">骑士</h2>
       <div id="knightmenu-btns" class="btn-column"></div>
       <button class="modal-close btn small" data-close="modal-knightmenu">取消</button>
     </div>
@@ -335,20 +335,20 @@
   <!-- 设置：声音 + 结束本局 -->
   <div id="modal-settings" class="modal hidden">
     <div class="modal-box settings-box">
-      <h2>⚙️ 设置</h2>
+      <h2><img class="ic" src="/assets/icons/gear.webp" alt="">设置</h2>
       <div class="setting-row">
-        <button id="bgm-toggle" class="sound-mini" title="音乐开/关">🎵</button>
+        <button id="bgm-toggle" class="sound-mini" title="音乐开/关"><img class="ic" src="/assets/icons/music.webp" alt=""></button>
         <span class="setting-label">音乐</span>
         <input id="bgm-range" type="range" min="0" max="100">
       </div>
       <div class="setting-row">
-        <button id="sfx-toggle" class="sound-mini" title="点击试听音效">🔔</button>
+        <button id="sfx-toggle" class="sound-mini" title="点击试听音效"><img class="ic" src="/assets/icons/bell.webp" alt=""></button>
         <span class="setting-label">音效</span>
         <input id="sfx-range" type="range" min="0" max="100">
       </div>
       <p id="bgm-hint" class="hidden">未找到音乐文件：请将 bgm.mp3 / bgm.mp4 / bgm.m4a / bgm.ogg 放到 public/audio/</p>
       <div class="setting-sep"></div>
-      <button id="btn-endgame" class="btn danger hidden" title="房主结束本局并回到大厅">🏁 结束本局</button>
+      <button id="btn-endgame" class="btn danger hidden" title="房主结束本局并回到大厅">结束本局</button>
       <button class="modal-close btn small" data-close="modal-settings">关闭</button>
     </div>
   </div>

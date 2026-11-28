@@ -22,7 +22,7 @@ SCENES.barbarian = {
     quay.position.set(1.28, 0.15, 0.52);
     const wood = K.mat('#9e7954');
     for (let i = 0; i < 7; i++) {
-      const plank = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.048, 0.075), wood);
+      const plank = new THREE.Mesh(K.box(0.38, 0.048, 0.075), wood);
       plank.position.z = i * 0.08;
       quay.add(plank);
     }

@@ -4,6 +4,7 @@
 export let THREE = null;
 let RoomEnvironment = null;
 let mergeGeometries = null;
+export let RoundedBoxGeometry = null; // 演出道具的圆角方块（scene-kit 的 box()）
 let loading = null;
 export const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -14,10 +15,12 @@ export function loadThree() {
       import('three'),
       import('three/addons/environments/RoomEnvironment.js'),
       import('three/addons/utils/BufferGeometryUtils.js'),
-    ]).then(([t, env, bgu]) => {
+      import('three/addons/geometries/RoundedBoxGeometry.js'),
+    ]).then(([t, env, bgu, rbox]) => {
       THREE = t;
       RoomEnvironment = env.RoomEnvironment;
       mergeGeometries = bgu.mergeGeometries;
+      RoundedBoxGeometry = rbox.RoundedBoxGeometry;
       return true;
     }).catch((e) => {
       console.warn('3D 棋子加载失败，保留插画', e);

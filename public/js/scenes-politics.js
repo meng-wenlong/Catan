@@ -32,10 +32,10 @@ SCENES.constitution = {
     const col = ctx.color(ev.player);
     const lectern = new THREE.Group();
     const wood = K.mat('#6e4a2c', { rough: 0.7 });
-    const post = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.6, 0.12), wood);
+    const post = new THREE.Mesh(K.box(0.12, 0.6, 0.12), wood);
     post.position.y = 0.3;
     lectern.add(post);
-    const top = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.04, 0.4), wood);
+    const top = new THREE.Mesh(K.box(0.7, 0.04, 0.4), wood);
     top.position.y = 0.62;
     top.rotation.x = 0.5;
     lectern.add(top);
@@ -61,7 +61,7 @@ SCENES.constitution = {
   },
   frame(st, ts, dt, ctx) {
     st.sc.userData.open(easeOut(seg(ts, 0.1, 0.8)));
-    if (ts > 0.15) ctx.once('open', () => { sfx.card(); ctx.say(`📜 ${ctx.tag(ctx.ev.player)} 颁布宪法`); });
+    if (ts > 0.15) ctx.once('open', () => { sfx.card(); ctx.say(`${ctx.tag(ctx.ev.player)} 颁布宪法`); });
     // 羽毛笔签字：沿 Z 形写一行
     const w = seg(ts, 0.9, 1.7);
     st.quill.visible = ts > 0.8 && ts < 1.9;
@@ -113,7 +113,7 @@ SCENES.deserter = {
     if (ts < 1.0) { // 东张西望
       kn.place(-0.95, 0.25, 0, 0.3);
       kn.P.hy = 0.7 * Math.sin(ts * 5);
-      if (ts > 0.1) ctx.once('look', () => ctx.say(`🏳️ ${ctx.tag(st.t)} 的一名骑士动摇了……`));
+      if (ts > 0.1) ctx.once('look', () => ctx.say(`${ctx.tag(st.t)} 的一名骑士动摇了……`));
     } else if (ts < 2.3) { // 弯腰溜走
       const k = easeInOut(seg(ts, 1.0, 2.3));
       const x = lerp(-0.95, 0.95, k);
@@ -129,7 +129,7 @@ SCENES.deserter = {
         ctx.fx.flash(V3(0.95, 0.5, 0.3), '#fff6d0', 1.0, 0.4);
         ctx.fx.ring(0.95, 0.02, 0.25, '#ffd36b', 1.6, 0.6);
         sfx.twinkle();
-        ctx.say(`🏳️ 骑士叛逃到 ${ctx.tag(ctx.ev.player)} 麾下（由 ${ctx.tag(st.t)} 选择哪一名）`);
+        ctx.say(`骑士叛逃到 ${ctx.tag(ctx.ev.player)} 麾下`);
       });
       mixStance(kn.P, 'guard', 'salute', easeOut(seg(ts, 2.4, 2.7)));
     }
@@ -177,7 +177,7 @@ SCENES.diplomat = {
     st.dip.apply();
     st.sc.userData.open(easeOut(seg(ts, 0.2, 0.8)));
     st.sc.rotation.set(-0.3, 0.5, 0);
-    if (ts > 0.25) ctx.once('read', () => { sfx.card(); ctx.say(`🕊️ ${ctx.tag(ctx.ev.player)} 的外交官宣读条约……`); });
+    if (ts > 0.25) ctx.once('read', () => { sfx.card(); ctx.say(`${ctx.tag(ctx.ev.player)} 的外交官宣读条约……`); });
     // 最外一段：抖动 → 被拆起 → 旋转飞走化作木屑
     const r = st.segs[2];
     const shake = seg(ts, 1.1, 1.5);
@@ -191,8 +191,8 @@ SCENES.diplomat = {
       r.scale.setScalar(Math.max(0.01, 1 - easeIn(fly)));
     }
     if (ts > 1.6) ctx.once('done', () => ctx.say(st.self
-      ? `🕊️ ${ctx.tag(ctx.ev.player)} 收回了自己的一条道路，可立即重新放置`
-      : `🕊️ ${ctx.tag(st.owner)} 的一条开放道路被拆除`));
+      ? `${ctx.tag(ctx.ev.player)} 收回了自己的一条道路`
+      : `${ctx.tag(st.owner)} 的一条开放道路被拆除`));
   },
 };
 
@@ -227,7 +227,7 @@ SCENES.intrigue = {
       plotter.P.lean = 0.2;
       plotter.P.hy = 0.15 * Math.sin(ts * 9);
       if (ts > 1.0 && ts < 1.8 && Math.floor(ts * 6) !== st.lastW) { st.lastW = Math.floor(ts * 6); sfx.scribble(); }
-      ctx.once('whisper', () => ctx.say(`🗝️ ${ctx.tag(ctx.ev.player)} 的阴谋家在 ${ctx.tag(st.victim)} 的骑士耳边嘀咕……`));
+      ctx.once('whisper', () => ctx.say(`${ctx.tag(ctx.ev.player)} 的阴谋家在 ${ctx.tag(st.victim)} 的骑士耳边嘀咕……`));
     }
     if (ts >= 1.85) K.pose(plotter.P, 'sneak', 'point', easeOut(seg(ts, 1.85, 2.0))); // 一把推开
     plotter.rig.setGlow(ts > 1.0 ? 1.2 : 0.5);
@@ -242,7 +242,7 @@ SCENES.intrigue = {
       ctx.once('push', () => { sfx.shieldBash(); sfx.robberYelp(); ctx.shake(0.03); });
       kn.place(lerp(0.35, 1.25, easeOut(push)), lerp(0.1, 0.55, easeOut(push)), 0.15 * Math.sin(Math.PI * push), -Math.PI / 2 + 0.3 + push * 2);
       kn.root.rotation.z = -1.3 * easeIn(push);
-      if (push >= 1) ctx.once('fall', () => { ctx.fx.puff(V3(1.25, 0.05, 0.55), V3(0, 0.2, 0), 0.4, 0.6); ctx.say(`🗝️ ${ctx.tag(st.victim)} 的骑士被逐出道路，由主人重新安置`); });
+      if (push >= 1) ctx.once('fall', () => { ctx.fx.puff(V3(1.25, 0.05, 0.55), V3(0, 0.2, 0), 0.4, 0.6); ctx.say(`${ctx.tag(st.victim)} 的骑士被逐出道路`); });
     }
     kn.apply();
     st.tag.position.set(kn.root.position.x, 1.05, kn.root.position.z);
@@ -277,7 +277,7 @@ SCENES.warlord = {
     const up = easeOut(seg(ts, 0.1, 0.8));
     st.flag.position.y = lerp(-1.4, 0, up);
     K.waveFlag(st.flag.userData.flag, ts, 0.04 * up);
-    if (ts > 0.15) ctx.once('horn', () => { sfx.ship(); ctx.say(`⚔️ ${ctx.tag(ctx.ev.player)} 的军阀吹响集结号`); });
+    if (ts > 0.15) ctx.once('horn', () => { sfx.ship(); ctx.say(`${ctx.tag(ctx.ev.player)} 的军阀吹响集结号`); });
     for (const { k, t0 } of st.knights) {
       if (ts < t0) setStance(k.P, 'rest');
       else {
@@ -291,6 +291,6 @@ SCENES.warlord = {
       }
       k.apply();
     }
-    if (ts > st.dur - 0.9) ctx.once('done', () => { sfx.fanfare(); ctx.say(`⚔️ ${st.n} 名骑士免费激活，整装待发`); });
+    if (ts > st.dur - 0.9) ctx.once('done', () => { sfx.fanfare(); ctx.say(`${st.n} 名骑士免费激活，整装待发`); });
   },
 };

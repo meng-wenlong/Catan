@@ -65,7 +65,7 @@ function checkBlocked() {
     blockWarned = true;
     console.warn(`[sfx] AudioContext 卡在 ${ctx.state}：浏览器阻止了网页发声`);
     const tip = document.createElement('div');
-    tip.textContent = '🔇 浏览器阻止了音效播放：请在 Safari「设置 → 网站 → 自动播放」里把本站设为「允许所有自动播放」';
+    tip.textContent = '浏览器阻止了音效播放：请在 Safari「设置 → 网站 → 自动播放」里把本站设为「允许所有自动播放」';
     tip.style.cssText = 'position:fixed;top:10px;left:50%;transform:translateX(-50%);'
       + 'background:rgba(30,30,30,.92);color:#fff;padding:10px 18px;border-radius:10px;'
       + 'font-size:13px;z-index:99;max-width:90vw;';

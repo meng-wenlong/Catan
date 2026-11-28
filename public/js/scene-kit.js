@@ -1,6 +1,6 @@
 // 卡牌演出的公共素材：程式化小人、道具、地块、文字标签与粒子。全部现场建模，无外部模型文件。
 // 风格与 three-figures.js 的骑士一致（桌游棋子：圆台底座 + 圆润的身体），约定高约 1、正面朝 +Z。
-import { THREE, clamp01, easeOut, textures } from './three-figures.js';
+import { THREE, RoundedBoxGeometry, clamp01, easeOut, textures } from './three-figures.js';
 
 // ---------- 材质 ----------
 const MAT = new Map();
@@ -15,6 +15,23 @@ export function mat(color, o = {}) {
   if (o.emissive) { m.emissive = new THREE.Color(o.emissive); m.emissiveIntensity = o.ei ?? 1; }
   MAT.set(key, m);
   return m;
+}
+// 布料：带绒面光泽（sheen）的物理材质，小人的衣服/帽子用，比纯漫反射更像真布
+const CLOTH = new Map();
+export function clothMat(color) {
+  if (CLOTH.has(color)) return CLOTH.get(color);
+  const m = new THREE.MeshPhysicalMaterial({
+    color, roughness: 0.82, side: THREE.DoubleSide,
+    sheen: 0.7, sheenRoughness: 0.55, sheenColor: new THREE.Color(color).lerp(new THREE.Color('#ffffff'), 0.45),
+  });
+  CLOTH.set(color, m);
+  return m;
+}
+// 圆角方块：道具一律用它代替直角 BoxGeometry（桌游棋子的打磨感）；太薄的片材仍用直角
+export function box(w, h, d) {
+  const m = Math.min(w, h, d);
+  if (!RoundedBoxGeometry || m < 0.016) return new THREE.BoxGeometry(w, h, d);
+  return new RoundedBoxGeometry(w, h, d, 2, Math.min(m * 0.28, 0.035));
 }
 export const unlit = (color, o = {}) => new THREE.MeshBasicMaterial({ color, transparent: true, depthWrite: false, ...o });
 
@@ -46,15 +63,16 @@ export function folk(opts = {}) {
     robe = false, base = cloth, eyes = 'dot', eyeColor = '#ff5a3c', apron = null, skirt = false,
   } = opts;
   const fig = new THREE.Group();
-  const C = mat(cloth, { side: 2 });
-  const CD = mat(darker(cloth), { side: 2 });
+  const C = clothMat(cloth);
+  const CD = clothMat(darker(cloth));
   const T = mat(trim, { metal: 0.8, rough: 0.3 });
   const S = mat(skin);
   const L = mat('#5a3b22', { rough: 0.6 });
 
   // 底座（玩家色圆台）
   mesh(new THREE.LatheGeometry([V2(0, 0), V2(0.2, 0), V2(0.214, 0.012), V2(0.218, 0.028), V2(0.21, 0.042), V2(0.196, 0.05), V2(0, 0.05)], 36),
-    mat(darker(base, 0.78), { rough: 0.5 }), [0, 0, 0], fig);
+    mat(darker(base, 0.78), { rough: 0.45 }), [0, 0, 0], fig);
+  mesh(new THREE.TorusGeometry(0.206, 0.007, 6, 40), mat('#d9b25a', { metal: 0.85, rough: 0.3 }), [0, 0.044, 0], fig).rotation.x = Math.PI / 2;
 
   // 腿（髋为关节）
   const legs = [];
@@ -63,7 +81,9 @@ export function folk(opts = {}) {
     leg.position.set(s * 0.058, 0.3, 0);
     fig.add(leg);
     mesh(capsule([0, 0, 0], [0, -0.22, 0.01], 0.042), robe || skirt ? CD : mat(darker(cloth, 0.45)), [0, 0, 0], leg);
-    mesh(new THREE.SphereGeometry(1, 12, 8), L, [0, -0.235, 0.03], leg).scale.set(0.048, 0.034, 0.075);
+    mesh(new THREE.CylinderGeometry(0.047, 0.05, 0.075, 14), L, [0, -0.205, 0.004], leg);
+    mesh(new THREE.TorusGeometry(0.047, 0.008, 6, 16), mat(darker('#5a3b22', 0.7)), [0, -0.17, 0.004], leg).rotation.x = Math.PI / 2;
+    mesh(new THREE.SphereGeometry(1, 14, 10), L, [0, -0.228, 0.036], leg).scale.set(0.05, 0.034, 0.068);
     legs.push(leg);
   }
 
@@ -75,11 +95,15 @@ export function folk(opts = {}) {
     mesh(new THREE.LatheGeometry([V2(flare, 0.07), V2(flare * 0.93, 0.16), V2(0.135, 0.32), V2(0.118, 0.44), V2(0.12, 0.54), V2(0.1, 0.62), V2(0, 0.64)], 28), C, [0, 0, 0], body);
     mesh(new THREE.TorusGeometry(flare - 0.004, 0.012, 6, 28), T, [0, 0.075, 0], body).rotation.x = Math.PI / 2;
   } else { // 短上衣（下摆到大腿）
-    mesh(new THREE.LatheGeometry([V2(0.135, 0.24), V2(0.13, 0.32), V2(0.118, 0.44), V2(0.124, 0.54), V2(0.1, 0.62), V2(0, 0.64)], 24), C, [0, 0, 0], body);
+    mesh(new THREE.LatheGeometry([V2(0.14, 0.235), V2(0.132, 0.32), V2(0.118, 0.44), V2(0.126, 0.53), V2(0.13, 0.57), V2(0.112, 0.607), V2(0.06, 0.628), V2(0, 0.634)], 28), C, [0, 0, 0], body);
+    mesh(new THREE.TorusGeometry(0.138, 0.01, 6, 28), T, [0, 0.242, 0], body).rotation.x = Math.PI / 2; // 下摆镶边
   }
+  // 领口 + 脖子
+  mesh(new THREE.TorusGeometry(0.058, 0.014, 8, 22), T, [0, 0.618, 0], body).rotation.x = Math.PI / 2;
+  mesh(new THREE.CylinderGeometry(0.036, 0.04, 0.06, 14), S, [0, 0.64, 0], body);
   mesh(new THREE.TorusGeometry(0.118, 0.014, 6, 24), mat('#5a3b22'), [0, 0.42, 0], body).rotation.x = Math.PI / 2;
-  mesh(new THREE.BoxGeometry(0.036, 0.03, 0.02), T, [0, 0.42, 0.12], body);
-  if (apron) mesh(new THREE.BoxGeometry(0.17, 0.26, 0.012), mat(apron), [0, 0.36, 0.125], body).rotation.x = -0.12;
+  mesh(box(0.036, 0.03, 0.02), T, [0, 0.42, 0.12], body);
+  if (apron) mesh(box(0.17, 0.26, 0.012), mat(apron), [0, 0.36, 0.125], body).rotation.x = -0.12;
 
   // 双臂（肩为关节，自然下垂沿 -Y；手部挂点 hand 用于拿道具）
   const arms = [];
@@ -88,8 +112,10 @@ export function folk(opts = {}) {
     const arm = new THREE.Group();
     arm.position.set(s * 0.138, 0.585, 0);
     fig.add(arm);
-    mesh(capsule([0, 0, 0], [0, -0.22, 0.02], 0.034), C, [0, 0, 0], arm);
-    mesh(new THREE.SphereGeometry(0.032, 12, 10), S, [0, -0.24, 0.025], arm);
+    mesh(capsule([0, 0, 0], [0, -0.21, 0.02], 0.036), C, [0, 0, 0], arm);
+    mesh(new THREE.TorusGeometry(0.036, 0.009, 6, 18), T, [0, -0.2, 0.019], arm).rotation.x = Math.PI / 2;
+    mesh(new THREE.SphereGeometry(0.036, 14, 10), S, [0, -0.243, 0.025], arm).scale.set(1, 1.12, 0.82);
+    mesh(new THREE.SphereGeometry(0.014, 8, 6), S, [-s * 0.026, -0.232, 0.04], arm);
     const hand = new THREE.Group();
     hand.position.set(0, -0.25, 0.03);
     arm.add(hand);
@@ -114,7 +140,19 @@ export function folk(opts = {}) {
     mesh(new THREE.SphereGeometry(0.088, 20, 14), S, [0, 0.085, 0], head);
     mesh(new THREE.SphereGeometry(0.014, 8, 6), mat(darker(skin, 0.85)), [0, 0.072, 0.088], head);
     // 头发：后脑一片
-    if (hat !== 'mitre' && hat !== 'veil') mesh(new THREE.SphereGeometry(0.092, 18, 12, 0, Math.PI * 2, 0, Math.PI * 0.55), mat(hair), [0, 0.09, -0.008], head);
+    if (hat !== 'mitre' && hat !== 'veil') {
+      mesh(new THREE.SphereGeometry(0.092, 18, 12, 0, Math.PI * 2, 0, Math.PI * 0.55), mat(hair), [0, 0.09, -0.008], head);
+      // 刘海：额前几绺
+      for (let i = -2; i <= 2; i++) mesh(new THREE.SphereGeometry(0.026, 10, 8), mat(hair), [i * 0.024, 0.158 - Math.abs(i) * 0.008, 0.06 - Math.abs(i) * 0.008], head).scale.set(1, 0.7, 0.8);
+    }
+    // 耳朵、腮红、微笑
+    for (const s of [1, -1]) {
+      mesh(new THREE.SphereGeometry(0.02, 10, 8), S, [s * 0.087, 0.082, -0.004], head).scale.set(0.55, 1, 0.85);
+      const blush = mesh(new THREE.SphereGeometry(0.016, 12, 8), mat('#ff8f86', { opacity: 0.45 }), [s * 0.05, 0.068, 0.072], head);
+      blush.scale.set(1.2, 0.75, 0.35);
+    }
+    const smile = mesh(new THREE.TorusGeometry(0.016, 0.0036, 6, 14, Math.PI), mat('#7a2e22'), [0, 0.054, 0.082], head);
+    smile.rotation.set(-0.25, 0, Math.PI);
   }
   for (const s of [1, -1]) {
     const e = mesh(new THREE.SphereGeometry(eyes === 'glow' ? 0.014 : 0.011, 10, 8), eyeMat, [s * 0.032, 0.098, hat === 'hood' ? 0.096 : 0.082], head);
@@ -127,12 +165,22 @@ export function folk(opts = {}) {
       head.add(h);
       halos.push(h);
     }
+    else {
+      // 普通眼睛：竖椭圆 + 高光点 + 眉毛
+      e.scale.set(1, 1.3, 0.7);
+      const hl = mesh(new THREE.SphereGeometry(0.0038, 6, 4), new THREE.MeshBasicMaterial({ color: '#ffffff' }), [s * 0.032 + 0.0035, 0.103, 0.09], head);
+      hl.userData.noShadow = true;
+      if (hat !== 'hood') {
+        const brow = mesh(box(0.024, 0.006, 0.008), mat(darker(hair, 0.8)), [s * 0.033, 0.122, 0.078], head);
+        brow.rotation.set(-0.3, 0, s * -0.12);
+      }
+    }
     eyeMeshes.push(e);
   }
   if (hat === 'mitre') { // 主教冠：前后扁的尖顶高帽 + 金色竖带
     const m = mesh(new THREE.LatheGeometry([V2(0, 0), V2(0.08, 0), V2(0.088, 0.09), V2(0.07, 0.19), V2(0.03, 0.26), V2(0, 0.28)], 20), mat('#f4efe2'), [0, 0.13, 0], head);
     m.scale.set(1, 1, 0.62);
-    mesh(new THREE.BoxGeometry(0.026, 0.25, 0.11), T, [0, 0.25, 0], head);
+    mesh(box(0.026, 0.25, 0.11), T, [0, 0.25, 0], head);
     const band = mesh(new THREE.TorusGeometry(0.085, 0.012, 6, 24), T, [0, 0.135, 0], head);
     band.rotation.x = Math.PI / 2;
     band.scale.set(1, 0.62, 1);
@@ -223,9 +271,9 @@ export function actor(scene, rig, shadowSize = 0.55) {
   squash.add(rig.fig);
   scene.add(root);
   const shadow = new THREE.Mesh(new THREE.PlaneGeometry(1, 1),
-    new THREE.MeshBasicMaterial({ map: textures().blob, color: '#120804', transparent: true, depthWrite: false, opacity: 0.5 }));
+    new THREE.MeshBasicMaterial({ map: textures().blob, color: '#120804', transparent: true, depthWrite: false, opacity: 0.3 }));
   shadow.rotation.x = -Math.PI / 2;
-  shadow.scale.setScalar(shadowSize);
+  shadow.scale.setScalar(shadowSize * 0.75);
   scene.add(shadow);
   const P = pose({}, 'idle');
   return {
@@ -234,8 +282,8 @@ export function actor(scene, rig, shadowSize = 0.55) {
       root.position.set(x, lift, z);
       if (yaw !== null) root.rotation.y = yaw;
       shadow.position.set(x, 0.004 + (this.floor || 0), z);
-      shadow.scale.setScalar(shadowSize / (1 + lift * 2));
-      shadow.material.opacity = 0.5 / (1 + lift * 2);
+      shadow.scale.setScalar(shadowSize * 0.75 / (1 + lift * 2));
+      shadow.material.opacity = 0.3 / (1 + lift * 2);
     },
     show(v) { root.visible = v; shadow.visible = v; },
     pose(a, b, k) { pose(P, a, b, k); return P; },
@@ -257,30 +305,103 @@ export function tex(url) {
   return TEX.get(url);
 }
 
-// 尖顶六边形地块（顶面贴设计师插画），r = 外接圆半径
-export function hexTile(terrain, r = 1, h = 0.12) {
-  const g = new THREE.Group();
+// 尖顶六边形地块（顶面贴设计师插画），r = 外接圆半径。
+// 底座是带倒角的木板，顶面外圈一道奶油色描边（同棋盘地块的边）；大地块（r ≥ 1）沿边缘按地形点缀立体小景
+function hexShape(r) {
   const shape = new THREE.Shape();
   for (let i = 0; i < 6; i++) {
     const a = Math.PI / 2 + (i / 6) * Math.PI * 2;
-    const x = Math.cos(a) * r;
-    const y = Math.sin(a) * r;
-    if (i === 0) shape.moveTo(x, y); else shape.lineTo(x, y);
+    if (i === 0) shape.moveTo(Math.cos(a) * r, Math.sin(a) * r); else shape.lineTo(Math.cos(a) * r, Math.sin(a) * r);
   }
   shape.closePath();
-  const top = new THREE.ShapeGeometry(shape);
+  return shape;
+}
+export function hexTile(terrain, r = 1, h = 0.12) {
+  const g = new THREE.Group();
+  const top = new THREE.ShapeGeometry(hexShape(r));
   const uv = top.attributes.uv;
   const pos = top.attributes.position;
   const W = Math.sqrt(3) * r;
   for (let i = 0; i < pos.count; i++) uv.setXY(i, pos.getX(i) / W + 0.5, pos.getY(i) / (2 * r) + 0.5);
-  const topMesh = new THREE.Mesh(top, new THREE.MeshStandardMaterial({ map: tex(`/assets/opt/tile-${terrain || 'desert'}.webp`), roughness: 0.85, transparent: true, alphaTest: 0.2 }));
+  const topMesh = new THREE.Mesh(top, new THREE.MeshStandardMaterial({ map: tex(`/assets/opt/tile-${terrain || 'desert'}.webp`), roughness: 0.85, alphaTest: 0.2 })); // 只靠 alphaTest 抠边，不设 transparent，才能接收投影
   topMesh.rotation.x = -Math.PI / 2;
   topMesh.position.y = h + 0.001;
   g.add(topMesh);
-  const side = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.985, r, h, 6, 1, true), mat('#6b4a2c', { rough: 0.8 }));
-  side.position.y = h / 2;
-  g.add(side);
+  // 倒角木板底座：顶面略缩进，倒角圆边托住插画
+  const bev = Math.min(0.04, r * 0.03);
+  const plinth = new THREE.Mesh(
+    new THREE.ExtrudeGeometry(hexShape(r - bev), { depth: Math.max(0.01, h - bev), bevelEnabled: true, bevelThickness: bev, bevelSize: bev, bevelSegments: 3, curveSegments: 1 }),
+    mat('#7a5232', { rough: 0.75 }));
+  plinth.rotation.x = -Math.PI / 2;
+  plinth.position.y = 0;
+  g.add(plinth);
+  // 奶油色描边
+  const ring = hexShape(r * 0.995);
+  ring.holes.push(hexShape(r * (1 - Math.min(0.05, 0.035 / r + 0.012))));
+  const rim = new THREE.Mesh(new THREE.ShapeGeometry(ring), mat('#ead6a6', { rough: 0.6 }));
+  rim.rotation.x = -Math.PI / 2;
+  rim.position.y = h + 0.003;
+  g.add(rim);
+  if (r >= 1) g.add(tileDressing(terrain, r, h));
   g.userData.top = h;
+  return g;
+}
+
+// 地块边缘小景：只放在外圈（0.7r~0.9r），不挡中间演戏；位置用固定种子，每次一样
+function tileDressing(terrain, r, h) {
+  const g = new THREE.Group();
+  let seed = 7;
+  const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+  const n = Math.round(14 + r * 4);
+  const make = {
+    forest: (s) => { // 小松树：三层圆锥 + 树干
+      const t = new THREE.Group();
+      mesh(new THREE.CylinderGeometry(0.018, 0.024, 0.07, 8), mat('#6b4528'), [0, 0.035, 0], t);
+      [[0.11, 0.12, 0.1], [0.085, 0.1, 0.17], [0.055, 0.08, 0.235]].forEach(([rr, hh, y], i) =>
+        mesh(new THREE.ConeGeometry(rr, hh, 9), mat(['#3d5e2e', '#4a6e36', '#567c3e'][i], { rough: 0.9 }), [0, y, 0], t));
+      t.scale.setScalar(s * 0.72);
+      return t;
+    },
+    fields: (s) => { const t = wheatTuft(5); t.scale.setScalar(s * 0.9); return t; },
+    pasture: (s) => { // 草丛 + 偶尔一朵小花
+      const t = new THREE.Group();
+      for (let i = 0; i < 5; i++) {
+        const c = mesh(new THREE.ConeGeometry(0.014, 0.07 + rnd() * 0.04, 5), mat(i % 2 ? '#7fb24a' : '#6a9e3c'), [(rnd() - 0.5) * 0.06, 0.04, (rnd() - 0.5) * 0.06], t);
+        c.rotation.set((rnd() - 0.5) * 0.5, 0, (rnd() - 0.5) * 0.5);
+      }
+      if (rnd() < 0.5) mesh(new THREE.SphereGeometry(0.016, 8, 6), mat(rnd() < 0.5 ? '#ffe680' : '#ffffff'), [0.02, 0.085, 0], t);
+      t.scale.setScalar(s * 1.4);
+      return t;
+    },
+    rock: (s, col) => {
+      const t = mesh(new THREE.DodecahedronGeometry(0.05, 0), mat(col, { rough: 0.9 }));
+      t.scale.set(s * (1 + rnd() * 0.5), s * (0.6 + rnd() * 0.4), s * (1 + rnd() * 0.4));
+      t.position.y = 0.02 * s;
+      t.rotation.set(rnd() * 3, rnd() * 3, rnd() * 3);
+      return t;
+    },
+  };
+  const pick = (s) => {
+    switch (terrain) {
+      case 'forest': return make.forest(s);
+      case 'fields': return make.fields(s);
+      case 'pasture': return make.pasture(s);
+      case 'hills': return rnd() < 0.6 ? make.rock(s * 1.1, '#b5643c') : make.pasture(s * 0.8);
+      case 'mountains': return make.rock(s * 1.4, rnd() < 0.5 ? '#8a8f96' : '#6e737a');
+      default: return make.rock(s, '#d8b27a'); // 沙漠：砂岩
+    }
+  };
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * Math.PI * 2 + rnd() * 0.3;
+    const rr = r * (0.72 + rnd() * 0.16) * (Math.sqrt(3) / 2) / Math.cos(((a % (Math.PI / 3)) + Math.PI / 2) % (Math.PI / 3) - Math.PI / 6); // 尖顶六边形：边法线在 0°/60°…，按角度求到边的距离
+    if (Math.sin(a) > 0.2) { rnd(); continue; } // 镜头在 +Z：前半圈不放，免得挡住演员
+    const o = pick(0.8 + rnd() * 0.5);
+    o.position.x += Math.cos(a) * rr;
+    o.position.z += Math.sin(a) * rr;
+    o.position.y += h;
+    o.rotation.y += rnd() * Math.PI * 2;
+    g.add(o);
+  }
   return g;
 }
 
@@ -371,14 +492,14 @@ export function warehouse(roof = '#b33') {
   };
   const wood = mat('#a9794a', { rough: 0.8 });
   const woodD = mat('#7a5232', { rough: 0.85 });
-  add(new THREE.BoxGeometry(0.62, 0.36, 0.04), wood, [0, 0.18, 0.25]);
-  add(new THREE.BoxGeometry(0.62, 0.36, 0.04), wood, [0, 0.18, -0.25]);
-  add(new THREE.BoxGeometry(0.04, 0.36, 0.48), woodD, [0.3, 0.18, 0]);
-  add(new THREE.BoxGeometry(0.04, 0.36, 0.48), woodD, [-0.3, 0.18, 0]);
-  add(new THREE.BoxGeometry(0.16, 0.24, 0.01), mat('#3b2414'), [0, 0.12, 0.272]); // 门
+  add(box(0.62, 0.36, 0.04), wood, [0, 0.18, 0.25]);
+  add(box(0.62, 0.36, 0.04), wood, [0, 0.18, -0.25]);
+  add(box(0.04, 0.36, 0.48), woodD, [0.3, 0.18, 0]);
+  add(box(0.04, 0.36, 0.48), woodD, [-0.3, 0.18, 0]);
+  add(box(0.16, 0.24, 0.01), mat('#3b2414'), [0, 0.12, 0.272]); // 门
   const R = mat(roof, { rough: 0.6, side: 2 });
-  add(new THREE.BoxGeometry(0.72, 0.03, 0.36), R, [0, 0.45, 0.13], [0.62, 0, 0]);
-  add(new THREE.BoxGeometry(0.72, 0.03, 0.36), R, [0, 0.45, -0.13], [-0.62, 0, 0]);
+  add(box(0.72, 0.03, 0.36), R, [0, 0.45, 0.13], [0.62, 0, 0]);
+  add(box(0.72, 0.03, 0.36), R, [0, 0.45, -0.13], [-0.62, 0, 0]);
   const gable = new THREE.Shape();
   gable.moveTo(-0.27, 0); gable.lineTo(0.27, 0); gable.lineTo(0, 0.2); gable.closePath();
   for (const s of [1, -1]) {
@@ -386,7 +507,7 @@ export function warehouse(roof = '#b33') {
     gg.scale.set(1, 1, 1);
   }
   for (const [x, z, s] of [[0.42, 0.18, 0.15], [0.43, -0.02, 0.13], [0.42, 0.08, 0.12]]) {
-    add(new THREE.BoxGeometry(s, s, s), mat('#c08a52', { rough: 0.8 }), [x, s / 2 + (z === 0.08 ? 0.14 : 0), z], [0, z * 3, 0]);
+    add(box(s, s, s), mat('#c08a52', { rough: 0.8 }), [x, s / 2 + (z === 0.08 ? 0.14 : 0), z], [0, z * 3, 0]);
   }
   g.userData.parts = parts;
   return g;
@@ -448,7 +569,7 @@ export function bell() {
 // 请柬：白信封 + 封蜡
 export function envelope(seal = '#c0392b') {
   const g = new THREE.Group();
-  mesh(new THREE.BoxGeometry(0.22, 0.15, 0.012), mat('#fbf4e4', { rough: 0.6 }), [0, 0, 0], g);
+  mesh(box(0.22, 0.15, 0.012), mat('#fbf4e4', { rough: 0.6 }), [0, 0, 0], g);
   const flap = new THREE.Shape();
   flap.moveTo(-0.11, 0.075); flap.lineTo(0.11, 0.075); flap.lineTo(0, -0.01); flap.closePath();
   mesh(new THREE.ShapeGeometry(flap), mat('#efe3c8', { side: 2 }), [0, 0, 0.0065], g);
@@ -459,11 +580,11 @@ export function envelope(seal = '#c0392b') {
 // 礼盒：方盒 + 十字丝带 + 蝴蝶结
 export function giftBox(color = '#c0392b', ribbon = '#ffd36b', s = 0.16) {
   const g = new THREE.Group();
-  mesh(new THREE.BoxGeometry(s, s * 0.85, s), mat(color, { rough: 0.5 }), [0, s * 0.425, 0], g);
-  mesh(new THREE.BoxGeometry(s * 1.06, s * 0.16, s * 1.06), mat(color, { rough: 0.45 }), [0, s * 0.85, 0], g);
+  mesh(box(s, s * 0.85, s), mat(color, { rough: 0.5 }), [0, s * 0.425, 0], g);
+  mesh(box(s * 1.06, s * 0.16, s * 1.06), mat(color, { rough: 0.45 }), [0, s * 0.85, 0], g);
   const R = mat(ribbon, { metal: 0.5, rough: 0.35 });
-  mesh(new THREE.BoxGeometry(s * 0.2, s * 0.95, s * 1.08), R, [0, s * 0.46, 0], g);
-  mesh(new THREE.BoxGeometry(s * 1.08, s * 0.95, s * 0.2), R, [0, s * 0.46, 0], g);
+  mesh(box(s * 0.2, s * 0.95, s * 1.08), R, [0, s * 0.46, 0], g);
+  mesh(box(s * 1.08, s * 0.95, s * 0.2), R, [0, s * 0.46, 0], g);
   for (const k of [1, -1]) mesh(new THREE.TorusGeometry(s * 0.16, s * 0.05, 6, 14), R, [k * s * 0.15, s * 1.0, 0], g).rotation.set(0, Math.PI / 2, k * 0.5);
   return g;
 }
@@ -490,19 +611,43 @@ export function magnifier() {
 
 // 小房子（村庄造型，玩家色）
 export function house(color, s = 1) {
+  // 桌游村庄棋子：五边形房子轮廓挤出（带小倒角）+ 门窗 + 烟囱
   const g = new THREE.Group();
-  mesh(new THREE.BoxGeometry(0.18 * s, 0.14 * s, 0.16 * s), mat(color, { rough: 0.6 }), [0, 0.07 * s, 0], g);
-  const roof = mesh(new THREE.CylinderGeometry(0.0, 0.14 * s, 0.1 * s, 4, 1), mat(darker(color, 0.7), { rough: 0.6 }), [0, 0.19 * s, 0], g);
-  roof.rotation.y = Math.PI / 4;
-  roof.scale.set(1.0, 1, 0.85);
+  mesh(pieceBody(0.18 * s, 0.13 * s, 0.23 * s, 0.16 * s), mat(color, { rough: 0.55 }), [0, 0, 0], g);
+  pieceRoof(g, color, 0.18 * s, 0.13 * s, 0.23 * s, 0.16 * s);
+  mesh(box(0.05 * s, 0.075 * s, 0.012 * s), mat(darker(color, 0.45)), [0, 0.038 * s, 0.083 * s], g);
+  for (const x of [-0.055, 0.055]) mesh(box(0.032 * s, 0.032 * s, 0.01 * s), mat('#ffe7a8', { emissive: '#ffcf6a', ei: 0.35 }), [x * s, 0.085 * s, 0.083 * s], g);
+  mesh(box(0.03 * s, 0.07 * s, 0.03 * s), mat(darker(color, 0.6)), [0.05 * s, 0.215 * s, -0.03 * s], g);
   return g;
+}
+
+// 五边形棋子的两片屋顶板（略出檐、颜色稍深），挂在 g 上，x 为棋子中心
+function pieceRoof(g, color, w, wall, peak, d, x = 0) {
+  const slope = Math.hypot(w / 2, peak - wall);
+  const ang = Math.atan2(peak - wall, w / 2);
+  const t = Math.min(w, d) * 0.07;
+  for (const sd of [1, -1]) {
+    const r = mesh(box(slope + t * 1.6, t, d + t * 2), mat(darker(color, 0.72), { rough: 0.5 }),
+      [x + sd * (w / 4 + Math.sin(ang) * t * 0.5), (wall + peak) / 2 + Math.cos(ang) * t * 0.5, 0], g);
+    r.rotation.z = sd * -ang;
+  }
+}
+
+// 五边形棋子身体：宽 w、墙高 wall、屋脊高 peak、厚 d，底面在 y=0、居中
+function pieceBody(w, wall, peak, d) {
+  const sh = new THREE.Shape();
+  sh.moveTo(-w / 2, 0); sh.lineTo(w / 2, 0); sh.lineTo(w / 2, wall); sh.lineTo(0, peak); sh.lineTo(-w / 2, wall); sh.closePath();
+  const b = Math.min(w, d) * 0.06;
+  const geo = new THREE.ExtrudeGeometry(sh, { depth: d - 2 * b, bevelEnabled: true, bevelThickness: b, bevelSize: b, bevelSegments: 2 });
+  geo.translate(0, 0, -(d - 2 * b) / 2);
+  return geo;
 }
 
 // 桌子
 export function table(w = 0.9, d = 0.5, h = 0.32, color = '#8a5a34') {
   const g = new THREE.Group();
-  mesh(new THREE.BoxGeometry(w, 0.04, d), mat(color, { rough: 0.7 }), [0, h, 0], g);
-  for (const sx of [1, -1]) for (const sz of [1, -1]) mesh(new THREE.BoxGeometry(0.04, h, 0.04), mat(darker(color, 0.75)), [sx * (w / 2 - 0.05), h / 2, sz * (d / 2 - 0.05)], g);
+  mesh(box(w, 0.04, d), mat(color, { rough: 0.7 }), [0, h, 0], g);
+  for (const sx of [1, -1]) for (const sz of [1, -1]) mesh(box(0.04, h, 0.04), mat(darker(color, 0.75)), [sx * (w / 2 - 0.05), h / 2, sz * (d / 2 - 0.05)], g);
   g.userData.top = h + 0.02;
   return g;
 }
@@ -720,7 +865,7 @@ export function ship(sail = '#c33', s = 1) {
   const hull = new THREE.Mesh(new THREE.ExtrudeGeometry(hullShape, { depth: 0.26, bevelEnabled: true, bevelSize: 0.02, bevelThickness: 0.02, bevelSegments: 2 }), mat('#7a4e2c', { rough: 0.75 }));
   hull.position.z = -0.13;
   g.add(hull);
-  mesh(new THREE.BoxGeometry(0.84, 0.02, 0.26), mat('#b08455'), [0.02, 0.13, 0], g);
+  mesh(box(0.84, 0.02, 0.26), mat('#b08455'), [0.02, 0.13, 0], g);
   mesh(new THREE.CylinderGeometry(0.014, 0.018, 0.85, 8), mat('#5a3b22'), [0.02, 0.55, 0], g);
   const sailM = new THREE.Mesh(new THREE.PlaneGeometry(0.5, 0.5, 8, 4), mat(sail, { side: 2, rough: 0.8 }));
   sailM.position.set(0.02, 0.6, 0.02);
@@ -737,21 +882,21 @@ export function ship(sail = '#c33', s = 1) {
 
 export function crate(color = '#c08a52', s = 0.14) {
   const g = new THREE.Group();
-  mesh(new THREE.BoxGeometry(s, s, s), mat(color, { rough: 0.8 }), [0, s / 2, 0], g);
-  for (const z of [1, -1]) mesh(new THREE.BoxGeometry(s * 1.02, s * 0.14, 0.006), mat(darker(color, 0.6)), [0, s / 2, z * s * 0.505], g);
+  mesh(box(s, s, s), mat(color, { rough: 0.8 }), [0, s / 2, 0], g);
+  for (const z of [1, -1]) mesh(box(s * 1.02, s * 0.14, 0.006), mat(darker(color, 0.6)), [0, s / 2, z * s * 0.505], g);
   return g;
 }
 
 // 货车：车厢 + 两个轮子（wheels 可转）
 export function cart(color = '#a9794a') {
   const g = new THREE.Group();
-  mesh(new THREE.BoxGeometry(0.42, 0.14, 0.26), mat(color, { rough: 0.8 }), [0, 0.16, 0], g);
-  mesh(new THREE.BoxGeometry(0.3, 0.02, 0.02), mat('#5a3b22'), [-0.33, 0.16, 0.08], g);
-  mesh(new THREE.BoxGeometry(0.3, 0.02, 0.02), mat('#5a3b22'), [-0.33, 0.16, -0.08], g);
+  mesh(box(0.42, 0.14, 0.26), mat(color, { rough: 0.8 }), [0, 0.16, 0], g);
+  mesh(box(0.3, 0.02, 0.02), mat('#5a3b22'), [-0.33, 0.16, 0.08], g);
+  mesh(box(0.3, 0.02, 0.02), mat('#5a3b22'), [-0.33, 0.16, -0.08], g);
   const wheels = [];
   for (const z of [0.15, -0.15]) {
     const w = mesh(new THREE.TorusGeometry(0.08, 0.016, 8, 18), mat('#4a2e1c'), [0.02, 0.09, z], g);
-    for (let i = 0; i < 3; i++) mesh(new THREE.BoxGeometry(0.15, 0.012, 0.01), mat('#4a2e1c'), [0, 0, 0], w).rotation.z = (i / 3) * Math.PI;
+    for (let i = 0; i < 3; i++) mesh(box(0.15, 0.012, 0.01), mat('#4a2e1c'), [0, 0, 0], w).rotation.z = (i / 3) * Math.PI;
     wheels.push(w);
   }
   g.userData.wheels = wheels;
@@ -763,11 +908,11 @@ export function stall(color = '#c33') {
   const g = new THREE.Group();
   const wood = mat('#8a5a34');
   for (const [x, z] of [[-0.25, -0.15], [0.25, -0.15], [-0.25, 0.15], [0.25, 0.15]]) mesh(new THREE.CylinderGeometry(0.014, 0.014, 0.5, 8), wood, [x, 0.25, z], g);
-  mesh(new THREE.BoxGeometry(0.56, 0.04, 0.34), mat('#a9794a'), [0, 0.22, 0], g);
+  mesh(box(0.56, 0.04, 0.34), mat('#a9794a'), [0, 0.22, 0], g);
   const aw = new THREE.Group();
   aw.position.y = 0.5;
   g.add(aw);
-  for (let i = 0; i < 5; i++) mesh(new THREE.BoxGeometry(0.12, 0.02, 0.42), mat(i % 2 ? '#f6efe0' : color, { rough: 0.7 }), [-0.24 + i * 0.12, 0.03 - Math.abs(i - 2) * 0.012, 0], aw).rotation.x = 0.25;
+  for (let i = 0; i < 5; i++) mesh(box(0.12, 0.02, 0.42), mat(i % 2 ? '#f6efe0' : color, { rough: 0.7 }), [-0.24 + i * 0.12, 0.03 - Math.abs(i - 2) * 0.012, 0], aw).rotation.x = 0.25;
   g.userData.awning = aw;
   return g;
 }
@@ -779,7 +924,7 @@ export function scroll(w = 0.5, seal = '#c0392b') {
   g.add(paper);
   const lines = [];
   for (let i = 0; i < 5; i++) {
-    const l = mesh(new THREE.BoxGeometry(w * (0.6 + (i % 2) * 0.15), 0.012, 0.002), mat('#7a5a3a'), [0, 0.1 - i * 0.05, 0.002], g);
+    const l = mesh(box(w * (0.6 + (i % 2) * 0.15), 0.012, 0.002), mat('#7a5a3a'), [0, 0.1 - i * 0.05, 0.002], g);
     lines.push(l);
   }
   const rods = [-1, 1].map((s) => mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.4, 10), mat('#8a5a34'), [s * w / 2, 0, 0], g));
@@ -821,7 +966,7 @@ export function die(top = 6, s = 0.22, red = false) {
   const front = [1, 2, 3, 4, 5, 6].find((v) => v !== top && v !== 7 - top);
   const right = [1, 2, 3, 4, 5, 6].find((v) => ![top, 7 - top, front, 7 - front].includes(v));
   const faces = [right, 7 - right, top, 7 - top, front, 7 - front]; // +x -x +y -y +z -z
-  const geo = new THREE.BoxGeometry(s, s, s, 2, 2, 2);
+  const geo = box(s, s, s, 2, 2, 2);
   const mats = faces.map((v) => new THREE.MeshStandardMaterial({ map: pipTexture(v, red), roughness: 0.4 }));
   return new THREE.Mesh(geo, mats);
 }
@@ -843,13 +988,13 @@ export function cauldron(liquid = '#5cff8a') {
 export function craneRig() {
   const g = new THREE.Group();
   const wood = mat('#9a6a3e', { rough: 0.8 });
-  mesh(new THREE.BoxGeometry(0.3, 0.06, 0.3), mat('#6b4a2c'), [0, 0.03, 0], g);
-  mesh(new THREE.BoxGeometry(0.06, 1.2, 0.06), wood, [0, 0.6, 0], g);
+  mesh(box(0.3, 0.06, 0.3), mat('#6b4a2c'), [0, 0.03, 0], g);
+  mesh(box(0.06, 1.2, 0.06), wood, [0, 0.6, 0], g);
   const boom = new THREE.Group();
   boom.position.y = 1.15;
   g.add(boom);
-  mesh(new THREE.BoxGeometry(1.0, 0.05, 0.05), wood, [0.4, 0, 0], boom);
-  mesh(new THREE.BoxGeometry(0.05, 0.05, 0.05), mat('#5a3b22'), [-0.12, 0, 0], boom);
+  mesh(box(1.0, 0.05, 0.05), wood, [0.4, 0, 0], boom);
+  mesh(box(0.05, 0.05, 0.05), mat('#5a3b22'), [-0.12, 0, 0], boom);
   const rope = mesh(new THREE.CylinderGeometry(0.006, 0.006, 1, 6), mat('#d9c39a'), [0.85, -0.5, 0], boom);
   const hook = new THREE.Group();
   hook.position.set(0.85, -1, 0);
@@ -862,7 +1007,7 @@ export function craneRig() {
 }
 
 export function stoneBlock(s = 0.09) {
-  return new THREE.Mesh(new THREE.BoxGeometry(s * 1.6, s, s), mat(['#a8a29a', '#9a948c', '#b5afa6'][Math.floor(Math.random() * 3)], { rough: 0.9 }));
+  return new THREE.Mesh(box(s * 1.6, s, s), mat(['#a8a29a', '#9a948c', '#b5afa6'][Math.floor(Math.random() * 3)], { rough: 0.9 }));
 }
 
 // 水车：轮辐 + 叶片（wheel 绕 x 轴转）
@@ -874,12 +1019,12 @@ export function waterWheel(r = 0.4) {
   for (const z of [0.07, -0.07]) mesh(new THREE.TorusGeometry(r, 0.02, 6, 28), wood, [0, 0, z], wheel);
   for (let i = 0; i < 8; i++) {
     const a = (i / 8) * Math.PI * 2;
-    const sp = mesh(new THREE.BoxGeometry(r * 2, 0.02, 0.02), wood, [0, 0, 0], wheel);
+    const sp = mesh(box(r * 2, 0.02, 0.02), wood, [0, 0, 0], wheel);
     sp.rotation.z = a;
-    const paddle = mesh(new THREE.BoxGeometry(0.03, 0.12, 0.18), mat('#a9794a'), [Math.cos(a) * r, Math.sin(a) * r, 0], wheel);
+    const paddle = mesh(box(0.03, 0.12, 0.18), mat('#a9794a'), [Math.cos(a) * r, Math.sin(a) * r, 0], wheel);
     paddle.rotation.z = a;
   }
-  for (const z of [0.12, -0.12]) mesh(new THREE.BoxGeometry(0.05, r + 0.1, 0.05), wood, [0, -(r + 0.1) / 2, z], g);
+  for (const z of [0.12, -0.12]) mesh(box(0.05, r + 0.1, 0.05), wood, [0, -(r + 0.1) / 2, z], g);
   g.userData.wheel = wheel;
   return g;
 }
@@ -925,9 +1070,9 @@ export function potion(color = '#6cf0ff') {
 export function anvil() {
   const g = new THREE.Group();
   const iron = mat('#3c3d42', { metal: 0.8, rough: 0.4 });
-  mesh(new THREE.BoxGeometry(0.2, 0.16, 0.16), mat('#6b4a2c'), [0, 0.08, 0], g);
-  mesh(new THREE.BoxGeometry(0.1, 0.06, 0.1), iron, [0, 0.19, 0], g);
-  mesh(new THREE.BoxGeometry(0.3, 0.06, 0.12), iron, [0, 0.25, 0], g);
+  mesh(box(0.2, 0.16, 0.16), mat('#6b4a2c'), [0, 0.08, 0], g);
+  mesh(box(0.1, 0.06, 0.1), iron, [0, 0.19, 0], g);
+  mesh(box(0.3, 0.06, 0.12), iron, [0, 0.25, 0], g);
   mesh(new THREE.ConeGeometry(0.06, 0.14, 8), iron, [0.21, 0.25, 0], g).rotation.z = -Math.PI / 2;
   g.userData.top = 0.28;
   return g;
@@ -936,7 +1081,7 @@ export function anvil() {
 export function hammer() {
   const g = new THREE.Group();
   mesh(new THREE.CylinderGeometry(0.01, 0.012, 0.22, 8), mat('#6e4a2c'), [0, 0.08, 0], g);
-  mesh(new THREE.BoxGeometry(0.1, 0.05, 0.05), mat('#5c5f66', { metal: 0.85, rough: 0.35 }), [0, 0.2, 0], g);
+  mesh(box(0.1, 0.05, 0.05), mat('#5c5f66', { metal: 0.85, rough: 0.35 }), [0, 0.2, 0], g);
   return g;
 }
 
@@ -973,32 +1118,34 @@ export function waveFlag(flag, t, amp = 0.03) {
 export function printingPress() {
   const g = new THREE.Group();
   const wood = mat('#7a4e2c', { rough: 0.8 });
-  for (const x of [-0.25, 0.25]) mesh(new THREE.BoxGeometry(0.06, 0.9, 0.06), wood, [x, 0.45, 0], g);
-  mesh(new THREE.BoxGeometry(0.62, 0.08, 0.1), wood, [0, 0.88, 0], g);
-  mesh(new THREE.BoxGeometry(0.5, 0.06, 0.4), wood, [0, 0.3, 0.05], g);
+  for (const x of [-0.25, 0.25]) mesh(box(0.06, 0.9, 0.06), wood, [x, 0.45, 0], g);
+  mesh(box(0.62, 0.08, 0.1), wood, [0, 0.88, 0], g);
+  mesh(box(0.5, 0.06, 0.4), wood, [0, 0.3, 0.05], g);
   const screw = mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.4, 8), mat('#8a8f96', { metal: 0.8 }), [0, 0.65, 0], g);
-  const platen = mesh(new THREE.BoxGeometry(0.36, 0.05, 0.28), mat('#5c5f66', { metal: 0.6, rough: 0.4 }), [0, 0.45, 0.05], g);
-  const bar = mesh(new THREE.BoxGeometry(0.4, 0.02, 0.02), mat('#5a3b22'), [0, 0.75, 0], g);
+  const platen = mesh(box(0.36, 0.05, 0.28), mat('#5c5f66', { metal: 0.6, rough: 0.4 }), [0, 0.45, 0.05], g);
+  const bar = mesh(box(0.4, 0.02, 0.02), mat('#5a3b22'), [0, 0.75, 0], g);
   g.userData = { screw, platen, bar, bed: 0.33 };
   return g;
 }
 
 // 城市：主楼 + 塔楼（玩家色），比村庄高大
 export function city(color, s = 1) {
+  // 桌游城市棋子：低矮的主楼 + 一座高塔（同样五边形轮廓），塔上开窗
   const g = new THREE.Group();
-  mesh(new THREE.BoxGeometry(0.26 * s, 0.16 * s, 0.2 * s), mat(color, { rough: 0.6 }), [-0.04 * s, 0.08 * s, 0], g);
-  const roof = mesh(new THREE.CylinderGeometry(0, 0.19 * s, 0.1 * s, 4), mat(darker(color, 0.7)), [-0.04 * s, 0.21 * s, 0], g);
-  roof.rotation.y = Math.PI / 4;
-  roof.scale.set(1, 1, 0.8);
-  mesh(new THREE.BoxGeometry(0.12 * s, 0.3 * s, 0.12 * s), mat(color, { rough: 0.6 }), [0.13 * s, 0.15 * s, 0], g);
-  const tr = mesh(new THREE.CylinderGeometry(0, 0.1 * s, 0.12 * s, 4), mat(darker(color, 0.7)), [0.13 * s, 0.36 * s, 0], g);
-  tr.rotation.y = Math.PI / 4;
+  const M = mat(color, { rough: 0.55 });
+  mesh(pieceBody(0.24 * s, 0.13 * s, 0.22 * s, 0.2 * s), M, [-0.05 * s, 0, 0], g);
+  mesh(pieceBody(0.13 * s, 0.3 * s, 0.38 * s, 0.14 * s), M, [0.12 * s, 0, 0], g);
+  pieceRoof(g, color, 0.24 * s, 0.13 * s, 0.22 * s, 0.2 * s, -0.05 * s);
+  pieceRoof(g, color, 0.13 * s, 0.3 * s, 0.38 * s, 0.14 * s, 0.12 * s);
+  mesh(box(0.05 * s, 0.075 * s, 0.012 * s), mat(darker(color, 0.45)), [-0.06 * s, 0.038 * s, 0.103 * s], g);
+  const win = mat('#ffe7a8', { emissive: '#ffcf6a', ei: 0.35 });
+  for (const y of [0.17, 0.25]) mesh(box(0.034 * s, 0.04 * s, 0.01 * s), win, [0.12 * s, y * s, 0.073 * s], g);
   return g;
 }
 
 export function barn() {
   const g = new THREE.Group();
-  mesh(new THREE.BoxGeometry(0.7, 0.45, 0.5), mat('#b5452f', { rough: 0.7 }), [0, 0.225, 0], g);
+  mesh(box(0.7, 0.45, 0.5), mat('#b5452f', { rough: 0.7 }), [0, 0.225, 0], g);
   const gable = new THREE.Shape(); // 三角屋顶：山墙截面沿 z 拉伸
   gable.moveTo(-0.4, 0); gable.lineTo(0.4, 0); gable.lineTo(0, 0.3); gable.closePath();
   const roofGeo = new THREE.ExtrudeGeometry(gable, { depth: 0.56, bevelEnabled: false });
@@ -1008,7 +1155,7 @@ export function barn() {
     const d = new THREE.Group();
     d.position.set(s * 0.14, 0, 0.255);
     g.add(d);
-    mesh(new THREE.BoxGeometry(0.14, 0.3, 0.02), mat('#f1e6d0'), [-s * 0.07, 0.15, 0], d);
+    mesh(box(0.14, 0.3, 0.02), mat('#f1e6d0'), [-s * 0.07, 0.15, 0], d);
     return d;
   });
   g.userData.doors = doors;
@@ -1017,14 +1164,14 @@ export function barn() {
 
 // 道路段（玩家色长条）
 export function roadPiece(color, len = 0.42) {
-  return new THREE.Mesh(new THREE.BoxGeometry(len, 0.05, 0.08), mat(color, { rough: 0.6 }));
+  return new THREE.Mesh(box(len, 0.05, 0.08), mat(color, { rough: 0.6 }));
 }
 
 // 宝箱（垄断收缴用）
 export function chest() {
   const g = new THREE.Group();
-  mesh(new THREE.BoxGeometry(0.34, 0.18, 0.22), mat('#7a4e2c'), [0, 0.09, 0], g);
-  for (const x of [-0.12, 0.12]) mesh(new THREE.BoxGeometry(0.03, 0.19, 0.225), mat('#c9973f', { metal: 0.8, rough: 0.3 }), [x, 0.095, 0], g);
+  mesh(box(0.34, 0.18, 0.22), mat('#7a4e2c'), [0, 0.09, 0], g);
+  for (const x of [-0.12, 0.12]) mesh(box(0.03, 0.19, 0.225), mat('#c9973f', { metal: 0.8, rough: 0.3 }), [x, 0.095, 0], g);
   const lid = new THREE.Group();
   lid.position.set(0, 0.18, -0.11);
   g.add(lid);

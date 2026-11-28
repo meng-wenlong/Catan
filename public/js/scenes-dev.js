@@ -45,7 +45,7 @@ SCENES.knight = {
       mixStance(kn.P, 'raise', 'victory', easeOut(seg(ts, 1.4, 1.8)));
     } else kn.place(-2.0, 0.2, 0, Math.PI / 2);
     kn.apply();
-    if (ts > 0.3) ctx.once('go', () => { sfx.swordSwing(); ctx.say(`⚔️ ${ctx.tag(ctx.ev.player)} 派出骑士！`); });
+    if (ts > 0.3) ctx.once('go', () => { sfx.swordSwing(); ctx.say(`${ctx.tag(ctx.ev.player)} 派出骑士！`); });
     // 强盗：起初抱臂，骑士逼近时吓得一跳，连蹦带滚溜出画面
     const flee = seg(ts, 1.2, 2.3);
     if (flee <= 0) {
@@ -63,7 +63,7 @@ SCENES.knight = {
       rm.setGlow(3);
       if (hop < 0.1) ctx.once(`h${Math.floor(k)}`, () => ctx.fx.puff(root.position.clone(), V3(0, 0.1, 0), 0.25, 0.4));
     }
-    if (ts > 1.9) ctx.once('next', () => ctx.say(st.army ? `⚔️ 已出动 ${st.army} 名骑士 · 请把强盗移到新地块` : '⚔️ 请把强盗移到新地块'));
+    if (ts > 1.9) ctx.once('next', () => ctx.say(st.army ? `已出动 ${st.army} 名骑士` : '强盗将被赶走'));
   },
 };
 
@@ -91,13 +91,13 @@ SCENES.yearOfPlenty = {
   frame(st, ts, dt, ctx) {
     const open = easeOut(seg(ts, 0.6, 1.0));
     st.b.userData.doors.forEach((d, i) => { d.rotation.y = (i ? -1 : 1) * -1.6 * open; });
-    if (ts > 0.6) ctx.once('open', () => { sfx.build('city'); ctx.say(`🌾 ${ctx.tag(ctx.ev.player)} 迎来丰收之年`); });
+    if (ts > 0.6) ctx.once('open', () => { sfx.build('city'); ctx.say(`${ctx.tag(ctx.ev.player)} 迎来丰收之年`); });
     if (ts > 1.0 && ts < 2.2 && Math.random() < dt * 35) {
       ctx.fx.debris(() => K.resCard([st.r1, st.r2][Math.floor(Math.random() * 2)], 0.09), V3(0, 0.35, 0.05), 1,
         { speed: 1.2, up: 1.4, gravity: 2.5, drag: 1.2, dur: 1.4, spread: 1, floor: 0.01 });
     }
     st.flights.update(ts);
     for (const it of st.flights.list) if (it.landed) { it.o.rotation.set(0, Math.sin(ts * 2) * 0.3, 0); it.o.position.y = 0.85 + 0.03 * Math.sin(ts * 3); }
-    if (ts > 2.0) ctx.once('done', () => ctx.say(`🌾 获得 ${ctx.resName(st.r1)} 和 ${ctx.resName(st.r2)}`));
+    if (ts > 2.0) ctx.once('done', () => ctx.say(`获得 ${ctx.resName(st.r1)} 和 ${ctx.resName(st.r2)}`));
   },
 };

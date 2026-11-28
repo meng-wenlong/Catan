@@ -44,7 +44,7 @@ SCENES.merchant = {
     const cx = m.root.position.x + 0.45;
     cart.position.set(cx, 0, m.root.position.z);
     for (const w of cart.userData.wheels) w.rotation.z = -cx * 6;
-    if (ts > 0.1) ctx.once('in', () => ctx.say(`🛒 ${ctx.tag(ctx.ev.player)} 的商人来到${hexPos(ctx.board, ctx.ev.hex)}`));
+    if (ts > 0.1) ctx.once('in', () => ctx.say(`${ctx.tag(ctx.ev.player)} 的商人来到${hexPos(ctx.board, ctx.ev.hex)}`));
     if (ts >= 1.3) {
       m.root.rotation.y = lerp(Math.PI / 2, -0.3, easeOut(seg(ts, 1.3, 1.6)));
       K.pose(m.P, 'carry', 'cheer', easeOut(seg(ts, 1.5, 1.7)));
@@ -69,7 +69,7 @@ SCENES.merchant = {
     if (ts >= 2.25) ctx.once('tag', () => {
       sfx.coin();
       ctx.fx.sparks(V3(0.55, 1.15, -0.3), 12, 1, '#ffe08a', 0.07, 0.7, 1.5);
-      ctx.say(`🛒 ${ctx.resName(st.res)}可 2:1 交易 · 商人 +1 分（可被他人夺走）`);
+      ctx.say(`${ctx.resName(st.res)} 2:1 · +1 分`);
     });
   },
 };
@@ -114,11 +114,11 @@ SCENES.merchantFleet = {
       K.waveFlag(s.userData.sail, ts + i, 0.04);
       if (i === 0 && Math.random() < dt * 30 && k > 0 && k < 1) ctx.fx.puff(V3(x - 0.45, 0.03, lane), V3(-0.3, 0.1, (Math.random() - 0.5) * 0.3), 0.18, 0.7, '#ffffff', 0.7);
     });
-    if (ts > 0.2) ctx.once('sail', () => { sfx.ship(); ctx.say(`⛵ ${ctx.tag(ctx.ev.player)} 的商船队出航`); });
+    if (ts > 0.2) ctx.once('sail', () => { sfx.ship(); ctx.say(`${ctx.tag(ctx.ev.player)} 的商船队出航`); });
     const lead = st.ships[0].s;
     st.tag.position.set(lead.position.x, 1.45, lead.position.z);
     st.tag.material.opacity = seg(ts, 1.1, 1.4);
-    if (ts > 1.15) ctx.once('tag', () => { sfx.coin(); ctx.say(`⛵ 本回合${ctx.resName(ctx.ev.res || 'cloth')}可按 2:1 与银行交易`); });
+    if (ts > 1.15) ctx.once('tag', () => { sfx.coin(); ctx.say(`本回合${ctx.resName(ctx.ev.res || 'cloth')} 2:1`); });
   },
 };
 
@@ -135,7 +135,7 @@ SCENES.commercialHarbor = {
     const dock = new THREE.Group();
     world.add(dock);
     const plank = K.mat('#8a5a34', { rough: 0.85 });
-    const deckM = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.06, 0.6), plank);
+    const deckM = new THREE.Mesh(K.box(2.6, 0.06, 0.6), plank);
     deckM.position.set(0, 0.12, -0.75);
     dock.add(deckM);
     for (let i = -6; i <= 6; i++) { const p = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.3, 8), K.mat('#5a3b22')); p.position.set(i * 0.2, 0, -0.47); dock.add(p); }
@@ -163,7 +163,7 @@ SCENES.commercialHarbor = {
     st.me.position.set(lerp(-2.6, 0, k), 0.02 + 0.02 * Math.sin(ts * 3), 0.05);
     st.me.rotation.set(0, 0, 0.05 * Math.sin(ts * 2.6));
     K.waveFlag(st.me.userData.sail, ts, 0.03);
-    if (ts > 0.85) ctx.once('dock', () => { sfx.kegLand(); ctx.say(`⚓ ${ctx.tag(ctx.ev.player)} 在商业港与 ${ctx.names(st.partners)} 依次交换`); });
+    if (ts > 0.85) ctx.once('dock', () => { sfx.kegLand(); ctx.say(`${ctx.tag(ctx.ev.player)} 在商业港与 ${ctx.names(st.partners)} 依次交换`); });
     for (const b of st.boats) {
       const kk = easeOut(seg(ts, b.t0, b.t0 + 0.5));
       b.s.position.set(b.x + lerp(2.5, 0, kk), 0.02 + 0.02 * Math.sin(ts * 3 + b.x), 0.85);
@@ -172,7 +172,7 @@ SCENES.commercialHarbor = {
       b.tag.position.set(b.s.position.x, 1.05, 0.85);
     }
     st.crates.update(ts);
-    if (ts > st.dur - 0.8) ctx.once('end', () => ctx.say('⚓ 你出 1 张资源，对方回 1 张商品（接下来逐个选择）'));
+    if (ts > st.dur - 0.8) ctx.once('end', () => ctx.say('资源换商品，逐一交换'));
   },
 };
 
@@ -221,7 +221,7 @@ SCENES.masterMerchant = {
       K.pose(tycoon.P, 'idle', 'point', easeOut(seg(ts, 1.15, 1.4)));
       tycoon.P.aLx = -0.9;
       tycoon.P.hx = -0.15; // 仰着下巴
-      ctx.once('demand', () => { sfx.coin(); ctx.say(`💰 ${ctx.tag(ctx.ev.player)} 的商业大亨找上了 ${ctx.tag(st.t)}`); });
+      ctx.once('demand', () => { sfx.coin(); ctx.say(`${ctx.tag(ctx.ev.player)} 的商业大亨找上了 ${ctx.tag(st.t)}`); });
     }
     tycoon.apply();
     victim.pose('idle');
@@ -232,7 +232,7 @@ SCENES.masterMerchant = {
     victim.apply();
     st.fan.visible = ts < 1.9 + st.n * 0.3;
     st.flights.update(ts);
-    if (ts > 2.3) ctx.once('take', () => ctx.say(`💰 从 ${ctx.tag(st.t)} 手中拿走 ${st.n} 张牌（接下来挑选）`));
+    if (ts > 2.3) ctx.once('take', () => ctx.say(`从 ${ctx.tag(st.t)} 手中拿 ${st.n} 张牌`));
   },
 };
 
@@ -294,14 +294,14 @@ export function monopolyScene(maxPer) {
       st.horn.rotation.x = 1.1 - herald.P.aRx; // 抵消手臂转角：号角口始终朝前上方
       herald.squash.scale.set(1 + 0.04 * Math.sin(ts * 20) * blow * (ts < 1.2 ? 1 : 0), 1, 1);
       herald.apply();
-      if (ts > 0.3) ctx.once('horn', () => { sfx.ship(); ctx.say(`📯 ${ctx.tag(ctx.ev.player)} 宣布垄断「${ctx.resName(st.res)}」！`); });
+      if (ts > 0.3) ctx.once('horn', () => { sfx.ship(); ctx.say(`${ctx.tag(ctx.ev.player)} 宣布垄断「${ctx.resName(st.res)}」！`); });
       box.userData.lid.rotation.x = -1.4 * easeOut(seg(ts, 0.9, 1.2)) * (1 - easeInOut(seg(ts, st.dur - 0.7, st.dur - 0.45)));
       st.flights.update(ts);
       st.tag.material.opacity = seg(ts, st.dur - 1.0, st.dur - 0.8);
       if (ts > st.dur - 1.0) ctx.once('sum', () => {
         sfx.coin();
         ctx.fx.sparks(V3(0.15, 0.4, 0.45), 14, 1.2, '#ffe08a', 0.07, 0.7, 2);
-        ctx.say(`📯 共收缴 ${st.total} 张${ctx.resName(st.res)}`);
+        ctx.say(`共收缴 ${st.total} 张${ctx.resName(st.res)}`);
       });
     },
   };

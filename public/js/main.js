@@ -9,6 +9,7 @@ import {
 import { initSfx, sfx } from './sfx.js';
 import { initSound, duckBgm } from './sound.js';
 import { spotlight, clearSpotlight } from './spotlight.js';
+import { ic, opt } from './icons.js';
 import { playOpening as runOpening, stopOpening } from './opening.js';
 import { startConfetti, stopConfetti } from './confetti.js';
 import { preloadStage3D, playSevenRobber, stopSevenRobber, playChaseCinematic } from './stage3d.js';
@@ -25,14 +26,14 @@ const $ = (id) => document.getElementById(id);
 const RES = ['wood', 'brick', 'sheep', 'wheat', 'ore'];
 const COM = ['cloth', 'coin', 'paper']; // 城市与骑士：商品
 const RES_META = {
-  wood: { icon: '🌲', name: '木材' },
-  brick: { icon: '🧱', name: '砖块' },
-  sheep: { icon: '🐑', name: '羊毛' },
-  wheat: { icon: '🌾', name: '小麦' },
-  ore: { icon: '🪨', name: '矿石' },
-  cloth: { icon: '🧶', name: '布匹' },
-  coin: { icon: '🪙', name: '铸币' },
-  paper: { icon: '📜', name: '纸张' },
+  wood: { name: '木材' },
+  brick: { name: '砖块' },
+  sheep: { name: '羊毛' },
+  wheat: { name: '小麦' },
+  ore: { name: '矿石' },
+  cloth: { name: '布匹' },
+  coin: { name: '铸币' },
+  paper: { name: '纸张' },
 };
 // 当前模式下的全部牌类型
 const cardList = () => (S && S.mode === 'ck' ? [...RES, ...COM] : RES);
@@ -62,11 +63,11 @@ const setDie = (el, n) => {
   el.innerHTML = `<img src="${red || `/assets/opt/die-${n}.webp`}" alt="${n}">`;
 };
 const DEV_META = {
-  knight: { icon: '⚔️', name: '骑士', desc: '移动强盗，并从相邻的一名玩家偷 1 张牌' },
-  vp: { icon: '🏆', name: '分数', desc: '胜利点数：+1 分，保留在手中计入总分' },
-  roadBuilding: { icon: '🛤️', name: '修路', desc: '免费建造 2 条道路' },
-  yearOfPlenty: { icon: '🌟', name: '丰收', desc: '从银行任取 2 张资源' },
-  monopoly: { icon: '💰', name: '垄断', desc: '指定一种资源，收取所有对手手中的该资源' },
+  knight: { name: '骑士', desc: '移动强盗，并从相邻的一名玩家偷 1 张牌' },
+  vp: { name: '分数', desc: '胜利点数：+1 分，保留在手中计入总分' },
+  roadBuilding: { name: '修路', desc: '免费建造 2 条道路' },
+  yearOfPlenty: { name: '丰收', desc: '从银行任取 2 张资源' },
+  monopoly: { name: '垄断', desc: '指定一种资源，收取所有对手手中的该资源' },
 };
 // 发展卡类型 → 插画文件名（完整卡浮层用）
 const DEV_ASSET = { knight: 'knight', vp: 'vp', roadBuilding: 'road', yearOfPlenty: 'plenty', monopoly: 'monopoly' };
@@ -107,10 +108,10 @@ const TRACK_META = {
 };
 // 事件骰骰面
 const EVENT_FACE = {
-  ship: { icon: '⛵', cls: 'ev-ship', name: '野蛮人船' },
-  trade: { icon: '🏛️', cls: 'ev-trade', name: '贸易城门' },
-  politics: { icon: '🏛️', cls: 'ev-politics', name: '政治城门' },
-  science: { icon: '🏛️', cls: 'ev-science', name: '科学城门' },
+  ship: { icon: opt('barbarian-ship', 'ev-ico'), cls: 'ev-ship', name: '野蛮人船' },
+  trade: { icon: ic('columns', 'ev-ico'), cls: 'ev-trade', name: '贸易城门' },
+  politics: { icon: ic('columns', 'ev-ico'), cls: 'ev-politics', name: '政治城门' },
+  science: { icon: ic('columns', 'ev-ico'), cls: 'ev-science', name: '科学城门' },
 };
 
 let S = null;          // 最新游戏状态
@@ -215,16 +216,16 @@ function buildDevPanel() {
   const opt = (pairs) => pairs.map(([v, t]) => `<option value="${v}">${t}</option>`).join('');
   const devCards = [['knight', '骑士'], ['roadBuilding', '修路'], ['yearOfPlenty', '丰收'], ['monopoly', '垄断'], ['vp', '分数']];
   const progCards = Object.entries(PROG_META).map(([k, v]) => [k, v.name]);
-  const events = [['', '随机事件骰'], ['ship', '⛵ 船'], ['trade', '贸易门'], ['politics', '政治门'], ['science', '科学门']];
+  const events = [['', '随机事件骰'], ['ship', '船'], ['trade', '贸易门'], ['politics', '政治门'], ['science', '科学门']];
   $('dev-panel').innerHTML = `
-    <div class="dev-head">🛠 调试面板 <button id="dev-toggle" title="收起/展开">–</button></div>
+    <div class="dev-head">调试面板 <button id="dev-toggle" title="收起/展开">–</button></div>
     <div class="dev-body">
-      <button class="dev-btn" data-act="fill">💰 填满我的资源</button>
+      <button class="dev-btn" data-act="fill">填满我的资源</button>
       <div class="dev-line"><select id="dev-c1">${opt(devCards)}</select><button class="dev-btn" data-act="grantDev">发展卡→我</button></div>
       <div class="dev-line"><select id="dev-c2">${opt(progCards)}</select><button class="dev-btn" data-act="grantProg">进步卡→我</button><button class="dev-btn" data-act="grantProgNpc" title="给上面「给」选中的电脑">→电脑</button></div>
-      <div class="dev-line">🎲 <input id="dev-d1" type="number" min="1" max="6" value="4"><input id="dev-d2" type="number" min="1" max="6" value="4"><select id="dev-ev">${opt(events)}</select><button class="dev-btn" data-act="dice">掷</button></div>
+      <div class="dev-line">骰 <input id="dev-d1" type="number" min="1" max="6" value="4"><input id="dev-d2" type="number" min="1" max="6" value="4"><select id="dev-ev">${opt(events)}</select><button class="dev-btn" data-act="dice">掷</button></div>
       <div class="dev-line">给 <select id="dev-npc"></select><select id="dev-card"></select><button class="dev-btn" data-act="give">发牌</button></div>
-      <div class="dev-line">🎬 <select id="dev-scene"></select><button class="dev-btn" data-act="scene">演示动画</button></div>
+      <div class="dev-line">演出 <select id="dev-scene"></select><button class="dev-btn" data-act="scene">演示动画</button></div>
       <div id="dev-hands"></div>
     </div>`;
   $('dev-toggle').onclick = () => $('dev-panel').classList.toggle('collapsed');
@@ -321,7 +322,7 @@ let destroyArmed = null;
 function resetDestroyBtn() {
   clearTimeout(destroyArmed);
   destroyArmed = null;
-  $('btn-destroy').textContent = '💥 销毁房间';
+  $('btn-destroy').textContent = '销毁房间';
 }
 $('btn-destroy').onclick = () => {
   if (destroyArmed) {
@@ -329,7 +330,7 @@ $('btn-destroy').onclick = () => {
     socket.emit('destroyRoom');
     return;
   }
-  $('btn-destroy').textContent = '⚠️ 再点一次确认销毁';
+  $('btn-destroy').textContent = '再点一次确认销毁';
   destroyArmed = setTimeout(resetDestroyBtn, 3000);
 };
 
@@ -396,7 +397,7 @@ function renderPicking(pk) {
   pk.players.forEach((p) => {
     const c = p.colorIdx === null ? null : pk.palette[p.colorIdx];
     const li = document.createElement('li');
-    li.innerHTML = `<span><span class="pick-dot" style="background:${c ? c.color : 'transparent'}"></span>${esc(p.name)}${p.isHost ? ' 👑' : ''}${p.connected ? '' : ' 🔴'}</span>
+    li.innerHTML = `<span><span class="pick-dot" style="background:${c ? c.color : 'transparent'}"></span>${esc(p.name)}${p.isHost ? ` ${ic('crown')}` : ''}${p.connected ? '' : ' <span class="conn off">离线</span>'}</span>
       <span>${c ? esc(c.name) : '<i>选择中…</i>'}</span>`;
     ul.appendChild(li);
   });
@@ -404,7 +405,7 @@ function renderPicking(pk) {
   // 起始玩家：房主可点，其他人只看
   const fbox = $('pick-first');
   fbox.innerHTML = '';
-  const opts = [{ index: -1, label: '🎲 随机' }, ...pk.players.map((p) => ({ index: p.index, label: p.name }))];
+  const opts = [{ index: -1, label: '随机' }, ...pk.players.map((p) => ({ index: p.index, label: p.name }))];
   for (const o of opts) {
     const b = document.createElement('button');
     b.className = 'btn small pick-first-btn' + (pk.first === o.index ? ' active' : '');
@@ -445,13 +446,13 @@ function renderPickingReadOnly(pk) {
   pk.players.forEach((p) => {
     const c = p.colorIdx === null ? null : pk.palette[p.colorIdx];
     const li = document.createElement('li');
-    li.innerHTML = `<span><span class="pick-dot" style="background:${c ? c.color : 'transparent'}"></span>${esc(p.name)}${p.isHost ? ' 👑' : ''}${p.connected ? '' : ' 🔴'}</span>
+    li.innerHTML = `<span><span class="pick-dot" style="background:${c ? c.color : 'transparent'}"></span>${esc(p.name)}${p.isHost ? ` ${ic('crown')}` : ''}${p.connected ? '' : ' <span class="conn off">离线</span>'}</span>
       <span>${c ? esc(c.name) : '<i>选择中…</i>'}</span>`;
     ul.appendChild(li);
   });
   const fbox = $('pick-first');
   fbox.innerHTML = '';
-  const opts = [{ index: -1, label: '🎲 随机' }, ...pk.players.map((p) => ({ index: p.index, label: p.name }))];
+  const opts = [{ index: -1, label: '随机' }, ...pk.players.map((p) => ({ index: p.index, label: p.name }))];
   for (const o of opts) {
     const b = document.createElement('button');
     b.className = 'btn small pick-first-btn' + (pk.first === o.index ? ' active' : '');
@@ -462,7 +463,7 @@ function renderPickingReadOnly(pk) {
   $('pick-first-hint').textContent = '';
   $('pick-confirm').classList.add('hidden');
   $('pick-cancel').classList.add('hidden');
-  $('pick-hint').textContent = '👁️ 观战中，等待游戏开始…';
+  $('pick-hint').textContent = '观战中，等待游戏开始…';
   $('pick-error').textContent = '';
 }
 
@@ -520,8 +521,8 @@ socket.on('lobby', (lobby) => {
   ul.innerHTML = '';
   lobby.players.forEach((p) => {
     const li = document.createElement('li');
-    li.innerHTML = `<span>${esc(p.name)}${p.isHost ? ' 👑' : ''}</span>
-      <span>${p.connected ? '🟢 在线' : '🔴 离线'}</span>`;
+    li.innerHTML = `<span>${esc(p.name)}${p.isHost ? ` ${ic('crown')}` : ''}</span>
+      <span class="conn ${p.connected ? 'on' : 'off'}">${p.connected ? '在线' : '离线'}</span>`;
     ul.appendChild(li);
   });
   const iAmHost = !!lobby.players[myIndex]?.isHost;
@@ -605,7 +606,7 @@ socket.on('gameError', ({ msg }) => {
 
 socket.on('chat', ({ name, text }) => {
   const pi = S ? S.players.findIndex((pl) => pl.name === name) : -1;
-  appendLog(`<span class="chat-msg">💬 ${esc(name)}：${esc(text)}</span>`, true, 'chat', pi >= 0 ? [pi] : []);
+  appendLog(`<span class="chat-msg">${esc(name)}：${esc(text)}</span>`, true, 'chat', pi >= 0 ? [pi] : []);
 });
 
 // 断线重连
@@ -932,7 +933,7 @@ function tickSbCountdown() {
     return;
   }
   // 自己的窗口：按钮文字带秒数 + 底边进度条缩短，每秒一声轻响提醒抬头
-  btn.textContent = `⏭️ 结束建设（${sec}）`;
+  btn.textContent = `结束建设（${sec}）`;
   btn.classList.add('sb-count');
   btn.style.setProperty('--sb-left', Math.max(0, Math.min(1, (sbDeadlineAt - Date.now()) / sbCountdownMs)));
   if (sec !== sbLastTickSec && sec > 0) sfx.click();
@@ -1066,7 +1067,7 @@ function renderImproveModal(force = false) {
     col.style.setProperty('--imp-color', meta.color);
     // 等级点：5 格，点亮到当前等级
     const pips = Array.from({ length: 5 }, (_, k) => {
-      const mark = k === 2 ? '★' : (k === 3 ? '🏛' : k + 1);
+      const mark = k === 2 ? '★' : (k === 3 ? ic('columns') : k + 1);
       return `<span class="imp-pip${k < d.lvl ? ' on' : ''}">${mark}</span>`;
     }).join('');
     // 各玩家等级一览（信息集中，不用挨个看玩家卡）
@@ -1077,16 +1078,18 @@ function renderImproveModal(force = false) {
         <div class="imp-title">${meta.name}<small>用${RES_META[meta.com].name}升级</small></div>
       </div>
       <div class="imp-pips">${pips}</div>
-      <div class="imp-perk">★ 3 级 · ${esc(meta.perk3)}</div>
-      <div class="imp-perk">🏛 4 级 · 率先达到获大都会（+2 分）${d.metroName ? ` — ${esc(d.metroName)}${d.metroMine ? '（你）' : ''}` : ''}</div>
-      <div class="imp-players">各家等级：${others}</div>`;
+      <div class="imp-perks">
+        <span class="imp-perk" title="3 级 · ${esc(meta.perk3)}">★ ${esc(meta.perk3.split('：')[0])}</span>
+        <span class="imp-perk" title="4 级 · 率先达到获大都会（+2 分）">${ic('columns')}大都会${d.metroName ? ` · ${esc(d.metroName)}${d.metroMine ? '（你）' : ''}` : ''}</span>
+      </div>
+      <div class="imp-players">${others}</div>`;
     const btn = document.createElement('button');
     btn.className = 'btn primary imp-buy';
     if (d.maxed) {
       btn.textContent = '已满级';
       btn.disabled = true;
     } else {
-      btn.innerHTML = `${d.crane ? '🏗️ ' : ''}升到 ${d.lvl + 1} 级（${d.cost} ${resIcon(meta.com)}，有 ${d.have}）`;
+      btn.innerHTML = `${d.crane ? ic('hammer') : ''}升到 ${d.lvl + 1} 级 · ${d.cost} ${resIcon(meta.com)}`;
       btn.disabled = !d.canBuy;
       if (d.noCity && myIndex >= 0) btn.title = '需要至少拥有一座城市才能升级';
     }
@@ -1105,85 +1108,85 @@ function renderStatus() {
     const what = S.setup.awaiting === 'settlement'
       ? (S.setup.building === 'city' ? '城市' : '村庄') : '道路';
     text = S.setup.current === myIndex
-      ? `📍 请放置你的${what}（${S.setup.pos + 1}/${S.setup.total}）`
+      ? `请放置你的${what}（${S.setup.pos + 1}/${S.setup.total}）`
       : `等待 ${p.name} 放置${what}…`;
   } else if (S.phase === 'ended') {
-    text = `🎉 ${S.players[S.winner].name} 获胜！`;
+    text = `${S.players[S.winner].name} 获胜！`;
   } else {
     const st = S.turn.state;
-    if (st === 'preroll') text = isMyTurn() ? `🎲 你的回合：请掷骰子（也可先打${S.mode === 'ck' ? '炼金术士' : '骑士卡'}）` : `${cur.name} 的回合`;
+    if (st === 'preroll') text = isMyTurn() ? '你的回合：掷骰子' : `${cur.name} 的回合`;
     else if (st === 'discard') {
       const names = Object.keys(S.turn.pendingDiscards).map((i) => S.players[i].name).join('、');
       text = `等待弃牌：${names}`;
-    } else if (st === 'robber') text = isMyTurn() ? '🦹 请点击一个板块移动强盗' : `${cur.name} 正在移动强盗…`;
-    else if (st === 'steal') text = isMyTurn() ? '🕵️ 请选择偷取对象' : `${cur.name} 正在选择偷取对象…`;
-    else if (st === 'roadbuilding') text = isMyTurn() ? `🛤️ 修路卡：还可免费修 ${S.turn.freeRoads} 条路` : `${cur.name} 正在修路…`;
+    } else if (st === 'robber') text = isMyTurn() ? '请点击一个板块移动强盗' : `${cur.name} 正在移动强盗…`;
+    else if (st === 'steal') text = isMyTurn() ? '请选择偷取对象' : `${cur.name} 正在选择偷取对象…`;
+    else if (st === 'roadbuilding') text = isMyTurn() ? `免费修路 ×${S.turn.freeRoads}` : `${cur.name} 正在修路…`;
     else if (st === 'aqueduct') {
       const names = S.ck.pendingAqueduct.map((i) => S.players[i].name).join('、');
-      text = S.ck.pendingAqueduct.includes(myIndex) ? '🚰 引水渠：请任选 1 张资源' : `等待引水渠选择：${names}`;
+      text = S.ck.pendingAqueduct.includes(myIndex) ? '引水渠：任选 1 张资源' : `等待 ${names} 选引水渠资源…`;
     } else if (st === 'barbarianLoss') {
       const names = S.ck.pendingCityLoss.map((i) => S.players[i].name).join('、');
       text = S.ck.pendingCityLoss.includes(myIndex)
-        ? '💥 野蛮人来袭！请点击你的一座城市（将被摧毁）'
-        : `野蛮人来袭！等待 ${names} 选择被摧毁的城市…`;
+        ? '点击你的一座城市（将被摧毁）'
+        : `等待 ${names} 选择被毁城市…`;
     } else if (st === 'displace') {
       const d = S.ck.displace;
       if (d.reason === 'deserter') {
         text = d.owner === myIndex
-          ? `🏇 逃兵：请点击位置放置获得的 ${d.level} 级骑士`
+          ? `放置获得的 ${d.level} 级骑士`
           : `等待 ${S.players[d.owner].name} 放置获得的骑士…`;
       } else {
         text = d.owner === myIndex
-          ? '⚔️ 你的骑士被驱逐！请点击新位置安置'
+          ? '骑士被驱逐：点击新位置安置'
           : `等待 ${S.players[d.owner].name} 安置被驱逐的骑士…`;
       }
     } else if (st === 'deserterPick') {
       const d = S.ck.deserter;
       text = d.target === myIndex
-        ? '🏳️ 逃兵！请点击你要交出的骑士'
+        ? '逃兵：点击要交出的骑士'
         : `等待 ${S.players[d.target].name} 选择叛逃的骑士…`;
     } else if (st === 'metropolis') {
       const chooser = S.players[S.ck.metroPlayer] || cur;
-      text = S.ck.metroPlayer === myIndex ? '🏛️ 请点击一座城市建立大都会' : `${chooser.name} 正在选择大都会城市…`;
+      text = S.ck.metroPlayer === myIndex ? '请点击一座城市建立大都会' : `${chooser.name} 正在选择大都会城市…`;
     } else if (st === 'specialBuild') {
       const builder = S.players[S.turn.sb.queue[S.turn.sb.idx]];
       text = mySpecialBuild()
-        ? '🔨 特别建设阶段：你可以建造/购买（不能交易和打牌）'
-        : `🔨 特别建设阶段：等待 ${builder.name} 建设…`;
+        ? '特别建设：轮到你'
+        : `特别建设：${builder.name}`;
     } else if (st === 'pickCards') {
       text = isMyTurn()
-        ? `🃏 商业大亨：请从对方手牌中拿 ${S.ck.pick.count} 张`
-        : S.ck.pick.from === myIndex ? `⚠️ ${cur.name} 正在从你的手牌中拿牌！`
+        ? `商业大亨：拿 ${S.ck.pick.count} 张`
+        : S.ck.pick.from === myIndex ? `${cur.name} 正在拿你的手牌`
           : `${cur.name} 正在拿取 ${S.players[S.ck.pick.from].name} 的手牌…`;
     } else if (st === 'pickProgress') {
-      text = isMyTurn() ? '🎴 间谍：请选择要偷的进步卡'
-        : S.ck.pick.from === myIndex ? `⚠️ ${cur.name} 正在查看并偷取你的进步卡！`
+      text = isMyTurn() ? '间谍：选一张进步卡'
+        : S.ck.pick.from === myIndex ? `${cur.name} 正在偷你的进步卡`
           : `${cur.name} 正在查看 ${S.players[S.ck.pick.from].name} 的进步卡…`;
     } else if (st === 'wedding') {
       const names = Object.keys(S.ck.pendingGive).map((i) => S.players[i].name).join('、');
       text = S.ck.pendingGive[myIndex]
-        ? `💒 婚礼：请选 ${S.ck.pendingGive[myIndex]} 张牌送给 ${cur.name}`
+        ? `婚礼：送 ${S.ck.pendingGive[myIndex]} 张牌给 ${cur.name}`
         : `婚礼！等待 ${names} 送礼…`;
     } else if (st === 'defenderPick') {
       const names = S.ck.pendingDefenderPick.map((i) => S.players[i].name).join('、');
       text = S.ck.pendingDefenderPick.includes(myIndex)
-        ? '🛡️ 防御并列第一！请选一种颜色的进步卡'
+        ? '防御并列第一：选一摞进步卡'
         : `防御成功！等待 ${names} 选择进步卡…`;
     } else if (st === 'progressDiscard') {
       const names = S.ck.pendingProgressDiscard.map((i) => S.players[i].name).join('、');
       text = S.ck.pendingProgressDiscard.includes(myIndex)
-        ? '📜 进步卡超过 4 张：请选牌放回牌堆底'
+        ? '进步卡超过 4 张：放回多余的'
         : `等待 ${names} 弃回多余的进步卡…`;
     } else if (st === 'harbor') {
       const h = S.ck.harbor;
       if (h.stage === 'give') {
-        text = isMyTurn() ? `⚓ 商业港：选 1 张资源交给 ${S.players[h.current].name}` : `${cur.name} 正在选择交换的资源…`;
+        text = isMyTurn() ? `商业港：给 ${S.players[h.current].name} 1 张资源` : `${cur.name} 正在商业港交换…`;
       } else {
-        text = h.current === myIndex ? `⚓ 商业港：选 1 张商品交给 ${cur.name}` : `等待 ${S.players[h.current].name} 返还商品…`;
+        text = h.current === myIndex ? `商业港：给 ${cur.name} 1 张商品` : `等待 ${S.players[h.current].name} 返还商品…`;
       }
-    } else text = isMyTurn() ? '你的回合：建造、交易或结束回合' : `${cur.name} 的回合`;
+    } else text = isMyTurn() ? '你的回合' : `${cur.name} 的回合`;
   }
-  $('status-text').textContent = (isSpectating ? '👁️ ' : '') + text;
+  $('status-text').textContent = (isSpectating ? '观战 · ' : '') + text;
 
   // ck：第一颗是红骰（与事件骰城门配合决定进步卡派发）；setDie 依赖该类，需先设置
   $('die1').classList.toggle('red-die', S.mode === 'ck');
@@ -1207,7 +1210,7 @@ function setEventDie(el, face) {
   // 只换骰面配色类，保留 rolling/settle 动画类
   for (const key of Object.keys(EVENT_FACE)) el.classList.remove(EVENT_FACE[key].cls);
   el.classList.add(f.cls);
-  el.textContent = f.icon;
+  el.innerHTML = f.icon;
   el.title = f.name;
 }
 
@@ -1499,22 +1502,20 @@ function renderPlayers() {
     el.div.classList.toggle('sb-builder', sbBuilder === i);
     el.div.classList.toggle('aqueduct-pending', ckMode && S.turn.state === 'aqueduct' && !!S.ck?.pendingAqueduct?.includes(i));
 
-    const nm = `${esc(p.name)}${i === myIndex ? '<small>（我）</small>' : ''}${sbBuilder === i ? ' <span class="sb-tag">🔨 建设中</span>' : ''}${p.connected ? '' : ' <span class="offline">离线</span>'}`;
+    const nm = `${esc(p.name)}${i === myIndex ? '<small>（我）</small>' : ''}${sbBuilder === i ? ` <span class="sb-tag">${ic('hammer')}建设中</span>` : ''}${p.connected ? '' : ' <span class="offline">离线</span>'}`;
     if (nm !== c.nm) { el.nm.innerHTML = nm; c.nm = nm; }
 
     const vp = i === myIndex ? S.you.vpTotal : p.vp;
     const hand = p.handCount - (pendingCount[i] || 0);
     const dev = p.devCount - (pendingProg[i] || 0);
     if (String(vp) !== el.vp.textContent) el.vp.textContent = vp;
-    const handTxt = `🃏 ${hand}`;
-    if (handTxt !== el.hand.textContent) el.hand.textContent = handTxt;
-    const devTxt = `🎴 ${dev}`;
-    if (devTxt !== el.dev.textContent) el.dev.textContent = devTxt;
+    if (hand !== c.hand) { el.hand.innerHTML = `${ic('cards')}${hand}`; c.hand = hand; }
+    if (dev !== c.dev) { el.dev.innerHTML = `${ic('cardback')}${dev}`; c.dev = dev; }
 
     // 比对缓存的字符串而不是读 innerHTML：避免每次渲染都白写一遍
     const extra = ckMode
       ? TRACKS.map((t) => `<b style="color:${TRACK_META[t].color}">${TRACK_META[t].name}</b> ${p.improvements[t]}`)
-      : [`⚔️ ${p.knightsPlayed}`];
+      : [`${ic('swords')}${p.knightsPlayed}`];
     const extraKey = extra.join('');
     if (extraKey !== c.extra) {
       extra.forEach((html, k) => { el.extra[k].innerHTML = html; });
@@ -1522,14 +1523,14 @@ function renderPlayers() {
     }
 
     const badges = [];
-    if (S.awards.longestRoad?.player === i) badges.push('<span class="badge">🛤️ 最长道路</span>');
-    if (!ckMode && S.awards.largestArmy?.player === i) badges.push('<span class="badge">⚔️ 最大军队</span>');
+    if (S.awards.longestRoad?.player === i) badges.push(`<span class="badge">${ic('road')}最长道路</span>`);
+    if (!ckMode && S.awards.largestArmy?.player === i) badges.push(`<span class="badge">${ic('swords')}最大军队</span>`);
     if (ckMode) {
       for (const t of TRACKS) {
-        if (S.ck.metropolis[t]?.player === i) badges.push(`<span class="badge">🏛️ ${TRACK_META[t].name}大都会</span>`);
+        if (S.ck.metropolis[t]?.player === i) badges.push(`<span class="badge">${ic('columns')}${TRACK_META[t].name}大都会</span>`);
       }
-      if (S.ck.merchant?.player === i) badges.push('<span class="badge">⛺ 商人</span>');
-      if (p.defenderVP > 0) badges.push(`<span class="badge">🏅 守护者×${p.defenderVP}</span>`);
+      if (S.ck.merchant?.player === i) badges.push(`<span class="badge">${opt('merchant')}商人</span>`);
+      if (p.defenderVP > 0) badges.push(`<span class="badge">${ic('medal')}守护者×${p.defenderVP}</span>`);
     }
     const bHtml = badges.join('');
     if (bHtml !== c.badges) {
@@ -1564,7 +1565,8 @@ function renderHand() {
   const limit = S.you.handLimit ?? 7;
   const hc = $('hand-count');
   if (hc) {
-    hc.textContent = `🃏 ${total} / ${limit}`;
+    const hcHtml = `${ic('cards')}${total} / ${limit}`;
+    if (hc.dataset.html !== hcHtml) { hc.innerHTML = hcHtml; hc.dataset.html = hcHtml; } // 每次渲染都重写会让图标闪一下
     hc.title = `手牌 ${total} 张 · 掷 7 弃牌上限 ${limit}（超过则弃一半）`;
     hc.classList.toggle('over', total > limit);
   }
@@ -1682,7 +1684,7 @@ function renderProgressCards(wrap) {
     const btn = document.createElement('button');
     btn.className = 'dev-card prog-card vp-card';
     btn.disabled = true;
-    btn.innerHTML = `<small>🏆 ${PROG_META[type].name}</small>`;
+    btn.innerHTML = `<small>${ic('trophy')}${PROG_META[type].name}</small>`;
     btn.title = `${PROG_META[type].name}：分数卡，已亮出 +1 分`;
     attachCardInspect(btn, () => ({
       img: `/assets/opt/progress-${type}.webp`,
@@ -1698,10 +1700,7 @@ const sendProg = (card, payload = {}) => send({ type: 'playProgress', card, payl
 
 // 打出前二次确认，防止误触立即生效的卡效
 function confirmProg(msg, onYes) {
-  openPickModal(msg, [
-    { label: '✅ 确定打出', onPick: onYes },
-    { label: '取消', onPick: () => {} },
-  ]);
+  openPickModal(msg, [{ label: '确定打出', onPick: onYes }]); // 取消走弹窗自带的关闭按钮
 }
 
 function playProgressCard(type) {
@@ -1710,7 +1709,7 @@ function playProgressCard(type) {
     // 无目标、立即生效 —— 打出前确认，防误触
     case 'warlord': case 'crane': case 'irrigation': case 'mining':
     case 'commercialHarbor': case 'wedding': case 'saboteur': case 'roadBuilding':
-      confirmProg(`确定打出「${PROG_META[type].name}」？${PROG_META[type].desc}`, () => sendProg(type));
+      confirmProg(`打出「${PROG_META[type].name}」？`, () => sendProg(type));
       break;
     // 选一种牌
     case 'merchantFleet':
@@ -1771,7 +1770,7 @@ function playProgressCard(type) {
       const targets = S.players.map((_, i) => i).filter((i) => i !== myIndex
         && Object.values(S.ck.knights).some((k) => k.player === i));
       if (!targets.length) return toast('对手没有骑士');
-      openPickModal('逃兵：指定一名对手（由对方选择叛逃的骑士）', targets.map((i) => ({
+      openPickModal('逃兵：指定一名对手', targets.map((i) => ({
         label: `${esc(S.players[i].name)}（${Object.values(S.ck.knights).filter((k) => k.player === i).length} 名骑士）`,
         onPick: () => confirmProg(`确定对 ${S.players[i].name} 使用逃兵？`, () => sendProg('deserter', { target: i })),
       })));
@@ -1824,10 +1823,10 @@ function openPickModal(title, options, { forced = false } = {}) {
   for (const o of options) {
     const b = document.createElement('button');
     if (o.img || o.desc) {
-      // 富卡片选项：卡面缩略图 + 名称 + 效果说明（如间谍偷进步卡），悬停可放大看整张卡
+      // 富卡片选项：卡面缩略图 + 名称（如间谍偷进步卡）；效果说明不铺开，悬停放大卡面时再看
       b.className = 'btn pick-rich';
       b.innerHTML = `${o.img ? `<img class="pr-img" src="${o.img}" alt="">` : ''}`
-        + `<span class="pr-txt"><b>${o.label}</b>${o.desc ? `<small>${o.desc}</small>` : ''}</span>`;
+        + `<span class="pr-txt"><b>${o.label}</b>${o.desc && !o.img ? `<small>${o.desc}</small>` : ''}</span>`;
       if (o.img) attachCardInspect(b, () => ({ img: o.img, name: o.label, sub: o.desc }));
     } else {
       b.className = 'btn primary';
@@ -1909,17 +1908,18 @@ function renderButtons() {
   $('btn-end').disabled = !main;
   const sbSec = sbMine ? sbCountdownSec() : null;
   $('btn-end').textContent = sbMine
-    ? (sbSec !== null ? `⏭️ 结束建设（${sbSec}）` : '⏭️ 结束建设') : '✅ 结束回合';
+    ? (sbSec !== null ? `结束建设（${sbSec}）` : '结束建设') : '结束回合';
 
   for (const [id, kind] of [['btn-road', 'road'], ['btn-settlement', 'settlement'], ['btn-city', 'city'], ['btn-knight', 'knight'], ['btn-wall', 'wall']]) {
     $(id).classList.toggle('armed', armed === kind);
   }
 
   // 建造总按钮：收纳修路/村庄/城市/发展卡/骑士/城墙；已选类型时显示放置中状态
-  const ARMED_LABEL = { road: '🛤️ 修路', settlement: '🏠 村庄', city: '🏰 城市', knight: '⚔️ 骑士', wall: '🧱 城墙' };
+  const ARMED_LABEL = { road: `${ic('road')}修路`, settlement: `${ic('settlement')}村庄`, city: `${ic('city')}城市`, knight: `${ic('knight')}骑士`, wall: `${ic('wall')}城墙` };
   $('btn-build').disabled = !main;
   $('btn-build').classList.toggle('armed', !!armed);
-  $('btn-build').textContent = armed ? `${ARMED_LABEL[armed]}：点棋盘放置` : '🔨 建造';
+  const buildHtml = armed ? `${ARMED_LABEL[armed]}：点棋盘放置` : `${ic('hammer')}建造`;
+  if ($('btn-build').dataset.html !== buildHtml) { $('btn-build').innerHTML = buildHtml; $('btn-build').dataset.html = buildHtml; }
   if (!main) $('build-menu').classList.add('hidden');
 
   // 房主随时可结束本局
@@ -2081,7 +2081,7 @@ function onKnightClick(v, k) {
 function openKnightMenu(v, k) {
   const hint = (S.you.hints.myKnights || {})[v];
   if (!hint) return;
-  $('knightmenu-title').textContent = `⚔️ ${k.level} 级骑士（${k.active ? '已激活' : '未激活'}）`;
+  $('knightmenu-title').textContent = `${k.level} 级骑士（${k.active ? '已激活' : '未激活'}）`;
   const box = $('knightmenu-btns');
   box.innerHTML = '';
   const hand = S.you.hand;
@@ -2098,18 +2098,18 @@ function openKnightMenu(v, k) {
     box.appendChild(b);
   };
   if (hint.activate) {
-    addBtn(`🔥 激活（1 ${resIcon('wheat')}）`, hand.wheat >= 1,
+    addBtn(`激活 · 1 ${resIcon('wheat')}`, hand.wheat >= 1,
       () => send({ type: 'activateKnight', vertex: v }));
   }
-  addBtn(`⬆️ 升级（1 ${resIcon('sheep')} 1 ${resIcon('ore')}）`,
+  addBtn(`升级 · 1 ${resIcon('sheep')} 1 ${resIcon('ore')}`,
     hint.upgrade && hand.sheep >= 1 && hand.ore >= 1,
     () => send({ type: 'upgradeKnight', vertex: v }),
     hint.upgrade ? '' : '本回合招募/已升级过、等级或政治等级不足时不能升级');
   const targets = [...(hint.moves || []), ...(hint.displaces || [])];
-  addBtn('🚶 移动', targets.length > 0, () => {
+  addBtn('移动', targets.length > 0, () => {
     showVertexSpots(targets, (to) => send({ type: 'moveKnight', from: v, to }));
   }, k.active ? '沿自己的道路移动（可驱逐低级敌方骑士）' : '需要先激活，激活当回合不能行动');
-  addBtn('🦹 驱逐强盗', !!hint.chase, () => send({ type: 'chaseRobber', vertex: v }),
+  addBtn('驱逐强盗', !!hint.chase, () => send({ type: 'chaseRobber', vertex: v }),
     '骑士需已激活、与强盗相邻，且野蛮人已来袭过');
   $('modal-knightmenu').classList.remove('hidden');
 }
@@ -2561,9 +2561,9 @@ function renderModals() {
 
   // 胜利结算舞台
   if (S.phase === 'ended') {
-    $('winner-title').textContent = `🎉 ${S.players[S.winner].name} 获胜！`;
+    $('winner-title').textContent = `${S.players[S.winner].name} 获胜！`;
     // 排名榜：按分数降序，冠军行金色高亮，逐行滑入
-    const medals = ['🥇', '🥈', '🥉'];
+    const medals = [ic('trophy'), '2', '3'];
     const order = S.players.map((p, i) => ({ p, i })).sort((a, b) => b.p.vp - a.p.vp || (a.i === S.winner ? -1 : 1));
     $('winner-scores').innerHTML = order.map(({ p, i }, rank) =>
       `<div class="vic-row${i === S.winner ? ' first' : ''}" style="animation-delay:${0.55 + rank * 0.18}s">`
@@ -2683,13 +2683,13 @@ function renderTradeBanner() {
 
   const title = document.createElement('div');
   title.className = 'trade-title';
-  title.textContent = '🔄 交易提议';
+  title.textContent = '交易提议';
   banner.appendChild(title);
 
   const label = document.createElement('div');
   label.className = 'trade-desc';
   label.innerHTML = iAmFrom
-    ? `你发起的交易：出 ${fmt(t.give)} ➡️ 换 ${fmt(t.get)}`
+    ? `你发起的交易：出 ${fmt(t.give)} → 换 ${fmt(t.get)}`
     : `${esc(S.players[t.from].name)} 想用 ${fmt(t.give)} 换 ${fmt(t.get)}`;
   banner.appendChild(label);
 
@@ -2703,15 +2703,15 @@ function renderTradeBanner() {
       // 发起者：同意者变成「成交」按钮
       const b = document.createElement('button');
       b.className = 'btn primary small';
-      b.textContent = `✅ 与 ${p.name} 成交`;
+      b.textContent = `与 ${p.name} 成交`;
       b.onclick = () => send({ type: 'acceptTradeWith', target: i });
       chips.appendChild(b);
       return;
     }
     const chip = document.createElement('span');
     chip.className = 'trade-chip';
-    const face = resp === 'accept' ? '✅' : resp === 'decline' ? '❌' : '⏳';
-    chip.textContent = `${face} ${p.name}${i === myIndex ? '（你）' : ''}`;
+    chip.classList.add(`resp-${resp || 'wait'}`); // 同意/拒绝/考虑中用颜色区分
+    chip.textContent = `${p.name}${i === myIndex ? '（你）' : ''} · ${resp === 'accept' ? '同意' : resp === 'decline' ? '拒绝' : '考虑中'}`;
     chips.appendChild(chip);
   });
   banner.appendChild(chips);
@@ -2730,12 +2730,12 @@ function renderTradeBanner() {
     const resp = t.responses[myIndex];
     const yes = document.createElement('button');
     yes.className = 'btn primary';
-    yes.textContent = resp === 'accept' ? '✅ 已同意' : '✅ 同意';
+    yes.textContent = resp === 'accept' ? '已同意' : '同意';
     yes.disabled = resp === 'accept';
     yes.onclick = () => send({ type: 'respondTrade', accept: true });
     const no = document.createElement('button');
     no.className = 'btn';
-    no.textContent = resp === 'accept' ? '↩️ 撤回同意' : resp === 'decline' ? '❌ 已拒绝' : '❌ 拒绝';
+    no.textContent = resp === 'accept' ? '撤回同意' : resp === 'decline' ? '已拒绝' : '拒绝';
     no.disabled = resp === 'decline';
     no.onclick = () => send({ type: 'respondTrade', accept: false });
     actions.append(yes, no);
@@ -2960,7 +2960,7 @@ function stepRaidScene(ev) {
     if (raid) { sfx.barbarian(false); return; }
     if (ev.vertex != null) {
       const pos = vertexPixelPosition(ev.vertex, $('board'));
-      if (pos) burstAt(pos.x, pos.y, '💥');
+      if (pos) burstAt(pos.x, pos.y, 'fire');
     }
     shakeBoard();
   };
@@ -2970,7 +2970,7 @@ function stepRaidScene(ev) {
       img: raid ? '/assets/opt/barbarian-ship.webp' : '/assets/opt/piece-city-white.webp', onShow,
     });
     if (scene) scene.then(done);
-    else spotlight({ ...ev, kind: raid ? 'barbarian' : 'banner', title, sub, icon: '💥', dur: raid ? 5200 : 3000, onShow, onDone: done });
+    else spotlight({ ...ev, kind: raid ? 'barbarian' : 'banner', title, sub, icon: ic('fire'), dur: raid ? 5200 : 3000, onShow, onDone: done });
   });
 }
 
@@ -3013,7 +3013,8 @@ function cardSceneSpec(ev) {
     state: S,
   };
 }
-function startCardScene(ev) { return playCardScene(cardSceneSpec(ev)); }
+// 3D 演出开场只亮卡名，规则说明不铺开（剧情本身就在演；想细看可悬停手牌放大卡面）
+function startCardScene(ev) { return playCardScene({ ...cardSceneSpec(ev), desc: '' }); }
 function stepCardScene(ev) {
   animStep((done) => {
     const finish = () => { releaseSceneHold(); done(); };
@@ -3081,9 +3082,9 @@ function playEvents(upTo = Infinity) { // upTo：只播放该 seq 及之前的�
           if (ev.kind === 'city' && ev.vertex !== undefined) {
             const pos = vertexPixelPosition(ev.vertex, $('board'));
             if (pos) {
-              burstAt(pos.x, pos.y - 14, '✨');
-              setTimeout(() => burstAt(pos.x + 20, pos.y - 34, '🌟'), 180);
-              setTimeout(() => burstAt(pos.x - 18, pos.y - 26, '✨'), 340);
+              burstAt(pos.x, pos.y - 14, 'star');
+              setTimeout(() => burstAt(pos.x + 20, pos.y - 34, 'star'), 180);
+              setTimeout(() => burstAt(pos.x - 18, pos.y - 26, 'star'), 340);
             }
           }
           done();
@@ -3110,12 +3111,12 @@ function playEvents(upTo = Infinity) { // upTo：只播放该 seq 及之前的�
       case 'steal':
         animStep((done) => {
           sfx.steal();
-          floatOverPlayer(ev.from, '−1 🃏');
+          floatOverPlayer(ev.from, `${ic('cards')}−1`);
           // 数字被扣住到卡背落地才 +1（进步卡偷取结算 🎴 数与底栏新卡）
           const onArrive = ev.progress ? () => revealProgress(ev.to) : () => revealSteal(ev.to);
           // 卡背从受害者飞向偷牌者；条件不满足（元素缺失等）回落为飘字并立即结清
           if (!flyStealCard(ev.from, ev.to, onArrive)) {
-            floatOverPlayer(ev.to, '🕵️ +1');
+            floatOverPlayer(ev.to, `${ic('cards')}+1`);
             onArrive?.();
           }
           setTimeout(done, 600); // 飞行后半程可与后续步骤重叠
@@ -3124,7 +3125,7 @@ function playEvents(upTo = Infinity) { // upTo：只播放该 seq 及之前的�
       case 'monopoly':
         animStep((done) => {
           sfx.coin();
-          floatOverPlayer(ev.player, `💰 +${ev.n} ${resIcon(ev.res)}`);
+          floatOverPlayer(ev.player, `+${ev.n} ${resIcon(ev.res)}`);
           // 各受害者面板飞出上缴的牌（旧版服务端无 from 字段时只有飘字）
           flyMonopolyCards(ev.player, ev.res, ev.from);
           setTimeout(done, 500); // 飞行后半程可与后续步骤重叠
@@ -3135,7 +3136,7 @@ function playEvents(upTo = Infinity) { // upTo：只播放该 seq 及之前的�
           sfx.card();
           // 银行发一张卡背给买家；新卡藏到落地才出现（revealProgress），无动画则立即结清
           if (!flyDevCard(ev.player, () => revealProgress(ev.player))) {
-            floatOverPlayer(ev.player, '🎴 +1');
+            floatOverPlayer(ev.player, `${ic('cardback')}+1`);
             revealProgress(ev.player);
           }
           setTimeout(done, 450);
@@ -3146,9 +3147,9 @@ function playEvents(upTo = Infinity) { // upTo：只播放该 seq 及之前的�
         const names = ev.players.map((i) => `<b class="sp-aq-player" style="--player-color:${S.players[i].color}">${esc(S.players[i].name)}</b>`).join('、');
         stepSpotlight({
           kind: 'banner',
-          icon: '🚰',
+          icon: ic('water'),
           title: '引水渠',
-          html: `<div class="sp-aqueduct">${names} 本轮没有任何产出<br><span class="sp-aq-sub">科学 3 级的引水渠：可任选 1 张资源</span></div>`,
+          html: `<div class="sp-aqueduct">${names} 任选 1 张资源</div>`,
           accent: '#3aa0c8',
           dur: 3200,
           onShow: () => sfx.aqueduct(),
@@ -3158,7 +3159,7 @@ function playEvents(upTo = Infinity) { // upTo：只播放该 seq 及之前的�
       case 'discard':
         animStep((done) => {
           sfx.discard();
-          if (!flyDiscardCards(ev.player, ev.cards)) floatOverPlayer(ev.player, '🗑️ 弃牌');
+          if (!flyDiscardCards(ev.player, ev.cards)) floatOverPlayer(ev.player, '弃牌');
           setTimeout(done, 400); // 抛散后半程可与后续步骤（如强盗移动）重叠
         });
         break;
@@ -3166,8 +3167,8 @@ function playEvents(upTo = Infinity) { // upTo：只播放该 seq 及之前的�
         // 中央成交演出：全桌看清谁和谁换了什么（give/get 由服务端随事件下发）
         if (!ev.give) { // 旧版服务端无内容字段时退回小飘字
           animStep((done) => {
-            floatOverPlayer(ev.a, '🔄');
-            floatOverPlayer(ev.b, '🔄');
+            floatOverPlayer(ev.a, ic('trade'));
+            floatOverPlayer(ev.b, ic('trade'));
             done();
           });
           break;
@@ -3179,7 +3180,7 @@ function playEvents(upTo = Infinity) { // upTo：只播放该 seq 及之前的�
           || '<span class="sp-goodline dim">什么都没有</span>';
         stepSpotlight({
           kind: 'banner',
-          icon: '🤝',
+          icon: ic('trade'),
           title: '交易达成',
           html: `<div class="sp-tradebox">
             <div class="sp-tr-side">
@@ -3206,14 +3207,14 @@ function playEvents(upTo = Infinity) { // upTo：只播放该 seq 及之前的�
       // 最长道路 / 最大军队易主：中央公告（+2 分的大事件，值得全桌看清）
       case 'award': {
         const meta = ev.award === 'largestArmy'
-          ? { icon: '⚔️', name: '最大军队' }
-          : { icon: '🛤️', name: '最长道路' };
+          ? { icon: ic('swords'), name: '最大军队' }
+          : { icon: ic('road'), name: '最长道路' };
         if (ev.player === null || ev.player === undefined) {
           stepSpotlight({
             kind: 'banner',
             icon: meta.icon,
             title: `${meta.name}奖励空置`,
-            sub: `${S.players[ev.from]?.name ?? ''} 的道路被截断，长度并列无人独占`,
+            sub: '道路被截断，长度并列',
             accent: '#8d939c',
             dur: 2800,
           });
@@ -3236,7 +3237,7 @@ function playEvents(upTo = Infinity) { // upTo：只播放该 seq 及之前的�
       // 特别建设阶段开启（5-6 人）：轻量横幅提示，不打断节奏
       case 'sbStart':
         animStep((done) => {
-          showSbBanner('🔨 特别建设阶段');
+          showSbBanner('特别建设阶段');
           sfx.sbStart();
           setTimeout(done, 700); // 若自己是首位建设者，随后的个人横幅稍后接上
         });
@@ -3289,7 +3290,7 @@ function playEvents(upTo = Infinity) { // upTo：只播放该 seq 及之前的�
         break;
       case 'saboteur':
         animStep((done) => {
-          for (const i of ev.players) floatOverPlayer(i, '💥 破坏者：弃一半手牌');
+          for (const i of ev.players) floatOverPlayer(i, `${ic('fire')}弃一半`);
           done();
         });
         break;
@@ -3310,9 +3311,9 @@ function playEvents(upTo = Infinity) { // upTo：只播放该 seq 及之前的�
       case 'defender':
         stepSpotlight({
           kind: 'banner',
-          icon: '🏅',
+          icon: ic('medal'),
           title: `${S.players[ev.player].name} 成为卡坦守护者`,
-          sub: '防御野蛮人居功至伟 · +1 分',
+          sub: '+1 分',
           accent: '#2e8b57',
           dur: 3000,
           onShow: () => sfx.fanfare(),
@@ -3323,7 +3324,7 @@ function playEvents(upTo = Infinity) { // upTo：只播放该 seq 及之前的�
           kind: 'banner',
           img: '/assets/opt/metropolis.webp',
           title: `${S.players[ev.player].name} 建立${TRACK_META[ev.track]?.name || ''}大都会！`,
-          sub: '城市升格为大都会 · +2 分',
+          sub: '+2 分',
           accent: TRACK_META[ev.track]?.color,
           dur: 3400,
           onShow: () => sfx.fanfare(),
@@ -3356,7 +3357,7 @@ function playEvents(upTo = Infinity) { // upTo：只播放该 seq 及之前的�
       animStep((done) => {
         // 新卡藏到飞牌落地才出现（revealProgress）；无动画则立即结清
         if (!flyProgressCard(deck, player, false, null, () => revealProgress(player))) {
-          floatOverPlayer(player, '🎴 +1');
+          floatOverPlayer(player, `${ic('cardback')}+1`);
           revealProgress(player);
         }
         setTimeout(done, 450);
@@ -3391,7 +3392,7 @@ function showTurnBanner(to) {
     void card.offsetWidth;
     card.classList.add('turn-flash');
   }
-  floatOverPlayer(to, '🎲');
+  floatOverPlayer(to, ic('dice'));
 }
 
 // 横幅底色使用玩家颜色；浅色（如白色玩家）自动改用深色文字
@@ -3409,7 +3410,7 @@ function showStartBanner(first) {
   const mine = first === myIndex;
   const banner = $('turn-banner');
   const inner = banner.querySelector('.turn-banner-inner');
-  inner.textContent = mine ? '📍 你先放置' : `📍 ${p.name} 先放置`;
+  inner.textContent = mine ? '你先放置' : `${p.name} 先放置`;
   inner.classList.toggle('mine', mine);
   paintBannerColor(inner, p.color);
   banner.classList.remove('show');
@@ -3450,7 +3451,7 @@ function checkSbWindow() {
   prevSbBuilder = sbNow;
   if (sbNow === myIndex && !isSpectating) {
     animStep((done) => {
-      showSbBanner('🔨 轮到你建设了', true);
+      showSbBanner('轮到你建设了', true);
       sfx.sbCall();
       done();
     });
@@ -3675,7 +3676,7 @@ function flyDiscardCards(playerIdx, cards) {
     f.animate(tossAwayKeyframes({ dur: 900 }), { duration: 900, delay: i * 90, easing: 'linear', fill: 'both' });
     setTimeout(() => f.remove(), 900 + i * 90); // 不用 onfinish：页面不可见时不触发
   });
-  if (list.length > shown.length) floatOverPlayer(playerIdx, `🗑️ −${list.length}`);
+  if (list.length > shown.length) floatOverPlayer(playerIdx, `−${list.length}`);
   return true;
 }
 
@@ -3891,10 +3892,10 @@ function flyProgressCard(deck, playerIdx, reverse = false, cardId = null, onArri
 
 // html 只拼接内部常量（图标 img / emoji / 数字），无用户输入
 // 在屏幕坐标放一个放大爆开的表情（毁城等强反馈）
-function burstAt(x, y, emoji) {
+function burstAt(x, y, icon) {
   const b = document.createElement('div');
   b.className = 'fx-burst';
-  b.textContent = emoji;
+  b.innerHTML = ic(icon);
   b.style.left = `${x}px`;
   b.style.top = `${y}px`;
   document.body.appendChild(b);

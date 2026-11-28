@@ -381,7 +381,7 @@ export const ckMethods = {
     this.addLog(`${pl.name} 的${TRACK_NAME[track]}升级达到 ${newLvl} 级`);
     if (newLvl === 3) {
       const perk = { trade: '商栈：商品可 2:1 与银行交易', politics: '城堡：可升级三级骑士', science: '引水渠：无产出时可任选 1 张资源' }[track];
-      this.addLog(`✨ ${pl.name} 解锁：${perk}`);
+      this.addLog(`${pl.name} 解锁：${perk}`);
     }
     if (newLvl >= 4) this.checkMetropolis(track, p, newLvl);
     this.checkWin();
@@ -429,7 +429,7 @@ export const ckMethods = {
   placeMetropolis(track, p, v) {
     const m = this.metropolis[track];
     if (m) this.addLog(`${this.players[p].name} 从 ${this.players[m.player].name} 手中夺走了${TRACK_NAME[track]}大都会！`);
-    else this.addLog(`🏛️ ${this.players[p].name} 建立了${TRACK_NAME[track]}大都会（+2 分）！`);
+    else this.addLog(`${this.players[p].name} 建立了${TRACK_NAME[track]}大都会（+2 分）！`);
     this.metropolis[track] = { player: p, vertex: v };
     this.addEvent('metropolis', { player: p, track, vertex: v });
   },
@@ -459,19 +459,19 @@ export const ckMethods = {
     this.barbarians.attacks++;
     this.barbarians.pos = 0;
     this.addEvent('barbarian', { strength, defense, win });
-    this.addLog(`⚔️ 野蛮人来袭！兵力 ${strength} vs 骑士防御 ${defense}`);
+    this.addLog(`野蛮人来袭！兵力 ${strength} vs 骑士防御 ${defense}`);
 
     let pending = {};
     let defenderPickers = [];
     if (win) {
-      this.addLog('🛡️ 卡坦岛守住了！');
+      this.addLog('卡坦岛守住了！');
       const max = Math.max(...pts);
       if (max > 0) {
         const holders = pts.map((n, i) => [i, n]).filter(([, n]) => n === max).map(([i]) => i);
         if (holders.length === 1) {
           this.players[holders[0]].defenderVP++;
           this.addEvent('defender', { player: holders[0] });
-          this.addLog(`🏅 ${this.players[holders[0]].name} 成为「卡坦守护者」（+1 分）！`);
+          this.addLog(`${this.players[holders[0]].name} 成为「卡坦守护者」（+1 分）！`);
         } else if (IMPROVE_TRACKS.some((t) => this.progressDecks[t].length > 0)) {
           // 并列：各自选一种颜色抽一张进步卡
           defenderPickers = holders;
@@ -480,7 +480,7 @@ export const ckMethods = {
         }
       }
     } else {
-      this.addLog('🔥 防御失败！出力最少的玩家将失去一座城市…');
+      this.addLog('防御失败！出力最少的玩家将失去一座城市…');
       const candidates = this.players
         .map((_, i) => i)
         .filter((i) => this.ownCityVertices(i, { pillageable: true }).length > 0);
@@ -544,11 +544,11 @@ export const ckMethods = {
     if (this.players[b.player].pieces.settlement > 0) {
       b.type = 'settlement';
       this.players[b.player].pieces.settlement--;
-      this.addLog(`💥 ${this.players[b.player].name} 的城市被野蛮人摧毁，降级为村庄`);
+      this.addLog(`${this.players[b.player].name} 的城市被野蛮人摧毁，降级为村庄`);
     } else {
       // 村庄棋子用完：城市整个被移除
       delete this.buildings[v];
-      this.addLog(`💥 ${this.players[b.player].name} 的城市被野蛮人夷平（没有村庄棋子可降级）`);
+      this.addLog(`${this.players[b.player].name} 的城市被野蛮人夷平（没有村庄棋子可降级）`);
       this.updateLongestRoad(); // 建筑消失可能重新连通对手道路
     }
     this.addEvent('pillage', { player: b.player, vertex: v });
@@ -587,7 +587,7 @@ export const ckMethods = {
       pl.progressVP++;
       pl.vpCards.push(type);
       this.addEvent('progressVP', { player: p, card: type, deck: deckName });
-      this.addLog(`📜 ${pl.name} 抽到「${PROGRESS_NAME[type]}」，立即亮出（+1 分）！`, { cat: 'progress' });
+      this.addLog(`${pl.name} 抽到「${PROGRESS_NAME[type]}」，立即亮出（+1 分）！`, { cat: 'progress' });
       return;
     }
     // 超过上限（4 张）也照发：回合外超限走 progressDiscard 立即弃到上限，
@@ -661,8 +661,8 @@ export const ckMethods = {
     pick.count--;
     this.addEvent('steal', { from: pick.from, to: p });
     const cn = this.cardName(card);
-    this.addLog(`🔍 你从 ${from.name} 拿走了 ${cn}`, { to: [p], cat: 'steal' });
-    this.addLog(`🔍 ${this.players[p].name} 从你这里拿走了 ${cn}`, { to: [pick.from], cat: 'steal' });
+    this.addLog(`你从 ${from.name} 拿走了 ${cn}`, { to: [p], cat: 'steal' });
+    this.addLog(`${this.players[p].name} 从你这里拿走了 ${cn}`, { to: [pick.from], cat: 'steal' });
     if (pick.count <= 0 || cardsOf(from.hand, this.cardTypes()).length === 0) {
       this.addLog(`${this.players[p].name} 拿走了 ${from.name} 的牌`, { cat: 'steal' });
       this.turn.pick = null;
@@ -683,8 +683,8 @@ export const ckMethods = {
     this.addEvent('steal', { from: pick.from, to: p, progress: true }); // progress：偷的是进步卡，不经手牌
     const cn = PROGRESS_NAME[card];
     this.addLog(`${this.players[p].name} 偷走了 ${this.players[pick.from].name} 的一张进步卡`, { cat: 'steal' });
-    this.addLog(`🔍 你偷到了 ${this.players[pick.from].name} 的进步卡「${cn}」`, { to: [p], cat: 'steal' });
-    this.addLog(`🔍 ${this.players[p].name} 偷走了你的进步卡「${cn}」`, { to: [pick.from], cat: 'steal' });
+    this.addLog(`你偷到了 ${this.players[pick.from].name} 的进步卡「${cn}」`, { to: [p], cat: 'steal' });
+    this.addLog(`${this.players[p].name} 偷走了你的进步卡「${cn}」`, { to: [pick.from], cat: 'steal' });
     this.turn.pick = null;
     this.turn.state = 'main';
   },
@@ -701,8 +701,8 @@ export const ckMethods = {
     this.players[this.turn.player].hand[card]++;
     this.addEvent('steal', { from: p, to: this.turn.player });
     const gn = this.cardName(card);
-    this.addLog(`🎁 你送给 ${this.players[this.turn.player].name} 一张 ${gn}`, { to: [p], cat: 'steal' });
-    this.addLog(`🎁 ${pl.name} 送给你一张 ${gn}`, { to: [this.turn.player], cat: 'steal' });
+    this.addLog(`你送给 ${this.players[this.turn.player].name} 一张 ${gn}`, { to: [p], cat: 'steal' });
+    this.addLog(`${pl.name} 送给你一张 ${gn}`, { to: [this.turn.player], cat: 'steal' });
     const left = need - 1;
     if (left <= 0 || cardsOf(pl.hand, this.cardTypes()).length === 0) {
       delete this.turn.pendingGive[p];
@@ -887,8 +887,8 @@ export const ckMethods = {
             this.addEvent('steal', { from: t, to: p });
             const rn = this.cardName(got);
             this.addLog(`${pl.name} 从 ${this.players[t].name} 那里偷了一张牌`, { cat: 'steal' });
-            this.addLog(`🔍 你从 ${this.players[t].name} 偷到了 ${rn}`, { to: [p], cat: 'steal' });
-            this.addLog(`🔍 ${pl.name} 从你这里偷走了 ${rn}`, { to: [t], cat: 'steal' });
+            this.addLog(`你从 ${this.players[t].name} 偷到了 ${rn}`, { to: [p], cat: 'steal' });
+            this.addLog(`${pl.name} 从你这里偷走了 ${rn}`, { to: [t], cat: 'steal' });
           }
         }
         break;
@@ -1211,6 +1211,6 @@ export const ckMethods = {
     if (!deck) this.err('未知进步卡');
     const p = Number.isInteger(to) && this.players[to] ? to : 0;
     this.players[p].progressCards.push({ type, deck });
-    this.addLog(`🛠 ${p === 0 ? '' : `${this.players[p].name} `}获得进步卡：${PROGRESS_NAME[type]}`);
+    this.addLog(`${p === 0 ? '' : `${this.players[p].name} `}获得进步卡：${PROGRESS_NAME[type]}`);
   },
 };

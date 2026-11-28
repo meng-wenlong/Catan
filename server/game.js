@@ -317,7 +317,7 @@ export class Game {
         // 野蛮人先结算，再进行产出；若需玩家选城则暂停，选完后续跑 finishRoll
         if (this.resolveBarbarianAttack(total)) return;
       } else {
-        this.addLog(`⛵ 野蛮人船前进一格（${this.barbarians.pos}/${BARBARIAN_TRACK}）`);
+        this.addLog(`野蛮人船前进一格（${this.barbarians.pos}/${BARBARIAN_TRACK}）`);
       }
     } else if (eventFace) {
       this.addLog(`事件骰：${TRACK_NAME[eventFace]}城门`);
@@ -517,8 +517,8 @@ export class Game {
     this.addEvent('steal', { from: target, to: p });
     const rn = this.cardName(res);
     this.addLog(`${this.players[p].name} 从 ${this.players[target].name} 那里偷了一张牌`, { cat: 'steal' });
-    this.addLog(`🔍 你从 ${this.players[target].name} 偷到了 ${rn}`, { to: [p], cat: 'steal' });
-    this.addLog(`🔍 ${this.players[p].name} 从你这里偷走了 ${rn}`, { to: [target], cat: 'steal' });
+    this.addLog(`你从 ${this.players[target].name} 偷到了 ${rn}`, { to: [p], cat: 'steal' });
+    this.addLog(`${this.players[p].name} 从你这里偷走了 ${rn}`, { to: [target], cat: 'steal' });
   }
 
   // ---------- 建造 ----------
@@ -803,7 +803,7 @@ export class Game {
     this.turn.sb = { queue: eligible, idx: 0, from: p };
     this.turn.state = 'specialBuild';
     this.addEvent('sbStart', { players: eligible, from: p });
-    this.addLog(`🔨 特别建设阶段：${eligible.map((i) => this.players[i].name).join('、')} 可依次建设`);
+    this.addLog(`特别建设阶段：${eligible.map((i) => this.players[i].name).join('、')} 可依次建设`);
     return true;
   }
 
@@ -961,7 +961,7 @@ export class Game {
       this.winner = p;
       this.turn.state = 'ended';
       this.addEvent('win', { player: p });
-      this.addLog(`🎉 ${this.players[p].name} 达到 ${this.winGoal()} 分，获得胜利！`);
+      this.addLog(`${this.players[p].name} 达到 ${this.winGoal()} 分，获得胜利！`);
     }
   }
 
@@ -1101,14 +1101,14 @@ export class Game {
     const pl = this.players[target];
     if (!pl) this.err('玩家无效');
     for (const r of this.cardTypes()) pl.hand[r] = Math.max(pl.hand[r], 20);
-    this.addLog(`🛠 ${pl.name} 资源已填满`);
+    this.addLog(`${pl.name} 资源已填满`);
   }
 
   devGrantDev(type) {
     this.requireDev();
     if (!DEV_DECK.includes(type)) this.err('未知发展卡');
     this.players[0].devCards.push({ type, boughtTurn: 0, played: false });
-    this.addLog(`🛠 获得发展卡：${type}`);
+    this.addLog(`获得发展卡：${type}`);
   }
 
   devSetDice(d1, d2, eventDie = null) {
@@ -1121,7 +1121,7 @@ export class Game {
     if (target === 0 || !this.players[target]) this.err('目标无效');
     if (!this.cardTypes().includes(card)) this.err('未知牌');
     this.players[target].hand[card] += n;
-    this.addLog(`🛠 ${this.players[target].name} +${n} ${this.cardName(card)}`);
+    this.addLog(`${this.players[target].name} +${n} ${this.cardName(card)}`);
   }
 
   devQuickStart() {

@@ -103,7 +103,7 @@ function syncSbTimer(room) {
     if (room.game !== g || g.turn.state !== 'specialBuild'
       || g.sbBuilder() !== builder || g.turn.sb.idx !== idx) return;
     try {
-      g.addLog(`⏱️ ${g.players[builder].name} 超时未操作，建设窗口自动结束`);
+      g.addLog(`${g.players[builder].name} 超时未操作，建设窗口自动结束`);
       g.sbPass(builder);
     } catch (e) {
       console.error(e);

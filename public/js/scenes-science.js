@@ -59,7 +59,7 @@ SCENES.alchemist = {
     if (ts >= 1.3) K.pose(alc.P, 'offer', 'cheer', easeOut(seg(ts, 1.3, 1.5)));
     alc.rig.setGlow(1 + 0.5 * Math.sin(ts * 6));
     alc.apply();
-    if (ts > 0.1) ctx.once('stir', () => ctx.say(`⚗️ ${ctx.tag(ctx.ev.player)} 的炼金术士调配骰子……`));
+    if (ts > 0.1) ctx.once('stir', () => ctx.say(`${ctx.tag(ctx.ev.player)} 的炼金术士调配骰子……`));
     dice.forEach((d, i) => {
       const t0 = 1.35 + i * 0.15;
       const k = seg(ts, t0, t0 + 1.0);
@@ -70,7 +70,7 @@ SCENES.alchemist = {
       d.rotation.set(1.22 + spin, spin * 0.7, spin * 0.4 + (i ? -0.12 : 0.12)); // 停下时指定点数那面（顶面）正对镜头
       if (k >= 1) ctx.once(`land${i}`, () => { sfx.dice([{ t: 0, v: 0.8 }, { t: 0.12, v: 0.3 }]); ctx.fx.flash(d.position.clone(), '#bfffd2', 0.5, 0.3); });
     });
-    if (ts > 2.4) ctx.once('show', () => ctx.say(`⚗️ 骰子定为 ${st.d1} + ${st.d2} = ${st.d1 + st.d2}`));
+    if (ts > 2.4) ctx.once('show', () => ctx.say(`骰子定为 ${st.d1} + ${st.d2} = ${st.d1 + st.d2}`));
   },
 };
 
@@ -108,12 +108,12 @@ SCENES.crane = {
     st.worker.pose('idle');
     st.worker.P.aRx = -2.4 + 0.3 * Math.sin(ts * 8); // 指挥
     st.worker.apply();
-    if (ts > 0.3) ctx.once('go', () => { sfx.lever(); ctx.say(`🏗️ ${ctx.tag(ctx.ev.player)} 的起重机开工`); });
+    if (ts > 0.3) ctx.once('go', () => { sfx.lever(); ctx.say(`${ctx.tag(ctx.ev.player)} 的起重机开工`); });
     if (ts >= 2.05) ctx.once('set', () => {
       sfx.build('city');
       ctx.fx.puff(V3(0.4, 0.5, -0.1), V3(0, 0.3, 0), 0.5, 0.7);
       ctx.fx.sparks(V3(0.4, 0.8, -0.1), 10, 0.9, '#9fe38a', 0.07, 0.6, 1.5);
-      ctx.say('🏗️ 本回合下一次城市升级少付 1 张商品');
+      ctx.say('下次城市升级少付 1 张商品');
     });
     st.c.scale.y = 1 + 0.06 * spring(seg(ts, 2.05, 2.7));
   },
@@ -153,7 +153,7 @@ SCENES.engineer = {
     st.eng.pose('idle');
     st.eng.P.aRx = -1.5 + 0.4 * Math.sin(ts * 10);
     st.eng.apply();
-    if (ts > 0.2) ctx.once('go', () => ctx.say(`🧱 ${ctx.tag(ctx.ev.player)} 的工程师开始筑城`));
+    if (ts > 0.2) ctx.once('go', () => ctx.say(`${ctx.tag(ctx.ev.player)} 的工程师开始筑城`));
     st.blocks.forEach((b, i) => {
       const k = seg(ts, b.userData.t0, b.userData.t0 + 0.35);
       b.visible = ts >= b.userData.t0;
@@ -165,7 +165,7 @@ SCENES.engineer = {
     if (ts > st.dur - 1.0) ctx.once('done', () => {
       sfx.build('city');
       ctx.fx.ring(0, 0.02, 0, '#ffd36b', 2.2, 0.6);
-      ctx.say('🧱 免费修建一座城墙：被 7 洗劫时手牌上限 +2');
+      ctx.say('城墙落成 · 手牌上限 +2');
     });
   },
 };
@@ -227,7 +227,7 @@ function harvestScene(kind) {
     frame(st, ts, dt, ctx) {
       if (isIrr) {
         st.tool.userData.wheel.rotation.z -= dt * (1 + 3 * seg(ts, 0.3, 0.9));
-        if (ts > 0.2) ctx.once('go', () => { sfx.aqueduct(); ctx.say(`💧 ${ctx.tag(ctx.ev.player)} 引水灌溉麦田`); });
+        if (ts > 0.2) ctx.once('go', () => { sfx.aqueduct(); ctx.say(`${ctx.tag(ctx.ev.player)} 引水灌溉麦田`); });
         st.tool.userData.channels.forEach((m, i) => {
           const k = seg(ts, 0.5 + i * 0.15, 1.0 + i * 0.3);
           m.geometry.setDrawRange(0, Math.floor(k * m.geometry.index.count / 6) * 6);
@@ -257,7 +257,7 @@ function harvestScene(kind) {
           W.P.lean = 0.2 * sw;
         }
         W.apply();
-        if (ts > 0.2) ctx.once('go', () => ctx.say(`⛏️ ${ctx.tag(ctx.ev.player)} 的矿工下矿了`));
+        if (ts > 0.2) ctx.once('go', () => ctx.say(`${ctx.tag(ctx.ev.player)} 的矿工下矿了`));
         for (const t of st.tiles) {
           if (ts >= t.t0) ctx.once(`hit${t.x}`, () => {
             sfx.shieldBash();
@@ -268,7 +268,7 @@ function harvestScene(kind) {
         }
       }
       st.flights.update(ts);
-      if (ts > st.dur - 0.9) ctx.once('done', () => ctx.say(`${isIrr ? '💧' : '⛏️'} ${st.n} 块${isIrr ? '麦田' : '矿山'}，获得 ${st.got} 张${ctx.resName(st.res)}`));
+      if (ts > st.dur - 0.9) ctx.once('done', () => ctx.say(`${st.n} 块${isIrr ? '麦田' : '矿山'}，获得 ${st.got} 张${ctx.resName(st.res)}`));
     },
   };
 }
@@ -306,7 +306,7 @@ SCENES.medicine = {
     const pour = seg(ts, 0.7, 1.4);
     st.pot.rotation.z = -1.8 * easeOut(pour);
     st.doc.apply();
-    if (ts > 0.2) ctx.once('go', () => ctx.say(`⚕️ ${ctx.tag(ctx.ev.player)} 的药剂师调制良方`));
+    if (ts > 0.2) ctx.once('go', () => ctx.say(`${ctx.tag(ctx.ev.player)} 的药剂师调制良方`));
     if (pour > 0 && pour < 1 && Math.random() < dt * 40) {
       const p = st.pot.getWorldPosition(V3(0, 0, 0));
       ctx.fx.sparks(p, 1, 0.5, '#7dffb0', 0.07, 0.8, 2);
@@ -315,7 +315,7 @@ SCENES.medicine = {
     st.h.scale.setScalar(Math.max(0.01, 1 - easeIn(grow)));
     st.c.scale.setScalar(Math.max(0.01, easeOut(grow) + 0.15 * spring(seg(ts, 1.9, 2.6))));
     if (grow > 0) ctx.once('grow', () => { sfx.build('city'); ctx.fx.glow(V3(0.35, 0.4, -0.1), '#7dffb0', 1.6, 0.8); ctx.fx.ring(0.35, 0.02, -0.1, '#9fffc6', 2, 0.7); });
-    if (ts > 2.1) ctx.once('done', () => ctx.say('⚕️ 村庄升级为城市（只花 2 矿石 + 1 小麦）'));
+    if (ts > 2.1) ctx.once('done', () => ctx.say('村庄升级为城市'));
   },
 };
 
@@ -340,9 +340,9 @@ SCENES.printer = {
       return p;
     });
     const book = new THREE.Group();
-    const cover = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.06, 0.38), K.mat(col, { rough: 0.5 }));
+    const cover = new THREE.Mesh(K.box(0.3, 0.06, 0.38), K.mat(col, { rough: 0.5 }));
     book.add(cover);
-    const leaves = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.05, 0.36), K.mat('#f6eedb'));
+    const leaves = new THREE.Mesh(K.box(0.28, 0.05, 0.36), K.mat('#f6eedb'));
     leaves.position.x = 0.01;
     book.add(leaves);
     book.position.set(0.7, 0.6, 0.2);
@@ -358,7 +358,7 @@ SCENES.printer = {
     u.platen.position.y = 0.45 - 0.1 * down;
     u.bar.rotation.y = ph * Math.PI;
     if (ts < 1.8 && down > 0.95) ctx.once(`hit${Math.floor(ph)}`, () => { sfx.kegLand(); ctx.shake(0.015); });
-    if (ts > 0.1) ctx.once('go', () => ctx.say(`📰 ${ctx.tag(ctx.ev.player)} 的印刷机开印`));
+    if (ts > 0.1) ctx.once('go', () => ctx.say(`${ctx.tag(ctx.ev.player)} 的印刷机开印`));
     st.pages.forEach((p, i) => {
       const t0 = 0.35 + i * 0.27;
       const k = seg(ts, t0, t0 + 0.7);
@@ -416,7 +416,7 @@ export const roadBuildingScene = {
       W.P.lean = 0.25;
     }
     W.apply();
-    if (ts > 0.1) ctx.once('go', () => ctx.say(`🛤️ ${ctx.tag(ctx.ev.player)} 的工人修路`));
+    if (ts > 0.1) ctx.once('go', () => ctx.say(`${ctx.tag(ctx.ev.player)} 的工人修路`));
     for (const s of st.segs) {
       const k = seg(ts, s.userData.t0 - 0.6, s.userData.t0);
       s.visible = ts >= s.userData.t0 - 0.6;
@@ -427,7 +427,7 @@ export const roadBuildingScene = {
         if (d >= 1) ctx.once(`set${s.userData.t0}`, () => { sfx.build('road'); ctx.fx.puff(s.userData.to.clone(), V3(0, 0.15, 0), 0.3, 0.5); });
       }
     }
-    if (ts > st.dur - 0.8) ctx.once('done', () => ctx.say(`🛤️ 可免费修 ${st.n} 条路`));
+    if (ts > st.dur - 0.8) ctx.once('done', () => ctx.say(`可免费修 ${st.n} 条路`));
   },
 };
 SCENES.roadBuilding = roadBuildingScene;
@@ -481,7 +481,7 @@ SCENES.smith = {
       sfx.swordHit();
       ctx.fx.sparks(V3(-0.6, 0.38, 0.1), 14, 1.6, '#ffb347', 0.06, 0.5, 4);
     });
-    if (ts > 0.1) ctx.once('go', () => ctx.say(`🔨 ${ctx.tag(ctx.ev.player)} 的铁匠打造新装备`));
+    if (ts > 0.1) ctx.once('go', () => ctx.say(`${ctx.tag(ctx.ev.player)} 的铁匠打造新装备`));
     for (const k of st.knights) {
       setStance(k.before.P, 'guard');
       setStance(k.after.P, 'guard');
@@ -500,6 +500,6 @@ SCENES.smith = {
       k.before.apply();
       k.after.apply();
     }
-    if (ts > st.dur - 0.8) ctx.once('done', () => ctx.say(`🔨 免费升级了 ${st.knights.length} 名骑士`));
+    if (ts > st.dur - 0.8) ctx.once('done', () => ctx.say(`免费升级了 ${st.knights.length} 名骑士`));
   },
 };

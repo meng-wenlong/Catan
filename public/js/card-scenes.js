@@ -27,6 +27,18 @@ export function preloadCardScenes() {
 }
 export const hasCardScene = (card) => !!SCENES[card];
 
+// 实体网格投射/接收阴影；精灵、自发光/半透明特效、标了 noShadow 的不参与。每帧调用，只处理新出现的网格
+function castShadows(root) {
+  root.traverse((o) => {
+    if (!o.isMesh || o.userData.sh) return;
+    o.userData.sh = true;
+    const m = o.material;
+    if (o.userData.noShadow || !m || m.isMeshBasicMaterial || m.transparent || m.blending === THREE.AdditiveBlending) return;
+    o.castShadow = true;
+    o.receiveShadow = true;
+  });
+}
+
 function setup() {
   if (H.ready) return;
   const el = document.createElement('div');
@@ -86,6 +98,16 @@ export function playCardScene(spec) {
   lights.key.color.set(preset.keyColor);
   lights.rim.intensity = preset.rim;
   lights.rim.color.set(preset.rimColor);
+  // 柔和投影：主光（左上前方）投影，镜头框住整块地面（地块半径约 2.2）
+  H.renderer.shadowMap.enabled = true;
+  H.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  lights.key.castShadow = true;
+  Object.assign(lights.key.shadow.camera, { left: -3.2, right: 3.2, top: 3.2, bottom: -3.2, near: 0.5, far: 12 });
+  lights.key.shadow.camera.updateProjectionMatrix();
+  lights.key.shadow.mapSize.set(2048, 2048);
+  lights.key.shadow.bias = -0.0004;
+  lights.key.shadow.normalBias = 0.015;
+  lights.key.shadow.radius = 4;
   scene.environmentIntensity = preset.env;
   const cam = new THREE.PerspectiveCamera(FOV, 1, 0.05, 60);
   scene.add(cam);
@@ -208,6 +230,7 @@ export function playCardScene(spec) {
           return;
         }
         fx.step(dt);
+        castShadows(world);
         // 镜头：按宽度取景，窄屏拉远；全程缓慢推近 + 轻微横摇
         const tgt = camDef.target;
         const dist = Math.max(camDef.dist, camDef.width / (2 * halfH * cam.aspect)) * (1 - 0.05 * easeInOut(clamp01(ts / 4)));
@@ -364,7 +387,7 @@ SCENES.saboteur = {
           h.blown = false;
           ctx.fx.smoke(h.door.clone(), 5, 0.15, 0.3, '#8a8078');
           sfx.fizzle();
-          ctx.say('💨 引信灭了……没有玩家受到破坏者影响');
+          ctx.say('引信灭了……没有玩家受到破坏者影响');
         });
         continue;
       }
@@ -385,7 +408,7 @@ SCENES.saboteur = {
         }
         ctx.shake(0.12);
         sfx.boom(i);
-        if (i === 0) ctx.say(`💥 ${ctx.names(st.victims)} 的仓库被炸了！各自弃掉一半手牌`);
+        if (i === 0) ctx.say(`${ctx.names(st.victims)} 的仓库被炸了！各自弃掉一半手牌`);
       });
       // 碎片：重力 + 地面摩擦（局部坐标系下推进，仓库缩放 sc）
       for (const p of h.parts) {
@@ -403,7 +426,7 @@ SCENES.saboteur = {
         h.tag.material.color.setRGB(1, 1 - 0.45 * Math.sin(Math.PI * Math.min(1, kk * 2)), 1 - 0.5 * Math.sin(Math.PI * Math.min(1, kk * 2)));
       }
     }
-    if (ts > 0.2 && ts < 1.0) ctx.once('intro', () => ctx.say(`🧨 ${ctx.tag(ctx.ev.player)} 派出的破坏者摸进了夜色……`));
+    if (ts > 0.2 && ts < 1.0) ctx.once('intro', () => ctx.say(`${ctx.tag(ctx.ev.player)} 派出的破坏者摸进了夜色……`));
   },
 };
 
@@ -425,7 +448,7 @@ SCENES.wedding = {
     bellG.position.set(0, 1.47, -0.45);
     world.add(bellG);
     // 红毯
-    const carpet = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.01, 1.7), K.mat('#b8323e', { rough: 0.9 }));
+    const carpet = new THREE.Mesh(K.box(0.55, 0.01, 1.7), K.mat('#b8323e', { rough: 0.9 }));
     carpet.position.set(0, 0.005, 0.35);
     world.add(carpet);
     const col = ctx.color(ctx.ev.player);
@@ -487,7 +510,7 @@ SCENES.wedding = {
         sfx.weddingBell();
         ctx.fx.debris(() => K.heart(['#ff5b8a', '#ff8fb5', '#ff3d6e'][Math.floor(Math.random() * 3)], 0.05), V3(0, 0.78, -0.2), 8,
           { speed: 0.5, up: 1.6, gravity: -0.15, drag: 1.8, dur: 1.6, spread: 0.6, spin: 1.5 });
-        ctx.say(`💒 ${ctx.tag(ctx.ev.player)} 举行婚礼！`);
+        ctx.say(`${ctx.tag(ctx.ev.player)} 举行婚礼！`);
       });
       if (ts >= 1.45 && Math.random() < dt * 30) {
         ctx.fx.debris(() => K.petal(['#ffb3cc', '#ffffff', '#ffd6e6'][Math.floor(Math.random() * 3)]),
@@ -530,7 +553,7 @@ SCENES.wedding = {
           ctx.fx.debris(() => K.confettiPiece(['#ffd36b', '#ff8fb5', '#9fe3ff', '#b6e380'][Math.floor(Math.random() * 4)]), to.clone(), 10,
             { speed: 0.9, up: 1.2, gravity: 2, drag: 2, dur: 1.4, spread: 1, floor: 0.01 });
           sfx.coin();
-          if (i === guests.length - 1) ctx.say(`💌 请柬送到 ${ctx.names(st.guests.map((x) => x.a.who))}：各备 2 张牌作贺礼`);
+          if (i === guests.length - 1) ctx.say(`请柬送到 ${ctx.names(st.guests.map((x) => x.a.who))}：各备 2 张牌作贺礼`);
         });
         const b = easeOut(seg(ts, t0 + 0.6, t0 + 0.9));
         gift.visible = true;
@@ -634,7 +657,7 @@ SCENES.spy = {
       spy.rig.setGlow(freeze ? 0.15 : 1.2 + 0.6 * Math.sin(ts * 7));
       if (freeze) { spy.P.crouch = 0.2; spy.P.hy = 0; }
       else spy.P.hy = 0.25 * Math.sin(ts * 3);
-      if (ts > 1.4) ctx.once('peek', () => ctx.say(`🕵️ ${ctx.tag(ctx.ev.player)} 正在偷看 ${ctx.tag(st.target)} 的进步卡……`));
+      if (ts > 1.4) ctx.once('peek', () => ctx.say(`${ctx.tag(ctx.ev.player)} 正在偷看 ${ctx.tag(st.target)} 的进步卡……`));
     }
     spy.apply();
     // 卡牌：放大镜扫到哪张，哪张竖起来朝向间谍（观众只看到背面）
@@ -679,7 +702,7 @@ SCENES.bishop = {
       const z = -0.15 + Math.sin(a) * 0.62 - 0.1;
       const h = k.house(ctx.color(who), 1.3);
       h.position.set(x, 0, z);
-      h.rotation.y = -a;
+      h.rotation.y = (0.35 - x) * 0.6; // 门窗大体朝镜头，按左右位置微微转向中间的强盗
       world.add(h);
       const tag = k.label(ctx.pname(who), ctx.color(who), 0.13);
       tag.position.set(x, 0.5, z);
@@ -695,7 +718,7 @@ SCENES.bishop = {
     staff.position.set(0, -0.15, 0.0);
     bishop.rig.handR.add(staff);
     // 主教胸前的玩家色圣带
-    const stole = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.4, 0.02), K.mat(col));
+    const stole = new THREE.Mesh(K.box(0.06, 0.4, 0.02), K.mat(col));
     stole.position.set(0, 0.38, 0.135);
     bishop.rig.body.add(stole);
     const robberM = buildRobber();
@@ -720,7 +743,7 @@ SCENES.bishop = {
       const r = easeOut(seg(ts, 0.7, 1.0));
       K.pose(bishop.P, 'idle', 'raise', r);
       bishop.P.aRx += 0.05 * Math.sin(ts * 3);
-      ctx.once('raise', () => { sfx.holyChime(); ctx.say(`⛪ ${ctx.tag(ctx.ev.player)} 的主教降下圣光……`); });
+      ctx.once('raise', () => { sfx.holyChime(); ctx.say(`${ctx.tag(ctx.ev.player)} 的主教降下圣光……`); });
     } else bishop.P.aRx = -0.5; // 拄着权杖
     bishop.apply();
     st.staff.rotation.set(-bishop.P.aRx, 0, -bishop.P.aRz); // 抵消手臂转角：权杖始终竖直
@@ -769,8 +792,8 @@ SCENES.bishop = {
       ctx.once(`up${i}`, () => sfx.card());
     });
     if (ts >= 2.3) ctx.once('tithe', () => ctx.say(st.victims.length
-      ? `⛪ 强盗被赶到${hexPos(ctx.board, ctx.ev.hex)} · 向 ${ctx.names(st.victims)} 各收取 1 张牌`
-      : `⛪ 强盗被赶到${hexPos(ctx.board, ctx.ev.hex)}（周围没有可收取的玩家）`));
+      ? `强盗被赶到${hexPos(ctx.board, ctx.ev.hex)} · 向 ${ctx.names(st.victims)} 各收取 1 张牌`
+      : `强盗被赶到${hexPos(ctx.board, ctx.ev.hex)}（周围没有可收取的玩家）`));
   },
 };
 
@@ -805,7 +828,7 @@ SCENES.inventor = {
     const lever = new THREE.Group();
     lever.position.set(-0.45, 0.0, 0.05);
     world.add(lever);
-    const lb = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.08, 0.1), K.mat('#5a3b22'));
+    const lb = new THREE.Mesh(K.box(0.14, 0.08, 0.1), K.mat('#5a3b22'));
     lb.position.y = 0.04;
     lever.add(lb);
     const arm = new THREE.Group();
@@ -848,7 +871,7 @@ SCENES.inventor = {
     inv.P.aRz += 0.25 * Math.sin(ts * 18);
     inv.P.aRx += 0.1 * Math.sin(ts * 11);
     if (ts < 0.9 && Math.floor(ts * 6) !== st.lastScr) { st.lastScr = Math.floor(ts * 6); sfx.scribble(); }
-    if (ts > 0.1) ctx.once('think', () => ctx.say(`⚙️ ${ctx.tag(ctx.ev.player)} 的发明家埋头画图纸……`));
+    if (ts > 0.1) ctx.once('think', () => ctx.say(`${ctx.tag(ctx.ev.player)} 的发明家埋头画图纸……`));
     // 2) 灵光一闪：蹦起来
     if (ts >= 0.9) {
       const j = seg(ts, 0.9, 1.25);
@@ -892,7 +915,7 @@ SCENES.inventor = {
       sfx.coin();
       ctx.fx.ring(A.x, 0.08, A.z, '#ffd36b', 1.3, 0.5);
       ctx.fx.ring(B.x, 0.08, B.z, '#ffd36b', 1.3, 0.5);
-      ctx.say(`⚙️ ${hexPos(ctx.board, ctx.ev.h1)} 的 ${st.n1} ⇄ ${hexPos(ctx.board, ctx.ev.h2)} 的 ${st.n2}`);
+      ctx.say(`${hexPos(ctx.board, ctx.ev.h1)} 的 ${st.n1} ⇄ ${hexPos(ctx.board, ctx.ev.h2)} 的 ${st.n2}`);
     });
   },
 };

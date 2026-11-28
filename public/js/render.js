@@ -1111,6 +1111,9 @@ export function updateBarbarianTrack(ck, strength, defense, detail) {
     const s0 = pt(0);
     const badge = el('g', { style: 'cursor: help' }, layer);
     el('rect', { x: s0.x - 1.0, y: s0.y + 0.42, width: 2.0, height: 0.56, rx: 0.28, class: 'barb-badge-bg' }, badge);
+    // 左：野蛮人兵力（船图），右：骑士防御（双剑图标）；中间只放数字，SVG 文字里不放 emoji
+    el('image', { href: '/assets/opt/barbarian-ship.webp', x: s0.x - 0.94, y: s0.y + 0.47, width: 0.5, height: 0.46 }, badge);
+    el('image', { href: '/assets/icons/swords.webp', x: s0.x + 0.48, y: s0.y + 0.47, width: 0.46, height: 0.46 }, badge);
     const vs = el('text', { x: s0.x, y: s0.y + 0.81, class: 'barb-badge-text' }, badge);
     const badgeTitle = el('title', {}, badge); // 悬浮显示各玩家城市/防御明细
     // 登陆点警报（还差 1 步时显示）：红心脉动 + 扩散圆环
@@ -1129,7 +1132,7 @@ export function updateBarbarianTrack(ck, strength, defense, detail) {
   barbEls.dots.forEach((d, i) => d.classList.toggle('passed', i + 1 <= pos));
   const s = barbEls.pt(pos / track);
   barbEls.ship.style.transform = `translate(${s.x}px, ${s.y}px)`;
-  barbEls.vs.textContent = `🏰${strength} vs ⚔️${defense}`;
+  barbEls.vs.textContent = `${strength} : ${defense}`;
   if (detail && barbEls.badgeTitle) barbEls.badgeTitle.textContent = detail;
   barbInfo = { strength, defense, pos, track, x: s.x, y: s.y };
   // 还差 1 步登陆：船身摇晃加剧、航线转红、登陆点警报、全场红色暗角
@@ -1140,9 +1143,9 @@ export function updateBarbarianTrack(ck, strength, defense, detail) {
 
 // ---------- 左列：三摞进步卡牌堆（竖排；点击打开城市升级面板） ----------
 const DECK_META = {
-  trade: { name: '贸易', icon: '🧶', com: '布匹', color: '#c9a227', perk3: '🏪', perk3Name: '商栈：商品可 2:1 与银行交易' },
-  politics: { name: '政治', icon: '🪙', com: '铸币', color: '#3a6ea5', perk3: '🏰', perk3Name: '城堡：可将骑士升到 3 级' },
-  science: { name: '科学', icon: '📜', com: '纸张', color: '#4a8c4a', perk3: '🚰', perk3Name: '引水渠：无产出时任选 1 张资源' },
+  trade: { name: '贸易', com: '布匹', color: '#c9a227', perk3Name: '商栈：商品可 2:1 与银行交易' },
+  politics: { name: '政治', com: '铸币', color: '#3a6ea5', perk3Name: '城堡：可将骑士升到 3 级' },
+  science: { name: '科学', com: '纸张', color: '#4a8c4a', perk3Name: '引水渠：无产出时任选 1 张资源' },
 };
 
 // decks = { trade: n, politics: n, science: n }；传 null 时清除（基础版/初始放置阶段）。
