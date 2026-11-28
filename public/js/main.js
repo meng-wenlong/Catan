@@ -242,6 +242,7 @@ function buildDevPanel() {
   });
   // 演示下拉：只列已有演出的卡（进步卡 + 发展卡）
   $('dev-scene').innerHTML = [
+    ['barbarian', '事件·海盗洗劫'], ['pillage', '事件·城市被摧毁'],
     ...Object.entries(PROG_META).map(([k, v]) => [k, `进步卡·${v.name}`]),
     ...Object.entries(DEV_META).map(([k, v]) => [`dev:${k}`, `发展卡·${v.name}`]),
   ].filter(([k]) => hasCardScene(k.replace(/^dev:/, ''))).map(([v, t]) => `<option value="${v}">${t}</option>`).join('');
@@ -255,6 +256,10 @@ const PROG_DECK_OF = {
 // 调试：不改局面，直接按当前局面拼一个假事件播放该卡的演出（受害者/宾客 = 全部其他玩家，目标地块随机挑）
 function demoCardScene(key) {
   if (!key || !S) return;
+  if (key === 'barbarian' || key === 'pillage') {
+    stepRaidScene({ type: key, strength: 4, defense: 2, player: 0, downgraded: true });
+    return;
+  }
   const dev = key.startsWith('dev:');
   const card = key.replace(/^dev:/, '');
   const me = myIndex >= 0 ? myIndex : 0;
@@ -1332,8 +1337,10 @@ function throwDie(el, [fx, fy], { start, end, dist, yOff = 0, lane = 0, onImpact
   const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
   // 目标姿态 + 整圈数：Y 轴（前进方向的滚动轴）转得最多，X/Z 轴少量翻滚增加随机感
   const rnd = (a, b) => a + Math.random() * (b - a);
-  const zEnd = rnd(-12, 12);
-  const ax0 = rnd(0, 360), ay0 = rnd(0, 360), az0 = zEnd - Math.sign(Math.random() - 0.5) * rnd(200, 420);
+  const faces = [...cube.querySelectorAll('.face')];
+  const shadeFrames = faces.map(() => []);
+  for (const face of faces) face.getAnimations().forEach(a => a.cancel());
+  const ax0 = rnd(0, 360), ay0 = rnd(0, 360), az0 = Math.sign(Math.random() - 0.5) * rnd(200, 420);
   const axEnd = fx + (Math.random() < 0.5 ? -1 : 1) * 360 * (1 + Math.floor(Math.random() * 2));
   const ayEnd = fy + 360 * (2 + Math.floor(Math.random() * 2));
   const spinMax = Math.max(Math.abs(axEnd - ax0), Math.abs(ayEnd - ay0));
@@ -1344,7 +1351,7 @@ function throwDie(el, [fx, fy], { start, end, dist, yOff = 0, lane = 0, onImpact
   for (let i = 0; i <= n; i++) {
     const tt = Math.min(end, i * dt);
     const off = tt / end;
-    const s = sim.progressAt(tt);
+    const s = i === n ? 1 : sim.progressAt(tt);
     const h = sim.heightAt(tt);
     const x = -dist * (1 - Math.min(1, s)); // 平移不参与末段的过冲回摆（骰子不会倒滑），只有旋转会
     const y = yOff + lane * (1 - Math.min(1, s) ** 3); // 各走各的航道，临到位才收拢成一排，空中不叠成一团
@@ -1360,10 +1367,21 @@ function throwDie(el, [fx, fy], { start, end, dist, yOff = 0, lane = 0, onImpact
       offset: off, opacity: op,
       transform: `translate(${x.toFixed(1)}px, ${(y - h * camY).toFixed(1)}px) scale(${(sc * (1 + sq * 0.55)).toFixed(4)}, ${(sc * (1 - sq)).toFixed(4)})`,
     });
+    const rz = az0 * (1 - s); // 落定时回正，让结果面平行于屏幕
+    const rx = ax0 + (axEnd - ax0) * s;
+    const ry = ay0 + (ayEnd - ay0) * s;
     cubeKf.push({
       offset: off,
-      transform: `rotateZ(${(az0 + (zEnd - az0) * s).toFixed(2)}deg) rotateX(${(ax0 + (axEnd - ax0) * s).toFixed(2)}deg) rotateY(${(ay0 + (ayEnd - ay0) * s).toFixed(2)}deg)`,
+      transform: `rotateZ(${rz}deg) rotateX(${rx}deg) rotateY(${ry}deg)`,
     });
+    // 左上方固定光源在骰子局部坐标中的方向。六个面按建模顺序成对取反。
+    if (i % 4 === 0 || i === n) {
+      const orientation = new DOMMatrix().rotateAxisAngle(0, 0, 1, rz).rotateAxisAngle(1, 0, 0, rx).rotateAxisAngle(0, 1, 0, ry);
+      const light = orientation.inverse().transformPoint({ x: -0.38, y: -0.68, z: 0.62, w: 0 });
+      [light.z, -light.z, light.x, -light.x, -light.y, light.y].forEach((dot, j) => {
+        shadeFrames[j].push({ offset: off, filter: `brightness(${(0.57 + 0.52 * Math.max(0, dot)).toFixed(3)})` });
+      });
+    }
     // 投影留在桌面：骰子越高影子越大越淡（软光源），落定时最实
     shadowKf.push({
       offset: off, opacity: op * 0.62 * Math.max(0.08, 1 - h / 230),
@@ -1382,6 +1400,7 @@ function throwDie(el, [fx, fy], { start, end, dist, yOff = 0, lane = 0, onImpact
   const opts = { duration: reduced ? 1 : end * 1000, easing: 'linear', fill: 'forwards' };
   body.animate(bodyKf, opts);
   cube.animate(cubeKf, opts);
+  faces.forEach((face, j) => face.animate(shadeFrames[j], opts));
   shadow.animate(shadowKf, opts);
   sim.impacts.forEach((im, k) => {
     const v = im.v / sim.vMax;
@@ -2770,6 +2789,7 @@ function animateDiceRoll(d1, d2, eventFace = null) {
   const total = d1 + d2;
   lastDiceTotal = total;
   diceAnimUntil = Date.now() + DICE_ROLL_MS;
+  $('roll-big-wrap').classList.add('hidden');
   $('dice-box').classList.remove('hidden');
   // 屏幕中央的大骰子（Master Duel 式：关键信息居中演出）：
   // 三颗从画面左侧同一只「手」里抛出，重力弹跳着滚向各自位置；离手越远的滚得越久，
@@ -2929,6 +2949,29 @@ function runAnimSteps() {
 // 中央演出作为一个步骤：spotlight 播完/被点击跳过才放行时间线
 function stepSpotlight(item) {
   animStep((done) => spotlight({ ...item, onDone: done }));
+}
+
+function stepRaidScene(ev) {
+  const raid = ev.type === 'barbarian';
+  const title = raid ? '野蛮人洗劫海岸' : `${S.players[ev.player].name} 的城市被摧毁`;
+  const sub = raid ? `兵力 ${ev.strength} · 防御 ${ev.defense}` : (ev.downgraded ? '城市降为村庄' : '城市被夷平');
+  const players = S.players;
+  const onShow = () => {
+    if (raid) { sfx.barbarian(false); return; }
+    if (ev.vertex != null) {
+      const pos = vertexPixelPosition(ev.vertex, $('board'));
+      if (pos) burstAt(pos.x, pos.y, '💥');
+    }
+    shakeBoard();
+  };
+  animStep(done => {
+    const scene = playCardScene({
+      card: ev.type, ev, players, name: title, desc: sub, accent: '#eb9864',
+      img: raid ? '/assets/opt/barbarian-ship.webp' : '/assets/opt/piece-city-white.webp', onShow,
+    });
+    if (scene) scene.then(done);
+    else spotlight({ ...ev, kind: raid ? 'barbarian' : 'banner', title, sub, icon: '💥', dur: raid ? 5200 : 3000, onShow, onDone: done });
+  });
 }
 
 // ---------- 卡牌发动演出（card-scenes.js） ----------
@@ -3100,7 +3143,7 @@ function playEvents(upTo = Infinity) { // upTo：只播放该 seq 及之前的�
         break;
       case 'aqueduct': {
         // 引水渠触发：中央横幅点名 + 相关玩家面板泛水光（面板高亮随 turn.state 由 renderPlayers 维持）
-        const names = ev.players.map((i) => `<b style="color:${S.players[i].color}">${esc(S.players[i].name)}</b>`).join('、');
+        const names = ev.players.map((i) => `<b class="sp-aq-player" style="--player-color:${S.players[i].color}">${esc(S.players[i].name)}</b>`).join('、');
         stepSpotlight({
           kind: 'banner',
           icon: '🚰',
@@ -3235,30 +3278,14 @@ function playEvents(upTo = Infinity) { // upTo：只播放该 seq 及之前的�
         });
         break;
       case 'barbarian':
-        // 中央全屏结算演出：兵力 VS 防御 → 击退/洗劫定格（队列串行，后续毁城公告接着播）
-        stepSpotlight({
-          kind: 'barbarian',
-          win: ev.win,
-          strength: ev.strength,
-          defense: ev.defense,
-          dur: 5200,
-          onShow: () => sfx.barbarian(ev.win),
-        });
+        if (ev.win) {
+          stepSpotlight({ kind: 'barbarian', ...ev, dur: 5200, onShow: () => sfx.barbarian(true) });
+        } else {
+          stepRaidScene(ev);
+        }
         break;
       case 'pillage':
-        stepSpotlight({
-          kind: 'banner',
-          icon: '💥',
-          title: `${S.players[ev.player].name} 的城市被摧毁`,
-          sub: '野蛮人洗劫：城市降为村庄',
-          accent: '#c0392b',
-          dur: 3000,
-          onShow: () => {
-            const pos = vertexPixelPosition(ev.vertex, $('board'));
-            if (pos) burstAt(pos.x, pos.y, '💥');
-            shakeBoard();
-          },
-        });
+        stepRaidScene({ ...ev, downgraded: S.buildings[ev.vertex]?.type === 'settlement' });
         break;
       case 'saboteur':
         animStep((done) => {

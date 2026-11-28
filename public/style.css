@@ -982,6 +982,7 @@ body {
   background: rgba(28,20,10,.93); color: #f0e6d0; border: 1px solid #6a4a1c;
   border-radius: 10px; font-size: 12px; box-shadow: 0 8px 24px rgba(0,0,0,.5);
 }
+body:has(#card-scene.show) #dev-panel { visibility: hidden; }
 #dev-panel.collapsed .dev-body { display: none; }
 #dev-panel .dev-head {
   padding: 6px 10px; font-weight: 700; display: flex; justify-content: space-between;
@@ -1184,8 +1185,17 @@ body {
   0%, 100% { box-shadow: 0 0 0 2px rgba(58,160,200,.35), 0 4px 12px rgba(0,0,0,.2); }
   50% { box-shadow: 0 0 0 5px rgba(58,160,200,.7), 0 4px 18px rgba(58,160,200,.4); }
 }
-#spotlight .sp-aqueduct { font-size: 24px; line-height: 1.5; text-align: center; }
-#spotlight .sp-aq-sub { font-size: 17px; opacity: .85; }
+#spotlight .sp-aqueduct {
+  padding: 12px 20px; border-radius: 14px; background: #14394a; color: #fff;
+  font-size: clamp(20px, 4vw, 24px); font-weight: 700; line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+#spotlight .sp-aq-player::before {
+  content: ''; display: inline-block; width: .48em; height: .48em; margin-right: .25em;
+  vertical-align: .1em; border-radius: 50%; background: var(--player-color);
+  box-shadow: 0 0 0 1px rgba(255,255,255,.65);
+}
+#spotlight .sp-aq-sub { font-size: 17px; font-weight: 600; color: #d8f4ff; }
 /* 被偷者卡片抖一下：牌被人抽走了 */
 .stolen-shake { animation: stolen-shake .55s ease; }
 @keyframes stolen-shake {
@@ -1781,8 +1791,8 @@ body {
 /* 桌面投影：留在桌面上（光源在左上，影子落在右下），骰子越高影子越大越淡，落定时最实。
    用径向渐变而不用 filter: blur——blur 在这个合成层上不出图 */
 .die3d .shadow {
-  position: absolute; left: -12%; right: -12%; top: 14%; bottom: -26%; border-radius: 50%;
-  background: radial-gradient(ellipse at center, rgba(20, 10, 0, .85) 35%, rgba(20, 10, 0, .45) 60%, transparent 100%);
+  position: absolute; left: -15%; right: -15%; top: 78%; bottom: -29%; border-radius: 50%;
+  background: radial-gradient(ellipse at center, rgba(20, 10, 0, .95) 12%, rgba(20, 10, 0, .55) 43%, transparent 72%);
   opacity: 0; will-change: transform, opacity;
 }
 /* 承载高度（上移 + 放大）、水平位移与撞桌压扁；透视挂在这里让内部 cube 有 3D 感 */
@@ -1802,11 +1812,15 @@ body {
   transform-style: preserve-3d; will-change: transform;
 }
 .die3d .face {
-  position: absolute; inset: 0; border-radius: 14px;
+  position: absolute; inset: 0; border-radius: 5%;
   background: #ecdcb8;      /* 补上骰面插画圆角的透明缺口，让立方体棱角看起来实心 */
   display: grid; place-items: center;
   font-size: 46px; color: #fff; text-shadow: 0 2px 6px rgba(0,0,0,.4);
   backface-visibility: hidden; /* 背面不画，避免透视下透出对面骰面 */
+}
+.die3d .face::after {
+  content: ''; position: absolute; inset: 0; border-radius: inherit;
+  box-shadow: inset 0 0 0 1px #56371b55, inset 2px 2px 3px #fff7, inset -2px -3px 4px #41230555;
 }
 .die3d.red .face { background: #dd5a4d; }
 .die3d .face img { width: 100%; height: 100%; display: block; }
@@ -1825,7 +1839,7 @@ body {
   .player-card .p-nm { font-size: 17px; }
   .player-card .p-vp b { font-size: 30px; }
   .die3d { width: 64px; height: 64px; --hz: 32px; }
-  .die3d .face { font-size: 34px; border-radius: 10px; }
+  .die3d .face { font-size: 34px; }
   #roll-big { padding: 12px 32px 12px 26px; }
   #roll-big .rb-dice { font-size: 34px; }
   #roll-big .rb-text { font-size: 23px; }

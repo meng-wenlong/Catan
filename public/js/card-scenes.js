@@ -12,6 +12,7 @@ import './scenes-trade.js';
 import './scenes-politics.js';
 import './scenes-science.js';
 import './scenes-dev.js';
+import './scenes-raid.js';
 
 const INTRO = 1.25; // 开场（卡牌翻入、停留）时长，场景从这之后开始计时
 const OUTRO = 0.3;
@@ -166,7 +167,7 @@ export function playCardScene(spec) {
       if (immediate) cleanup(); else setTimeout(cleanup, 280);
     };
     H.finish = end;
-    sfx.card();
+    if (spec.onShow) spec.onShow(); else sfx.card();
     const frame = (now) => {
       if (done) return;
       if (t0 === null) { t0 = now; last = now; }
